@@ -1252,7 +1252,7 @@ function makeMockDevice(opt = {}) {
     D("BPM", F.BPM, 40, 240, 90), D("SWING", F.SWING, 0, 100, 0), E("CLICK", ["OFF", "REC", "ON"], 0), D("TUNE", F.INT, -50, 50, 0),
     E("TIME", NDIV, 1), D("FDBK", F.PCT, 0, 120, 60), D("COLR", F.PCT, 0, 127, 70), D("MIX", F.PCT, 0, 127, 90),
     D("SIZE", F.PCT, 0, 127, 90), D("DAMP", F.PCT, 0, 127, 60), D("CRT", F.LFOHZ, 0, 127, 40), D("CDP", F.PCT, 0, 127, 60),
-    E("MIDI", NDASH, 0), E("SYNC", NDASH, 0), E("ROUT", NDASH, 0), D("CPU", F.INT, 0, 0, 0),
+    E("MIDI", NDASH, 0), E("SYNC", NDASH, 0), E("NOTES", NONOFF, 0), D("CPU", F.INT, 0, 0, 0),
     D("SLOT", F.INT, 1, 4, 1), E("NAME", NDASH, 0), E("LOAD", NGO, 0), E("SAVE", NGO, 0),
     E("ENG", ["ANALOG", "DIGITAL", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL",
       "GRAIN"], 0), E("SET", NGO, 0),
@@ -2094,7 +2094,7 @@ const LAYOUT = (pe0) => [
   { t: "SCL", pages: [["SCL", 0, [25, 26, 27, 49]], ["SCL 2", 0, [28]]] },
   { t: "ARP", pages: [["ARP", 0, [17, 18, 19, 20]], ["ARP 2", 0, [21, 22, 23, 24]]] },
   { t: "SEQ PATTERN", tab: "seqgroups", pages: [["PATTERN", 0, [29, 30, 31, 32]]] },
-  { t: "GLOBAL", tab: "setgroups", pages: [["GLOBAL", 1, [0, 1, 2, 3]]] },
+  { t: "GLOBAL", tab: "setgroups", pages: [["GLOBAL", 1, [0, 1, 2, 3]], ["SYSTEM", 1, [14]]] },
   { t: "MASTER", tab: "setgroups", pages: [["MASTER", 1, [27, 28, 29, 30]]] },
   { t: "DRUMS", tab: "setgroups", pages: [["DRUMS", 1, [24, 25, 26]]] },
 ];

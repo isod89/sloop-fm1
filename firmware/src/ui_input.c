@@ -102,10 +102,21 @@ static uint32_t keys_lit(void)
         break;
     }
     m = fm1_in.notes;
-    if (is_drum(t))                                /* the drum track: each hit lights its key */
+    if (is_drum(t)) {                              /* the drum track: each hit lights its key */
         for (i = 0; i < DRUM_LANES; i++)
             if (pad_lit[i])
                 m |= 1u << key_of_white(i);
+    } else if (song.g[G_NOTELIT]) {                /* synth tracks: currently sounding voices light keys */
+        for (i = 0; i < NVOICE; i++) {
+            const voice_t *v = &t->v[i];
+            if (v->active && v->gate && v->stage <= 2) {
+                uint32_t k, note = v->note;
+                for (k = 0; k < 27u; k++)
+                    if (kb_map(t, k) == note)
+                        m |= 1u << k;
+            }
+        }
+    }
     return m;
 }
 

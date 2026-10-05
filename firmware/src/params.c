@@ -109,7 +109,7 @@ static const param_desc_t GP[G_COUNT] = {
     [G_CDEPTH] = PD("CDP", F_PCT, 0, 127, 60),
     [G_MIDI] = PE("MIDI", N_DASH, 0),
     [G_SYNC] = PE("SYNC", N_DASH, 0),
-    [G_ROUTE] = PE("ROUT", N_DASH, 0),
+    [G_NOTELIT] = PE("NOTES", N_ONOFF, 0),
     [G_INFO] = PD("CPU", F_INT, 0, 0, 0),
     [G_SLOT] = PD("SLOT", F_INT, 1, 4, 1),
     [G_NAME] = PE("NAME", N_DASH, 0),
@@ -291,7 +291,7 @@ static const page_t PAGES[] = {
     {"VOICE 2", FAM_EDIT, SC_TRACK, GR_NONE, {P_ALLOC, P_DETUNE, P_PAN, P_MUTE}},
     {"GLOBAL", FAM_GLO, SC_GLOBAL, GR_NONE, {G_BPM, G_SWING, G_CLOCK, G_TUNE}},
     {"MASTER", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DUST, G_DUCK, G_FILT, G_ROLL}},
-    {"SYSTEM", FAM_GLO, SC_GLOBAL, GR_NONE, {G_MIDI, G_SYNC, G_ROUTE, G_INFO}},
+    {"SYSTEM", FAM_GLO, SC_GLOBAL, GR_NONE, {G_MIDI, G_SYNC, G_NOTELIT, G_INFO}},
     {"DRUMS", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DRCH, G_DRLVL, G_DRREV, 0xFF}},   /* GM kit on MIDI ch 10 */
     {"PRESETS", FAM_SAVE, SC_GLOBAL, GR_BROWSE, {0xFF, 0xFF, 0xFF, 0xFF}},   /* browser: PRESETS knob / KNOB 1 */
     {"USER", FAM_SAVE, SC_GLOBAL, GR_USER, {0xFF, 0xFF, 0xFF, 0xFF}},       /* user presets: SLOT LOAD ERASE SAVE */

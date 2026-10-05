@@ -197,6 +197,7 @@ Changing a sound (PRESETS, a user preset) never changes the key, the chord mode,
 - White keys **1–4 mute** tracks 1–4 (a muted track fades out in a few ms and plays no new notes; its pattern runs on in time), keys **5–8 solo** them (several solos add up). The tiles show what is heard.
 - The last white key (**G5**): **tap tempo** (two taps or more).
 - **KNOB 1–4: the levels** of tracks 1–4.
+- **Key lights on synth tracks:** GLO → SYSTEM → **NOTES** (`OFF`, `ON`). When `ON`, the currently sounding voices on the active synth track light up the hardware keys during playback and live input.
 
 ## Undo, clear, save, autosave
 

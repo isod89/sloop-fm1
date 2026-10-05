@@ -61,7 +61,7 @@ enum {                          /* global parameters */
     G_BPM, G_SWING, G_CLOCK, G_TUNE,
     G_DTIME, G_DFDBK, G_DCOLOR, G_DMIX,
     G_RSIZE, G_RDAMP, G_CRATE, G_CDEPTH,
-    G_MIDI, G_SYNC, G_ROUTE, G_INFO,
+    G_MIDI, G_SYNC, G_NOTELIT, G_INFO,
     G_SLOT, G_NAME, G_LOAD, G_SAVE,
     G_ENGSEL, G_ENGGO,          /* no page (the ENGINE page is gone); a SET of G_ENGSEL switches the engine (editor) */
     G_CLRSEQ, G_INITSND,
@@ -71,6 +71,7 @@ enum {                          /* global parameters */
     G_NEWPRJ,                   /* TOOLS > NEW: a new project (GO) */
     G_COUNT
 };
+#define G_ROUTE G_NOTELIT
 
 /* ----------------------------------------------------------- voices --- */
 typedef struct {

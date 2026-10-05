@@ -336,6 +336,28 @@ int main(int argc, char **argv)
     for (i = 0; i < DRUM_KITS; i++) { TDRUM->p[P_E0] = (int16_t)i; ui.force = 1; drum_page = 1; frame(); }
     drum_page = 0;
 
+    {   /* G_NOTELIT: played notes on synth track light up keys */
+        song.sel = 0; go_home(); ui.force = 1; frame();
+        trk[0].p[P_CHORD] = 0; trk[0].p[P_QUANT] = 0; trk[0].p[P_ROOT] = 0; trk[0].p[P_TRANS] = 0;
+        song.octave = 0;
+        song.g[G_NOTELIT] = 0;
+        trk[0].v[0].active = 1; trk[0].v[0].gate = 1; trk[0].v[0].stage = 1; trk[0].v[0].note = 60;
+        frame();
+        check((keys_lit() & (1u << 7)) == 0, "G_NOTELIT off: sounding synth voice does not light key");
+        song.g[G_NOTELIT] = 1;
+        frame();
+        check((keys_lit() & (1u << 7)) != 0, "G_NOTELIT on: sounding synth voice lights key 7 (C4)");
+        song.octave = -1;
+        frame();
+        check((keys_lit() & (1u << 19)) != 0 && (keys_lit() & (1u << 7)) == 0, "G_NOTELIT on: octave shift transposes lit key");
+        song.octave = 0;
+        trk[0].v[0].gate = 0; trk[0].v[0].stage = 3;
+        frame();
+        check((keys_lit() & (1u << 7)) == 0, "G_NOTELIT on: voice release turns off lit key");
+        trk[0].v[0].active = 0;
+        song.g[G_NOTELIT] = 0;
+    }
+
     {   /* fuzz: 20000 frames of random buttons (held or tapped), knobs and keys, with the audio running
          * between frames; every draw stays on the screen (lcd_blit / lcd_fill assert it) */
         uint32_t f, seed = 777, held = 0;
