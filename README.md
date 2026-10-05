@@ -3,6 +3,8 @@
 <p align="center"><b>A live groovebox firmware for the M-VAVE FM-1 — for any style.</b><br>
 Free and open source (GPL-3.0), based on <a href="https://github.com/hugelton/Felucca">Felucca</a>.</p>
 
+<p align="center"><b>📖 <a href="docs/USER_MANUAL.md">Read the SLOOP User Manual</a></b></p>
+
 ---
 
 SLOOP turns the FM-1 into a four-track groovebox you play live: three synths and a drum machine with 16 sounds on the white keys, nine synthesis engines, your own samples, a song mode you play with your hands. House, techno, hip-hop, drum & bass, synthwave, lo-fi, ambient, chiptune — it does not pick a style for you. No factory patterns, nothing to load: everything you hear, you play.
@@ -25,7 +27,7 @@ SLOOP turns the FM-1 into a four-track groovebox you play live: three synths and
 - **Stereo chorus and a new stereo reverb** (a feedback delay network: dense, no metallic ring).
 - **More reliable:** saves retried until they succeed, the song end gives your loop back, swing never plays a step twice, no click on retriggered voices, the installer refuses a damaged package, no more flicker on the button lights.
 
-Everything in [SLOOP.md](SLOOP.md#new-in-22).
+Everything in [SLOOP.md](SLOOP.md#new-in-22). **New here? Start with the [User Manual](docs/USER_MANUAL.md).**
 
 ## Features
 
@@ -61,7 +63,8 @@ Going back: M-VAVE's own updater (M-UPGRADE) and the official FM-1 firmware. If 
 
 ## Documentation
 
-- [SLOOP.md](SLOOP.md) — the manual
+- **[docs/USER_MANUAL.md](docs/USER_MANUAL.md) — the complete user manual** (installation, first beat, reference, troubleshooting)
+- [SLOOP.md](SLOOP.md) — the original manual and release notes
 - [DEMARRAGE-RAPIDE-FR.md](DEMARRAGE-RAPIDE-FR.md) — guide de démarrage en français
 - [BUILDING.md](BUILDING.md) — building and testing
 - [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md) — the editor's SysEx protocol
