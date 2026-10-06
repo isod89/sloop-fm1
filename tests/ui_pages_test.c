@@ -444,6 +444,41 @@ int main(int argc, char **argv)
         fm1_in.notes = 1u << 4; frame(); fm1_in.notes = 0; frame();
         release(B_FX); frames(2);
         check(punch.req == 2 && !punch.hold, "LATCH: the effect stays with FX let go");
+        {   /* the headers show a latched effect once FX is let go. TRACKS: a disc in the FX colour under the loop
+             * position and the effect's name (the name gives way to "click" while recording with the click on);
+             * the sound pages: the disc and the name in the top bar (the name only when no octave is shown);
+             * nothing once it is off */
+            uint32_t x, disc = 0, name = 0;
+            int16_t clk = song.g[G_CLOCK];
+            go_home(); ui.force = 1; frame(); ppm("tracks-punch-latched");
+            for (x = 144; x < 153u; x++) disc |= swap16(screen[29 * 240 + x]) == TE_DRUM;
+            for (x = 156; x < 200u; x++) name |= swap16(screen[29 * 240 + x]) == TE_DRUM;
+            check(disc && name, "LATCH: TRACKS shows the effect on (disc + name) with FX let go");
+            song.rec = 1u; song.g[G_CLOCK] = 2; ui.force = 1; frame();
+            disc = name = 0;
+            for (x = 144; x < 153u; x++) disc |= swap16(screen[29 * 240 + x]) == TE_DRUM;
+            for (x = 156; x < 200u; x++) name |= swap16(screen[29 * 240 + x]) == TE_DRUM;
+            check(disc && !name, "LATCH: TRACKS, recording with the click on: the disc only, the name gives way");
+            song.rec = 0; song.g[G_CLOCK] = clk;
+            open_family(FAM_ENV); ui.force = 1; frame(); ppm("page-punch-latched");
+            disc = 0;
+            for (x = 60; x < 156u; x++) disc |= swap16(screen[9 * 240 + x]) == TE_DRUM;
+            check(disc, "LATCH: a sound page's top bar shows the effect on");
+            song.octave = 1; ui.force = 1; frame();
+            disc = name = 0;
+            for (x = 130; x < 150u; x++) disc |= swap16(screen[9 * 240 + x]) == TE_DRUM;
+            for (x = 60; x < 128u; x++) name |= swap16(screen[9 * 240 + x]) == TE_DRUM;
+            check(disc && !name, "LATCH: with an octave shown, the disc only");
+            song.octave = 0;
+            punch.req = -1; frame();
+            disc = 0;
+            for (x = 60; x < 156u; x++) disc |= swap16(screen[9 * 240 + x]) == TE_DRUM;
+            check(!disc, "LATCH: the top bar clears when the effect is off");
+            go_home(); ui.force = 1; frame();
+            for (x = 120; x < 200u; x++) disc |= swap16(screen[29 * 240 + x]) == TE_DRUM;
+            check(!disc, "LATCH: TRACKS clears when the effect is off");
+            punch.req = 2; ui.force = 1; frame();
+        }
         tap(B_PLAY); frames(4); tap(B_PLAY); frames(4);
         check(punch.req == -1 && !song.playing, "LATCH: STOP ends it");
         press(B_FX); frames(12); fm1_in.notes = 1u << 4; frame(); fm1_in.notes = 0; frame(); release(B_FX); frames(2);

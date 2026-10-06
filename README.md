@@ -221,7 +221,7 @@ Hold **HOME**. **PRESETS** moves, **KNOB 1** sets, **OCT+** steps round, **OCT�
 | **KEYS** | OFF / C KEYS / WHITE KEYS | the C keys, or every white key, glow too |
 | **NOTES** | OFF / ON | the notes playing on a synth track light their keys, on every page and in every layer |
 | **USB AUDIO** | MASTER / FULL | the level of the USB audio input: follows the MASTER knob, or a fixed full level |
-| **PUNCH** | HOLD / LATCH | the punch-in effects (FX + a key): **HOLD**, the effect lasts while its key is held, as on a pocket operator; **LATCH**, a key switches it on and it stays with both hands free — the same key again, or STOP, switches it off, another key changes it |
+| **PUNCH** | HOLD / LATCH | the punch-in effects (FX + a key): **HOLD**, the effect lasts while its key is held, as on a pocket operator; **LATCH**, a key switches it on and it stays with both hands free — the same key again, or STOP, switches it off, another key changes it. While an effect is on, TRACKS and the sound pages show a disc and its name in the header |
 | **HARDWARE CALIBRATION** | | the panel table, if a key or a knob answers wrongly |
 | **ABOUT** | | the version (*SLOOP 2.3*) and its build date, the credits |
 

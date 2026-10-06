@@ -38,6 +38,9 @@ static struct {
  * and it stays after the key is up; the same key again, or STOP, switches it off; another key changes it).
  * A setting of the FM-1 (panel.c lights_word), not of a project. */
 static uint8_t punch_latch;
+/* the effect on, or -1: the top bar shows it while it runs (ui_draw.c draw_head), which with LATCH is the only
+ * sign of one once FX is let go */
+static int32_t punch_shown(void) { return punch.req; }
 
 static uint32_t beat_samples(void) { return (uint32_t)FS * 60u / (uint32_t)song.g[G_BPM]; }
 

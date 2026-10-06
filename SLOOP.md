@@ -185,7 +185,7 @@ MODE and START are settings of the FM-1: they stay as you left them. In a projec
 
 ### FX — punch
 
-The 16 white keys are the [punch-in effects](#punch-in-effects); they run while the key is held — or, with HOME menu → **PUNCH** set to **LATCH**, a key switches its effect on and it stays with both hands free: the same key again switches it off, another key changes it, STOP ends it (the layer's subtitle reads *key: on/off*). The knobs drive the [master](#master-dust-duck-filt): **KNOB 1 FILTER** (turn left: low-pass, right: high-pass, centre: off), **KNOB 2 DUST**, **KNOB 3 DUCK**. Keys pressed while FX is held never play or record notes.
+The 16 white keys are the [punch-in effects](#punch-in-effects); they run while the key is held — or, with HOME menu → **PUNCH** set to **LATCH**, a key switches its effect on and it stays with both hands free: the same key again switches it off, another key changes it, STOP ends it (the layer's subtitle reads *key: on/off*; while an effect is on, the headers say so — a disc in the layer's colour and the effect's name under the loop position on TRACKS, and in the top bar of the sound pages — so a latched effect is never invisible once FX is let go). The knobs drive the [master](#master-dust-duck-filt): **KNOB 1 FILTER** (turn left: low-pass, right: high-pass, centre: off), **KNOB 2 DUST**, **KNOB 3 DUCK**. Keys pressed while FX is held never play or record notes.
 
 ### EDIT — erase
 

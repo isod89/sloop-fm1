@@ -151,14 +151,16 @@ static void loop_pos(const track_t *t, char *b)
     b[k + 2] = 0;
 }
 
-/* the header of the live screens: BPM, transport, the loop position, the beat lights, REC */
+/* the header of the live screens: BPM, transport, the loop position, the beat lights, a punch-in on, REC */
 static void te_header(const char *title, uint16_t tc, uint32_t *cache)
 {
     char b[12];
     uint32_t beat = clk_beat, k, playing = song.playing;
+    int32_t px = punch_shown();                         /* punch.c: the effect on, or -1 */
     uint32_t sig = studio_hash((uint32_t)song.g[G_BPM] * 7u + playing * 3u + (song.rec != 0) * 1999u +
                                (playing ? beat * 131u + TSEL->seq_idx * 7919u : 0u) + (uint32_t)song.g[G_CLOCK] * 77u +
-                               arrangement_enabled * 5u + (ui.bpm_t != 0) * 104729u + song.solo * 37u, title);
+                               arrangement_enabled * 5u + (ui.bpm_t != 0) * 104729u + song.solo * 37u +
+                               (uint32_t)(px + 1) * 10007u, title);
     sig = sig * 31u + tc;
     if (!ui.force && sig == *cache)
         return;
@@ -176,6 +178,15 @@ static void te_header(const char *title, uint16_t tc, uint32_t *cache)
     }
     for (k = 0; k < 4u; k++)                           /* the four beats of the bar */
         cv_rect(104 + (int32_t)k * 9, 26, 7, 7, playing && beat % 4u == k ? (k ? C_WHITE : TE_RED) : TE_G2);
+    if (px >= 0) {                                     /* a punch-in effect on (latched, or FX held before the layer
+                                                        * screen): a disc in the FX layer's colour under the loop
+                                                        * position, and its name beside it when "click" is not there */
+        static const char *const PSHORT[PUNCH_NFX] = {"loop 4", "loop 8", "loop16", "loop32", "stutt", "rev", "stop", "half",
+                                                      "low", "high", "phone", "crush", "alias", "gate", "echo", "wobble"};
+        te_disc(148, 29, 4, TE_DRUM);
+        if (!(song.rec && song.g[G_CLOCK] != 0))
+            cv_text(156, 22, &FONT_S, PSHORT[(uint32_t)px % PUNCH_NFX], TE_DRUM);
+    }
     if (song.rec) {
         te_disc(224, 12, 8, TE_RED);
         cv_text(176, 4, &FONT_S, "rec", TE_RED);
