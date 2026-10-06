@@ -393,8 +393,8 @@ static void graph_browse(void)
             up_slot_label(tag, k);
             up_name(k, nm);
 #if FELUCCA_DX7
-        } else if (e == PRESET_DX7) {                    /* a DX7 voice: "DX7" and its name */
-            str_cpy(tag, "DX7", sizeof tag);
+        } else if (e == PRESET_DX7) {                    /* a DX7 voice: its bank (DX1..DX4) and its name */
+            str_cpy(tag, preset_kind(n), sizeof tag);
             dx_slot_name(k, nm);
 #endif
         } else {                                         /* its kind: BASS, KEYS, PAD... */
