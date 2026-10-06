@@ -7,7 +7,9 @@ static const char *const MI_NAME[MI_COUNT] = {"COLOR", "LOWCUT", "ZOOM", "LIGHTS
                                               "HARDWARE CALIBRATION", "ABOUT", "BACK"};
 static const char *const LIGHTS_NAME[LIGHTS_N] = {"OFF", "LOW", "MID", "HIGH"};   /* every button lit, the labels readable */
 static const char *const KEYS_NAME[KEYS_N] = {"OFF", "C KEYS", "WHITE KEYS"};      /* keys lit too, at the LIGHTS level */
-#define MI_DY 18                                   /* rows between two menu lines */
+#define MI_DY 16                                   /* rows between two menu lines (11 lines + the two help lines in the
+                                                    * 219 rows under the header: 18 fitted ten lines, not eleven) */
+_Static_assert(4 + MI_COUNT * MI_DY + 18 + 16 <= 240 - H_HEAD - 1, "the menu and its two help lines fit the screen");
 
 static void draw_menu(void)
 {
