@@ -334,10 +334,7 @@ static const struct { uint8_t kind, e; const char *name; } BANK[] = {
     {BK_STAB, 0, "SYN BRASS"}, {BK_STAB, 2, "CZ BRASS"}, {BK_STAB, 4, "HORN STAB"}, {BK_STAB, 4, "STRING STB"},
     {BK_FX, 4, "SCRATCH"}, {BK_FX, 4, "GM KIT"},
 #if FELUCCA_DX7
-    {BK_KEYS, ENG_DX7_IDX, "DX7 USER"},
-#if FELUCCA_DX7_ROM
-    {BK_KEYS, ENG_DX7_IDX, "DX7 ROM"},
-#endif
+    {BK_KEYS, ENG_DX7_IDX, "DX7"},
 #endif
 };
 #define NBANK (sizeof BANK / sizeof BANK[0])

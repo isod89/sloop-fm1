@@ -102,7 +102,7 @@ Keys 1, 5, 9 and 13 glow dimly while a layer is held: the first key of each row 
 ### Synths and sounds
 
 - **Ten engines:** analog, 4-op FM, phase distortion, three-oscillator, tonewheel organ, formant voice, granular, lo-fi chip, sampler — and **DX7**, six-operator FM that plays real DX7 voices.
-- **DX7 voices (new):** four banks of 32 DX7 voices live on the FM-1, loaded from the web editor out of any `.syx` — the FM-1's own factory sounds (recovered as DX7 banks by [KingParamount/fm1-factory-presets](https://github.com/KingParamount/fm1-factory-presets)), the Yamaha ROM cartridges, thirty years of free patches, or a bank made in Dexed. Every voice plays with SLOOP's arpeggiator, chords, sequencer and effects; four knobs add brightness, envelope speed, LFO depth and transpose on top. See [DX7 voices](#dx7-voices).
+- **DX7 voices (new):** four banks of 32 DX7 voices live on the FM-1, loaded from the web editor or straight from Dexed out of any `.syx` — the FM-1's own factory sounds (recovered as DX7 banks by [KingParamount/fm1-factory-presets](https://github.com/KingParamount/fm1-factory-presets)), the Yamaha ROM cartridges, thirty years of free patches, or a bank made in Dexed. Every voice plays with SLOOP's arpeggiator, chords, sequencer and effects; four knobs add brightness, envelope speed, LFO depth and transpose on top. See [DX7 voices](#dx7-voices).
 - **68 sounds, browsed by kind** — basses (sliding 808s, acid 303, reese, FM), keys (Rhodes, a real Steinway grand, house and afro keys), organs, pads, leads (supersaw, talkbox), plucks and bells, stabs and dub chords — every one level-matched. **32 slots** for your own presets.
 - Envelopes (with a pitch punch for 808s), LFO, arpeggiator, glide and voice modes (POLY, MONO, LEGATO, UNISON), per-track drive and slicer, sends to a **stereo chorus**, a **tempo delay** and a **stereo reverb**.
 - **Key and chords (SCL):** the key of the song for all synths, 16 scales, one-key chords (triad, 7th, 9th, sus4, power), keys snapped to the scale or the scale on the white keys.
@@ -119,9 +119,8 @@ backup, and they survive a firmware update like everything else on the FM-1.
 
 Where to find voices: the FM-1's **own factory sounds** as four DX7 banks at
 [KingParamount/fm1-factory-presets](https://github.com/KingParamount/fm1-factory-presets), the Yamaha ROM
-cartridges and thousands of free patches (any DX7 `.syx` works). A build can also carry a bank inside the
-firmware (`FELUCCA_DX7_ROM=1`, see [BUILDING.md](BUILDING.md)); the release leaves that off, since the voice
-data in those collections is not SLOOP's to redistribute.
+cartridges and thousands of free patches (any DX7 `.syx` works). No voice data is compiled into SLOOP: the
+collections such voices come from are not SLOOP's to redistribute.
 
 **Straight from Dexed, as on a DX7 or the stock FM-1:** send a single voice over USB MIDI and it is written
 into the selected DX7 track's slot and heard at once (no question asked, as the stock firmware does); send a
@@ -132,8 +131,8 @@ A user preset or a project saved with a DX7 track remembers **which slot** it pl
 (the stock FM-1 stores the voice inside each of its 128 presets instead): replace that slot and the preset
 follows. Keep the bank, or export it as `.syx`.
 
-On the FM-1: EDIT 1 is **PTCH · BANK · BRGT · ENVS** (the voice, its bank, the modulators' level — brighter or
-darker — and every envelope faster or slower), EDIT 2 **LFOD · TRN · ALG · FB** (more or less pitch LFO,
+On the FM-1: EDIT 1 is **PTCH · BRGT · ENVS** (the voice, the modulators' level — brighter or darker — and
+every envelope faster or slower), EDIT 2 **LFOD · TRN · ALG · FB** (more or less pitch LFO,
 transpose, and an algorithm or feedback override; 0 = the voice's own). The ENV page is a VCA in front of the
 voice: the DX7 presets leave it open. An empty slot plays INIT VOICE.
 

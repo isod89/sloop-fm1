@@ -1,4 +1,3 @@
 build/
 .DS_Store
 __pycache__/
-assets/dx7/*.syx

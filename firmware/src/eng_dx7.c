@@ -9,15 +9,12 @@
  * (six waves, delay, key sync, pitch and amplitude modulation). Format-compatible with the DX7 and
  * with Dexed; not a bit-exact emulator (the sine is Felucca's interpolated table, levels are Q14).
  *
- * Where the voices come from (P_E1 BANK, P_E0 PATCH):
- *   USR  128 slots in flash at DX_USER_BASE (four sectors of 32 voices, the user banks 1..4), written
- *        by the editor (backup objects 8..11, web/EDITOR_PROTOCOL.md v7). An empty or damaged slot
- *        plays INIT VOICE. Read through the XIP window; a part copies its voice into RAM when PATCH
- *        or BANK changes, or after a bank is written (dx_gen), so a bank rewrite never changes a
- *        voice under a sounding note.
- *   ROM  a bank compiled into the firmware (FELUCCA_DX7_ROM=1: tools/gen_dx7rom.py from
- *        the .syx files in assets/dx7/, up to 128 voices). Not built by default: the voice data in such files is
- *        rarely the builder's to redistribute. Without it BANK has the single value USR.
+ * Where the voices come from (P_E0 PTCH, 0..127): 128 slots in flash at DX_USER_BASE (four sectors of 32
+ * voices, the banks 1..4), written by the editor (backup objects 8..11, web/EDITOR_PROTOCOL.md v7) or by a
+ * Yamaha dump on the MIDI input (dx_syx_parse, editor.c). An empty or damaged slot plays INIT VOICE. Read
+ * through the XIP window; a part copies its voice into RAM when PTCH changes or after a bank is written
+ * (dx_gen), so a bank rewrite never changes a voice under a sounding note. No voice data is compiled in:
+ * the collections such voices come from are not SLOOP's to redistribute.
  * The other EDIT knobs are performance macros over the loaded voice, never stored in it: BRGT (the
  * modulators' level, the classic brightness control), ENVS (every envelope faster or slower), LFOD
  * (more or less pitch LFO), TRN (semitones), ALG and FB (0 = the voice's own, else an override).
@@ -34,20 +31,6 @@
 #define DX_USER_SIZE (DX_USER_BANKS * 0x1000u)
 #ifndef DX_USER_XIP                         /* host tests: a RAM image of the store */
 #define DX_USER_XIP fm1_xip_ptr(DX_USER_BASE)
-#endif
-#ifndef FELUCCA_DX7_ROM
-#define FELUCCA_DX7_ROM 0
-#endif
-#if FELUCCA_DX7_ROM
-#include "dx7_rom.h"                        /* DX_ROM_N, DX_ROM[DX_ROM_N][128] (tools/gen_dx7rom.py) */
-#else
-#define DX_ROM_N 0u
-#endif
-enum { DXB_USR, DXB_ROM };
-#if FELUCCA_DX7_ROM
-static const char *const N_DXBANK[] = {"USR", "ROM"};
-#else
-static const char *const N_DXBANK[] = {"USR"};
 #endif
 
 static uint32_t dx_gen;                     /* bumped after a user bank is written: parts re-read their voice */
@@ -95,17 +78,8 @@ static uint32_t dx_bank_used(uint32_t b)             /* voices in user bank b th
     return n;
 }
 
-/* the voice a (bank, slot) pair plays; INIT VOICE for anything empty */
-static const uint8_t *dx_source(uint32_t bank, uint32_t slot)
-{
-#if FELUCCA_DX7_ROM
-    if (bank == DXB_ROM)
-        return DX_ROM_N ? DX_ROM[slot % DX_ROM_N] : DX_INIT;
-#else
-    (void)bank;
-#endif
-    return dx_user_ok(slot) ? dx_user_slot(slot) : DX_INIT;
-}
+/* the voice slot k plays; INIT VOICE for an empty or damaged one */
+static const uint8_t *dx_source(uint32_t slot) { return dx_user_ok(slot) ? dx_user_slot(slot) : DX_INIT; }
 
 /* ---- Yamaha bulk dumps on the MIDI input (editor.c ed_dx_native), as a DX7 and the stock FM-1 take them:
  * a single voice (F0 43 0n 00 01 1B, 155 bytes VCED, checksum) or a 32-voice bank (F0 43 0n 09 20 00, 4096
@@ -262,7 +236,7 @@ typedef struct {
 } dx_voice_t;
 typedef struct {                             /* a part: its voice and its LFO (lfo.cc) */
     uint8_t p[DX_VOICE];
-    uint32_t key, gen;                       /* bank << 8 | slot the copy was made for, and dx_gen then */
+    uint32_t key, gen;                       /* slot + 1 the copy was made for (0: none), and dx_gen then */
     uint32_t lfo_ph, lfo_delta, dly_st, dly_inc, dly_inc2;
     int32_t lfo, dly;                        /* this block's LFO (Q24, 0..1) and delay ramp (Q24) */
     uint8_t rnd;
@@ -285,14 +259,14 @@ static uint32_t dx_fb(const track_t *t, const uint8_t *p)
     return f > 0 ? (uint32_t)(f - 1) & 7u : p[111] & 7u;
 }
 
-/* the part's voice: copied when PATCH / BANK change or a user bank was written; the LFO follows */
+/* the part's voice: copied when PTCH changes or a bank was written; the LFO follows */
 static void dx_part_load(track_t *t)
 {
     dx_part_t *d = dx_part(t);
-    uint32_t key = ((uint32_t)t->p[P_E1] << 8) | ((uint32_t)t->p[P_E0] & 127u), sr, a;
+    uint32_t key = (uint32_t)t->p[P_E0] & 127u, sr, a;
     if (d->key == key + 1u && d->gen == dx_gen)
         return;
-    memcpy(d->p, dx_source(key >> 8, key & 255u), DX_VOICE);
+    memcpy(d->p, dx_source(key), DX_VOICE);
     d->key = key + 1u;
     d->gen = dx_gen;
     d->alg = DX_ALG[dx_alg_index(t, d->p)];              /* (dx7_block refreshes it; never 0 for a note before it) */
@@ -582,7 +556,7 @@ static void dx7_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
 /* the sound's name on the screen: the voice's own (ui_draw.c trk_short_name) */
 static const char *dx7_sound(const track_t *t, char *b)
 {
-    const uint8_t *p = dx_source((uint32_t)t->p[P_E1], (uint32_t)t->p[P_E0] & 127u);
+    const uint8_t *p = dx_source((uint32_t)t->p[P_E0] & 127u);
     uint32_t i, n = 10;
     while (n && p[118 + n - 1u] == ' ')
         n--;
@@ -593,18 +567,15 @@ static const char *dx7_sound(const track_t *t, char *b)
 }
 
 static const preset_t DX7_PRESETS[] = {
-    /* PATCH BANK BRGT ENVS LFOD TRN ALG FB ; the ADSR open: the voice's envelopes shape the sound */
-    {"DX7 USER", {0, DXB_USR, 0, 0, 0, 0, 0, 0}, {0, 127, 127, 110}, 0, 0, FX(0, 0, 0, 20)},
-#if FELUCCA_DX7_ROM
-    {"DX7 ROM", {0, DXB_ROM, 0, 0, 0, 0, 0, 0}, {0, 127, 127, 110}, 0, 0, FX(0, 0, 0, 20)},
-#endif
+    /* PTCH - BRGT ENVS LFOD TRN ALG FB ; the ADSR open: the voice's envelopes shape the sound */
+    {"DX7", {0, 0, 0, 0, 0, 0, 0, 0}, {0, 127, 127, 110}, 0, 0, FX(0, 0, 0, 20)},
 };
 
 static const engine_t ENG_DX7 = {
     "DX7", {"PATCH", "TONE"},
     {
         {"PTCH", F_INT, 0, 127, 0, 0, 0},
-        {"BANK", F_ENUM, 0, (int16_t)(sizeof N_DXBANK / sizeof N_DXBANK[0] - 1u), 0, N_DXBANK, 0},
+        {"-", F_INT, 0, 0, 0, 0, 0},
         {"BRGT", F_BIPCT, -64, 63, 0, 0, 0},
         {"ENVS", F_BIPCT, -64, 63, 0, 0, 0},
         {"LFOD", F_BIPCT, -64, 63, 0, 0, 0},

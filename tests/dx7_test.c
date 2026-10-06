@@ -105,10 +105,10 @@ int main(int argc, char **argv)
     memcpy(v, DX_INIT, sizeof v);
     v[121] = 7;
     check("a control character in the name is damaged", dx_voice_check(v) == DXV_BAD);
-    check("an empty user slot plays INIT VOICE", dx_source(DXB_USR, 5) == DX_INIT && dx_bank_used(0) == 0);
+    check("an empty user slot plays INIT VOICE", dx_source(5) == DX_INIT && dx_bank_used(0) == 0);
     make_voice(v, 4, 1, 99, 2);
     memcpy(dx_host_store + 5 * DX_VOICE, v, DX_VOICE);
-    check("a written slot is read from the store", dx_source(DXB_USR, 5) == dx_host_store + 5 * DX_VOICE && dx_bank_used(0) == 1);
+    check("a written slot is read from the store", dx_source(5) == dx_host_store + 5 * DX_VOICE && dx_bank_used(0) == 1);
 
     /* ---- every algorithm: a note, held, released; bounded, audible, finite, freed */
     host_tracks_init();
@@ -124,7 +124,6 @@ int main(int argc, char **argv)
             v[j * 17 + 14] = 90;
         memcpy(dx_host_store + a * DX_VOICE, v, DX_VOICE);
         t->p[P_E0] = (int16_t)a;
-        t->p[P_E1] = DXB_USR;
         trk_note_on(t, 60, 100);
         peak = render(0.5, &rms, wav);
         trk_note_off(t, 60);

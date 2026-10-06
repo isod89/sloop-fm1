@@ -1009,8 +1009,8 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
 /* main loop: editor frames first; anything else stays for ota_service() */
 #if FELUCCA_DX7 && FELUCCA_FLASH
 /* A Yamaha DX7 dump on the MIDI input, as Dexed sends it (and as the stock FM-1 and a DX7 take it). A single
- * voice goes straight into the selected track's voice slot (its PTCH in the user bank; the track is switched
- * to BANK USR so it is heard at once) — the stock FM-1 does the same, with no question. A bank is staged
+ * voice goes straight into the selected track's voice slot (its PTCH) and is heard at once — the stock FM-1
+ * does the same, with no question. A bank is staged
  * (ed_dx_stage) and the screen asks "DX7 BANK n? SAVE=YES" for the bank the track's PTCH is in: SAVE writes
  * it, any other button or 15 s drops it. Returns 1 when the frame was a DX7 dump (good or bad). */
 static int ed_dx_native(const uint8_t *p, uint32_t n)
@@ -1043,9 +1043,6 @@ static int ed_dx_native(const uint8_t *p, uint32_t n)
             ui_message("DX7: WRITE ERROR");
             return 1;
         }
-        fm1_irq_off();
-        t->p[P_E1] = DXB_USR;                             /* heard at once, whatever bank was selected */
-        fm1_irq_on();
         str_cpy(msg, "DX7 ", sizeof msg);
         msg[4] = (char)('0' + (slot + 1u) / 100u);
         msg[5] = (char)('0' + (slot + 1u) / 10u % 10u);

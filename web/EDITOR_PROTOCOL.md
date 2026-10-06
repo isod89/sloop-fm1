@@ -286,8 +286,7 @@ written.
 stored in a 32-voice bulk dump: **128 packed bytes per voice** (the VMEM layout; a single-voice VCED dump of
 155 bytes is packed by the editor, `DX7.pack`). The FM-1 keeps **four user banks of 32 voices** in flash
 (`eng_dx7.c`, `0xE5000..0xE8FFF`, one sector per bank), addressed by the engine's `PTCH` 0..127 (bank × 32 +
-slot) with `BANK` = `USR`. A firmware built with `FELUCCA_DX7_ROM=1` also has a compiled-in bank, `BANK` =
-`ROM`; otherwise `BANK` has the single value `USR`.
+slot). No voice data is compiled into the firmware.
 
 The banks are **backup objects 8..11** and use the v6 commands unchanged:
 

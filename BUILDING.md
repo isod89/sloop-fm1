@@ -61,19 +61,7 @@ Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`):
 | `FELUCCA_CDC` | 1 | USB serial console |
 | `FELUCCA_UAC` | 1 | USB audio input: the master output, 44.1 kHz stereo (after Felucca 1.0) |
 | `FELUCCA_UART` | 1 | TRS MIDI IN (the 3.5 mm jack) |
-| `FELUCCA_DX7` | 1 | the DX7 engine (`eng_dx7.c`): six-operator FM playing DX7 voices from four user banks in flash |
-| `FELUCCA_DX7_ROM` | 0 | also compile a DX7 bank into the firmware from `assets/dx7/*.syx` (below) |
-
-## DX7 voices compiled in (optional)
-
-The DX7 engine plays the voices in its four user banks, loaded from the editor (web/EDITOR_PROTOCOL.md v7).
-A build can also carry a bank of its own: put DX7 bulk dumps (`.syx`, 32 voices of 4104 bytes, or single
-voices of 163 bytes) in `assets/dx7/` and build with `FELUCCA_DX7_ROM=1`. `tools/gen_dx7rom.py` checks every
-voice and writes them into `build/gen/dx7_rom.h` (up to 128, in file-name order); the engine then has a `ROM`
-bank next to `USR`, and a `DX7 ROM` preset in the browser. The files are not part of this tree
-(`.gitignore`): the voice data in a DX7 collection is rarely the builder's to redistribute, so a release
-build leaves the flag off and the voices are a file the user loads. A 128-voice bank costs 16 KiB of the app
-slot.
+| `FELUCCA_DX7` | 1 | the DX7 engine (`eng_dx7.c`): six-operator FM playing DX7 voices from four banks in flash |
 
 ## Samples
 

@@ -1324,7 +1324,7 @@ async function bkGetObject(rq, id) {
 }
 /* ---- v7: DX7 voices. A voice is the 128 packed bytes of a 32-voice bulk dump (VMEM); the FM-1 keeps four
    user banks of 32 (backup objects 8..11, 4096 bytes each, length 0 = empty; an erased slot reads 0xFF).
-   The DX7 engine's PTCH 0..127 = bank x 32 + slot, with BANK = USR. */
+   The DX7 engine's PTCH 0..127 = bank x 32 + slot. */
 const DX7 = {
   BANKS: 4, N: 32, VOICE: 128, OBJ: 8,
   INIT: Uint8Array.from([99, 99, 99, 99, 99, 99, 99, 0, 39, 0, 0, 0, 56, 0, 0, 2, 0, 99, 99, 99, 99, 99, 99, 99, 0, 39, 0, 0, 0, 56, 0, 0, 2, 0,
@@ -1623,9 +1623,9 @@ function makeMockDevice(opt = {}) {
         D("PTCH", F.SEMI, -24, 24, 0), D("SPRD", F.PCT, 0, 127, 30), D("RAND", F.PCT, 0, 127, 10), D("TONE", F.PCT, 0, 127, 127)],
       presets: [P("LOFI CLOUD", [0, 45, 95, 85, 0, 35, 12, 80], [70, 90, 120, 90], 0), P("VIBE HAZE", [2, 30, 100, 90, 0, 25, 10, 90], [50, 100, 120, 95], 0),
         P("FLUTE DUST", [5, 50, 108, 72, 0, 10, 10, 85], [50, 100, 127, 100], 0)] },
-    { name: "DX7", titles: ["PATCH", "TONE"], edit: [D("PTCH", F.INT, 0, 127, 0), E("BANK", ["USR"], 0), D("BRGT", F.BIPCT, -64, 63, 0), D("ENVS", F.BIPCT, -64, 63, 0),
+    { name: "DX7", titles: ["PATCH", "TONE"], edit: [D("PTCH", F.INT, 0, 127, 0), NONE, D("BRGT", F.BIPCT, -64, 63, 0), D("ENVS", F.BIPCT, -64, 63, 0),
         D("LFOD", F.BIPCT, -64, 63, 0), D("TRN", F.SEMI, -24, 24, 0), D("ALG", F.INT, 0, 32, 0), D("FB", F.INT, 0, 8, 0)],
-      presets: [P("DX7 USER", [0, 0, 0, 0, 0, 0, 0, 0], [0, 127, 127, 110], 0)] },
+      presets: [P("DX7", [0, 0, 0, 0, 0, 0, 0, 0], [0, 127, 127, 110], 0)] },
   ];
   /* demo patterns of the mock only (the LIVE firmware has no factory patterns: a preset never writes the
      sequencer); used to seed the mock's user presets and track 1 as if they had been recorded */
@@ -4504,7 +4504,6 @@ async function dxPlay() {
   const slot = dxBank * DX7.N + dxSel;
   await libOp(async () => {
     selfLoad();
-    await rq(req.set(0, dev.info.pe0 + 1, 0));            /* BANK = USR */
     await rq(req.set(0, dev.info.pe0, slot));             /* PTCH */
     await afterSoundChange();
   });
