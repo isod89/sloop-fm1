@@ -265,35 +265,35 @@ int main(int argc, char **argv)
         v[4 * 17 + 14] = 70;                              /* OP2 modulates OP1 (algorithm 1) at 70 */
         memcpy(dx_host_store + 41 * DX_VOICE, v, DX_VOICE);
         t->p[P_E0] = 41;
-        t->p[P_E2] = -64;
+        t->p[P_E1] = -64;
         trk_note_on(t, 60, 100);
         render(0.5, &rms, 0);
         r1 = hf_rms;
         trk_note_off(t, 60);
         render(1.5, &rms2, 0);
-        t->p[P_E2] = 63;
+        t->p[P_E1] = 63;
         trk_note_on(t, 60, 100);
         render(0.5, &rms2, 0);
         r2 = hf_rms;
         trk_note_off(t, 60);
         render(1.5, &rms2, 0);
-        t->p[P_E2] = 0;
+        t->p[P_E1] = 0;
         check("BRGT -64 is a near sine, BRGT +63 a brighter one (more high-frequency energy)",
               rms > 100 && r2 > r1 * 1.3);
-        t->p[P_E5] = 12;
+        t->p[P_E4] = 12;
         trk_note_on(t, 60, 100);
         render(0.5, &rms, 0);
         trk_note_off(t, 60);
         render(1.5, &rms2, 0);
-        t->p[P_E5] = 0;
+        t->p[P_E4] = 0;
         check("TRN +12 still renders (bounded, freed)", rms > 100 && part_voices(t) == 0);
-        t->p[P_E6] = 32;                                  /* ALG override: 32 = six carriers */
-        t->p[P_E7] = 8;                                   /* FB 7 */
+        t->p[P_E5] = 32;                                  /* ALG override: 32 = six carriers */
+        t->p[P_E6] = 8;                                   /* FB 7 */
         trk_note_on(t, 60, 100);
         peak = render(0.5, &rms, 0);
         trk_note_off(t, 60);
         render(1.5, &rms2, 0);
-        t->p[P_E6] = t->p[P_E7] = 0;
+        t->p[P_E5] = t->p[P_E6] = 0;
         check("ALG 32 + FB 7 override: bounded and freed", peak > 500 && peak < 30000 && part_voices(t) == 0);
     }
 

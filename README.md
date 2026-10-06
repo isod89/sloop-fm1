@@ -137,9 +137,9 @@ A user preset or a project saved with a DX7 track remembers **which slot** it pl
 (the stock FM-1 stores the voice inside each of its 128 presets instead): replace that slot and the preset
 follows. Keep the bank, or export it as `.syx`.
 
-On the FM-1: EDIT 1 is **PTCH · BRGT · ENVS** (the voice, the modulators' level — brighter or darker — and
-every envelope faster or slower), EDIT 2 **LFOD · TRN · ALG · FB** (more or less pitch LFO,
-transpose, and an algorithm or feedback override; 0 = the voice's own). The ENV page is a VCA in front of the
+On the FM-1: EDIT 1 (PATCH) is **PTCH · BRGT · ENVS · LFOD** (the voice, the modulators' level — brighter or
+darker — every envelope faster or slower, more or less pitch LFO), EDIT 2 (TONE) **TRN · ALG · FB**
+(transpose, and an algorithm or feedback override; 0 = the voice's own). The ENV page is a VCA in front of the
 voice: the DX7 presets leave it open. An empty slot plays INIT VOICE.
 
 ## Recording and the sequencer

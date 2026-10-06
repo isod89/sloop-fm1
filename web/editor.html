@@ -1638,8 +1638,8 @@ function makeMockDevice(opt = {}) {
         D("PTCH", F.SEMI, -24, 24, 0), D("SPRD", F.PCT, 0, 127, 30), D("RAND", F.PCT, 0, 127, 10), D("TONE", F.PCT, 0, 127, 127)],
       presets: [P("LOFI CLOUD", [0, 45, 95, 85, 0, 35, 12, 80], [70, 90, 120, 90], 0), P("VIBE HAZE", [2, 30, 100, 90, 0, 25, 10, 90], [50, 100, 120, 95], 0),
         P("FLUTE DUST", [5, 50, 108, 72, 0, 10, 10, 85], [50, 100, 127, 100], 0)] },
-    ...(opt.v6 ? [] : [{ name: "DX7", titles: ["PATCH", "TONE"], edit: [D("PTCH", F.INT, 0, 127, 0), NONE, D("BRGT", F.BIPCT, -64, 63, 0), D("ENVS", F.BIPCT, -64, 63, 0),
-        D("LFOD", F.BIPCT, -64, 63, 0), D("TRN", F.SEMI, -24, 24, 0), D("ALG", F.INT, 0, 32, 0), D("FB", F.INT, 0, 8, 0)],
+    ...(opt.v6 ? [] : [{ name: "DX7", titles: ["PATCH", "TONE"], edit: [D("PTCH", F.INT, 0, 127, 0), D("BRGT", F.BIPCT, -64, 63, 0), D("ENVS", F.BIPCT, -64, 63, 0), D("LFOD", F.BIPCT, -64, 63, 0),
+        D("TRN", F.SEMI, -24, 24, 0), D("ALG", F.INT, 0, 32, 0), D("FB", F.INT, 0, 8, 0), NONE],
       presets: [P("DX7", [0, 0, 0, 0, 0, 0, 0, 0], [0, 127, 127, 110], 0)] }]),
   ];
   /* demo patterns of the mock only (the LIVE firmware has no factory patterns: a preset never writes the

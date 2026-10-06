@@ -303,12 +303,12 @@ static dx_voice_t *dx_voice(track_t *t, voice_t *v) { return &dx_v[(uint32_t)(t 
 
 static uint32_t dx_alg_index(const track_t *t, const uint8_t *p)   /* ALG macro 1..32 overrides the voice's */
 {
-    int32_t a = t->p[P_E6];
+    int32_t a = t->p[P_E5];
     return a > 0 ? (uint32_t)(a - 1) & 31u : p[110] & 31u;
 }
 static uint32_t dx_fb(const track_t *t, const uint8_t *p)
 {
-    int32_t f = t->p[P_E7];
+    int32_t f = t->p[P_E6];
     return f > 0 ? (uint32_t)(f - 1) & 7u : p[111] & 7u;
 }
 
@@ -399,7 +399,7 @@ static void dx_env_advance(const track_t *t, dx_op_t *e, const uint8_t *o, uint3
         e->target = act << 16;
         e->rising = e->target > e->level;
         qr = ((int32_t)o[ix] * 41) >> 6;
-        qr += e->rs + (t->p[P_E3] >> 3);                  /* ENVS: -8 .. +7 quarter-octave steps of speed */
+        qr += e->rs + (t->p[P_E2] >> 3);                  /* ENVS: -8 .. +7 quarter-octave steps of speed */
         qr = clamp(qr, 0, 63);
         e->inc = (4 + (qr & 3)) << (2 + CTL_LOG2 + (qr >> 2));
     }
@@ -513,7 +513,7 @@ static int32_t dx7_amp(track_t *t, voice_t *v, int32_t adsr)
     dx_voice_t *s = dx_voice(t, v);
     const uint8_t *p = d->p;
     uint32_t j, alive = 0;
-    int32_t amd = ((int32_t)dx99(p[115]) * 165) >> 6, amod, bright = dx_exp2_q14((int32_t)t->p[P_E2] << 19);
+    int32_t amd = ((int32_t)dx99(p[115]) * 165) >> 6, amod, bright = dx_exp2_q14((int32_t)t->p[P_E1] << 19);
     if (!v->gate && s->down) {                            /* key up: every envelope to its release */
         s->down = 0;
         for (j = 0; j < 6u; j++)
@@ -560,10 +560,10 @@ static void dx7_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
     int32_t gstep[6], g[6], pm_lfo, base, norm = DX_CARNORM[d->ncar], fb0 = s->fb0, fb1 = s->fb1;
     fbs = fbs ? 8u - fbs : 16u;
     {   /* the pitch of this block: transpose, TRN, the pitch envelope, the LFO (Q24 octaves) */
-        int32_t pmd = clamp((int32_t)p[114] + t->p[P_E4], 0, 99), sens = DX_PMS[(p[116] >> 4) & 7u];
+        int32_t pmd = clamp((int32_t)p[114] + t->p[P_E3], 0, 99), sens = DX_PMS[(p[116] >> 4) & 7u];
         pmd = (int32_t)(((int64_t)((pmd * 165) >> 6) * d->dly) >> 8);   /* Q24 (255 x 2^24 needs 64 bits) */
         pm_lfo = (int32_t)(((int64_t)pmd * (sens * (d->lfo - (1 << 23)))) >> 31);
-        base = ((int32_t)(p[117] > 48u ? 48u : p[117]) - 24 + t->p[P_E5]) * DX_SEMI + s->penv + pm_lfo;
+        base = ((int32_t)(p[117] > 48u ? 48u : p[117]) - 24 + t->p[P_E4]) * DX_SEMI + s->penv + pm_lfo;
     }
     for (j = 0; j < 6u; j++) {
         const uint8_t *o = p + j * 17u;
@@ -618,7 +618,7 @@ static const char *dx7_sound(const track_t *t, char *b)
 }
 
 static const preset_t DX7_PRESETS[] = {
-    /* PTCH - BRGT ENVS LFOD TRN ALG FB ; the ADSR open: the voice's envelopes shape the sound */
+    /* PTCH BRGT ENVS LFOD TRN ALG FB - ; the ADSR open: the voice's envelopes shape the sound */
     {"DX7", {0, 0, 0, 0, 0, 0, 0, 0}, {0, 127, 127, 110}, 0, 0, FX(0, 0, 0, 20)},
 };
 
@@ -626,14 +626,14 @@ static const engine_t ENG_DX7 = {
     "DX7", {"PATCH", "TONE"},
     {
         {"PTCH", F_INT, 0, 127, 0, 0, 0},
-        {"-", F_INT, 0, 0, 0, 0, 0},
         {"BRGT", F_BIPCT, -64, 63, 0, 0, 0},
         {"ENVS", F_BIPCT, -64, 63, 0, 0, 0},
         {"LFOD", F_BIPCT, -64, 63, 0, 0, 0},
         {"TRN", F_SEMI, -24, 24, 0, 0, 0},
         {"ALG", F_INT, 0, 32, 0, 0, 0},
         {"FB", F_INT, 0, 8, 0, 0, 0},
+        {"-", F_INT, 0, 0, 0, 0, 0},
     },
     DX7_PRESETS, sizeof(DX7_PRESETS) / sizeof(DX7_PRESETS[0]), -1, dx7_note_on, dx7_render,
-    0x9DBF, {P_E0, P_E2, P_E3, P_REL}, 0, dx7_amp, 0, dx7_block, dx7_sound,
+    0x9DBF, {P_E0, P_E1, P_E2, P_REL}, 0, dx7_amp, 0, dx7_block, dx7_sound,
 };
