@@ -405,16 +405,63 @@ static uint32_t preset_at(uint32_t n, uint32_t *k)
     *k = bank_pi[n] == 0xFF ? 0u : bank_pi[n];
     return BANK[n].e;
 }
-static const char *preset_kind(uint32_t n)
+/* the group of list index n: a kind (0..7), a DX7 bank (8..11: the tag DX1..DX4), the user presets (12) */
+enum { PG_DX = BK_FX + 1, PG_USER = PG_DX + 4 };
+#if FELUCCA_DX7
+static const char *const DX_TAG[4] = {"DX1", "DX2", "DX3", "DX4"};
+#endif
+static uint32_t preset_group(uint32_t n)
 {
     uint32_t nb = nbank_shown();
     if (n < nb)
-        return BANK_KIND[BANK[n].kind];
+        return BANK[n].kind;
 #if FELUCCA_DX7
     if (n - nb < dx_count())
-        return "DX7";
+        return PG_DX + dx_nth(n - nb) / DX_BANK_N;
+#endif
+    return PG_USER;
+}
+static const char *preset_kind(uint32_t n)
+{
+    uint32_t g = preset_group(n);
+    if (g < PG_DX)
+        return BANK_KIND[g];
+#if FELUCCA_DX7
+    if (g < PG_USER)
+        return DX_TAG[g - PG_DX];
 #endif
     return "USER";
+}
+/* the first entry of the next (dir > 0) or previous group, wrapping round: the PRESETS page's KNOB 3 jumps
+ * by kind (basses, keys, ... a DX7 bank, the user presets) instead of one sound at a time */
+static uint32_t preset_group_jump(uint32_t cur, int dir)
+{
+    uint32_t total, n, g;
+    preset_pos(&total);
+    if (!total)
+        return 0;
+    cur %= total;
+    g = preset_group(cur);
+    if (dir > 0) {
+        for (n = (cur + 1u) % total; n != cur; n = (n + 1u) % total)
+            if (preset_group(n) != g)
+                return n;
+        return cur;
+    }
+    n = cur;
+    while (n && preset_group(n - 1u) == g)                /* the start of this group ... */
+        n--;
+    if (n == 0u) {                                       /* ... was the first: the last group's start */
+        g = preset_group(total - 1u);
+        for (n = total - 1u; n && preset_group(n - 1u) == g; n--)
+            ;
+        return n;
+    }
+    n--;                                                 /* the previous group: back to its start */
+    g = preset_group(n);
+    while (n && preset_group(n - 1u) == g)
+        n--;
+    return n;
 }
 
 static void preset_go(uint32_t n)                    /* load list index n into the selected track */

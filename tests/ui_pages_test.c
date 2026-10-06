@@ -123,15 +123,33 @@ int main(int argc, char **argv)
         check(total1 == total0 + 2u, "DX7 voices: 3 loaded -> the list grows by 2 (the INIT entry gives way)");
         e = preset_at(total1 - 2u - 1u, &k);             /* the last DX7 voice: before the 2 user presets */
         dx_slot_name(k, nm);
-        check(e == PRESET_DX7 && k == 127u && str_eq(nm, "TUB BELLS") && str_eq(preset_kind(total1 - 3u), "DX7"),
-              "DX7 voices: the last voice in the list is slot 128, TUB BELLS, kind DX7");
+        check(e == PRESET_DX7 && k == 127u && str_eq(nm, "TUB BELLS") && str_eq(preset_kind(total1 - 3u), "DX4"),
+              "DX7 voices: the last voice in the list is slot 128, TUB BELLS, tag DX4 (its bank)");
         track_select(0);
         preset_go(total1 - 4u);                          /* BRASS 1 */
         cur = preset_pos(&total1);
-        check(TSEL->eng_req == ENG_DX7_IDX && TSEL->p[P_E0] == 40 && cur == total1 - 4u && str_eq(preset_kind(cur), "DX7"),
+        check(TSEL->eng_req == ENG_DX7_IDX && TSEL->p[P_E0] == 40 && cur == total1 - 4u && str_eq(preset_kind(cur), "DX2"),
               "DX7 voices: picking one selects the engine, the slot and the list position");
         preset_go(0);                                    /* back to the first factory sound */
         check(TSEL->eng_req == 0 && preset_pos(&total1) == 0, "DX7 voices: the first entry is a factory sound again");
+        {   /* KNOB 3 on the PRESETS page: by kind, through the DX7 banks that have voices, round and back */
+            uint32_t n = 0, hops = 0, seen_dx = 0, back;
+            char path[160];
+            path[0] = 0;
+            do {
+                n = preset_group_jump(n, 1);
+                str_cpy(path + str_len(path), preset_kind(n), 5);
+                str_cpy(path + str_len(path), " ", 2);
+                seen_dx += str_eq(preset_kind(n), "DX1") || str_eq(preset_kind(n), "DX2") || str_eq(preset_kind(n), "DX4");
+                hops++;
+            } while (n != 0u && hops < 20u);
+            check(hops == 12u && seen_dx == 3u && str_eq(preset_kind(total1 - 1u), "USER"),
+                  "PRESETS KNOB 3: 12 kinds round (8 kinds, DX1 DX2 DX4, USER) and back to the start");
+            printf("ui:   kinds: %s\n", path);
+            back = preset_group_jump(0, -1);
+            check(str_eq(preset_kind(back), "USER") && preset_group_jump(back, -1) < back && str_eq(preset_kind(preset_group_jump(back, -1)), "DX4"),
+                  "PRESETS KNOB 3: backwards from the start lands on USER's first entry, then DX4's");
+        }
         memset(dx_host_store, 0xFF, sizeof dx_host_store);
         dx_gen++;
         preset_pos(&total1);
