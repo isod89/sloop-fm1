@@ -93,7 +93,7 @@ static uint32_t page_first(uint32_t fam)
 {
     uint32_t i;
     for (i = 0; i < NPAGES; i++)
-        if (PAGES[i].fam == fam)
+        if (PAGES[i].fam == fam && page_valid_for_trk(&PAGES[i]))
             return i;
     return 0;
 }
@@ -184,12 +184,17 @@ static void open_family(uint32_t fam)
 {
     if (!ui.home && cur_page()->fam == fam) {          /* same button again: next page */
         uint32_t i = ui.page + 1u;
+        while (i < NPAGES && PAGES[i].fam == fam && !page_valid_for_trk(&PAGES[i]))
+            i++;
         if (i >= NPAGES || PAGES[i].fam != fam)
             i = page_first(fam);
         ui.page = (uint8_t)i;
     } else {
-        ui.page = ui.fam_last[fam] && PAGES[ui.fam_last[fam]].fam == fam ? ui.fam_last[fam]
-                                                                          : (uint8_t)page_first(fam);
+        uint32_t p = ui.fam_last[fam];
+        if (p < NPAGES && PAGES[p].fam == fam && page_valid_for_trk(&PAGES[p]))
+            ui.page = (uint8_t)p;
+        else
+            ui.page = (uint8_t)page_first(fam);
     }
     ui.fam_last[fam] = ui.page;
     ui.home = 0;
@@ -316,20 +321,20 @@ static const struct { uint8_t kind, e; const char *name; } BANK[] = {
     {BK_BASS, 0, "808 BOOM"}, {BK_BASS, 0, "808 DIRTY"}, {BK_BASS, 0, "808 SLIDE"}, {BK_BASS, 0, "SUB BASS"},
     {BK_BASS, 0, "PLUGG BASS"}, {BK_BASS, 0, "REESE"}, {BK_BASS, 0, "WOBBLE"}, {BK_BASS, 0, "ACID 303"},
     {BK_BASS, 1, "FM BASS"}, {BK_BASS, 2, "CZ BASS"}, {BK_BASS, 6, "FAT BASS"}, {BK_BASS, 0, "FUNK BASS"},
-    {BK_BASS, 5, "WOW BASS"}, {BK_BASS, 3, "GB BASS"}, {BK_BASS, 4, "UP BASS"}, {BK_BASS, 4, "DEEP BASS"},
+    {BK_BASS, 5, "WOW BASS"}, {BK_BASS, 3, "GB BASS"}, {BK_BASS, 4, "UP BASS"}, {BK_BASS, 4, "DEEP BASS"}, {BK_BASS, 9, "STACK BASS"},
     {BK_KEYS, 1, "RHODES"}, {BK_KEYS, 1, "DX RHODES"}, {BK_KEYS, 1, "WURLI"}, {BK_KEYS, 1, "M1 PIANO"},
     {BK_KEYS, 1, "AFRO KEYS"}, {BK_KEYS, 4, "GRAND PNO"}, {BK_KEYS, 4, "DUSTY PNO"}, {BK_KEYS, 4, "LOFI KEYS"}, {BK_KEYS, 2, "SOFT KEYS"},
-    {BK_KEYS, 1, "CLAV"},
+    {BK_KEYS, 1, "CLAV"}, {BK_KEYS, 9, "FLOYD TINE"}, {BK_KEYS, 9, "WARM SINE"},
     {BK_ORGAN, 7, "SOUL ORGAN"}, {BK_ORGAN, 7, "GOSPEL"}, {BK_ORGAN, 7, "JAZZ ORGAN"}, {BK_ORGAN, 7, "DIRTY B3"},
-    {BK_ORGAN, 7, "HOUSE ORGN"},
+    {BK_ORGAN, 7, "HOUSE ORGN"}, {BK_ORGAN, 9, "ORGAN 4"},
     {BK_PAD, 0, "WARM PAD"}, {BK_PAD, 6, "SAW PAD"}, {BK_PAD, 1, "GLASS PAD"}, {BK_PAD, 0, "DARK STR"},
     {BK_PAD, 2, "CZ STRING"}, {BK_PAD, 0, "ATMOS PAD"}, {BK_PAD, 8, "LOFI CLOUD"}, {BK_PAD, 8, "VIBE HAZE"},
-    {BK_PAD, 5, "CHOIR AAH"}, {BK_PAD, 5, "SOUL OOH"},
+    {BK_PAD, 5, "CHOIR AAH"}, {BK_PAD, 5, "SOUL OOH"}, {BK_PAD, 9, "VELVET PAD"},
     {BK_LEAD, 0, "SUPERSAW"}, {BK_LEAD, 0, "G-FUNK LD"}, {BK_LEAD, 6, "SYNC LEAD"}, {BK_LEAD, 6, "HOOVER"},
-    {BK_LEAD, 5, "TALKBOX"}, {BK_LEAD, 3, "GAME LEAD"}, {BK_LEAD, 4, "LOFI FLUTE"}, {BK_LEAD, 8, "FLUTE DUST"},
+    {BK_LEAD, 5, "TALKBOX"}, {BK_LEAD, 3, "GAME LEAD"}, {BK_LEAD, 4, "LOFI FLUTE"}, {BK_LEAD, 8, "FLUTE DUST"}, {BK_LEAD, 9, "DUAL LEAD"},
     {BK_PLUCK, 0, "TRAP PLUCK"}, {BK_PLUCK, 2, "RESO PLUCK"}, {BK_PLUCK, 1, "PLUGG BELL"}, {BK_PLUCK, 1, "TRAP BELL"},
     {BK_PLUCK, 1, "MUSIC BOX"}, {BK_PLUCK, 1, "KALIMBA"}, {BK_PLUCK, 1, "MARIMBA"}, {BK_PLUCK, 4, "VIBES"},
-    {BK_PLUCK, 3, "8BIT ARP"},
+    {BK_PLUCK, 3, "8BIT ARP"}, {BK_PLUCK, 9, "CRYSTAL"}, {BK_PLUCK, 9, "METALLIC"},
     {BK_STAB, 6, "MIN STAB"}, {BK_STAB, 6, "MIN7 STAB"}, {BK_STAB, 6, "RAVE STAB"}, {BK_STAB, 6, "DUB CHORD"},
     {BK_STAB, 0, "SYN BRASS"}, {BK_STAB, 2, "CZ BRASS"}, {BK_STAB, 4, "HORN STAB"}, {BK_STAB, 4, "STRING STB"},
     {BK_FX, 4, "SCRATCH"}, {BK_FX, 4, "GM KIT"},

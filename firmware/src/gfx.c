@@ -43,11 +43,45 @@ static uint16_t pal[5];
 #define C_AMB pal[3]                 /* 4 secondary text */
 #define C_HI pal[4]                  /* 5 values, curves */
 
+/* 12-Step Spectral Gradient Palette for FLOYD FM Visualizer */
+static const uint16_t SPECTRAL_LUT_RGB565[12] = {
+    0x1A0D, /* Step 0:  Deep Navy Blue (Pure fundamental sinus) */
+    0x1128, /* Step 1:  Midnight Blue */
+    0x18CA, /* Step 2:  Deep Indigo */
+    0x51B0, /* Step 3:  Rich Violet */
+    0x7914, /* Step 4:  Purple-Magenta */
+    0xA08D, /* Step 5:  Magenta */
+    0xC007, /* Step 6:  Deep Crimson */
+    0xE120, /* Step 7:  Orange-Red */
+    0xF2B1, /* Step 8:  Coral Pink */
+    0xFAAA, /* Step 9:  Electric Orange */
+    0xFBC8, /* Step 10: Bright Amber */
+    0xF900  /* Step 11: Fiery Red (Max FM brightness) */
+};
+
+#define FLOYD_OP1_COL RGB(0, 225, 255)   /* Electric Cyan / Sky Blue */
+#define FLOYD_OP2_COL RGB(255, 175, 10)   /* Vivid Amber Gold */
+#define FLOYD_OP3_COL RGB(40, 240, 110)   /* Spring Emerald Green */
+#define FLOYD_OP4_COL RGB(255, 55, 140)   /* Hot Magenta / Crimson */
+#define GHOST_OP2 FLOYD_OP2_COL
+#define GHOST_OP3 FLOYD_OP3_COL
+#define GHOST_OP4 FLOYD_OP4_COL
+
 static void palette_set(uint32_t i)
 {
     uint32_t k;
     for (k = 0; k < 5u; k++)
         pal[k] = PALETTES[i % NPALETTES].c[k];
+}
+
+static inline uint16_t rgb_blend(uint16_t c1, uint16_t c2, uint32_t t_q8)
+{
+    uint32_t r1 = (c1 >> 11) & 31u, g1 = (c1 >> 5) & 63u, b1 = c1 & 31u;
+    uint32_t r2 = (c2 >> 11) & 31u, g2 = (c2 >> 5) & 63u, b2 = c2 & 31u;
+    uint32_t r = (r1 * (256u - t_q8) + r2 * t_q8) >> 8;
+    uint32_t g = (g1 * (256u - t_q8) + g2 * t_q8) >> 8;
+    uint32_t b = (b1 * (256u - t_q8) + b2 * t_q8) >> 8;
+    return (uint16_t)((r << 11) | (g << 5) | b);
 }
 
 static inline uint16_t swap16(uint32_t c) { return (uint16_t)(((c >> 8) & 0xFFu) | ((c & 0xFFu) << 8)); }

@@ -265,7 +265,7 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
 /* ------------------------------------------------------------ pages --- */
 enum { FAM_HOME, FAM_ENV, FAM_LFO, FAM_FX, FAM_SCL, FAM_EDIT, FAM_GLO, FAM_SAVE, FAM_ARP, FAM_SEQ, FAM_TRK,
        FAM_COUNT };
-enum { SC_TRACK, SC_GLOBAL, SC_ENGINE, SC_STEP, SC_TRK, SC_SONG, SC_DRUM };
+enum { SC_TRACK, SC_GLOBAL, SC_ENGINE, SC_STEP, SC_TRK, SC_SONG, SC_DRUM, SC_FLOYD };
 enum { GR_NONE, GR_ADSR, GR_LFO, GR_STEPS, GR_ARP, GR_SCALE, GR_FX, GR_ROLL, GR_BROWSE, GR_SLOTS, GR_USER, GR_TRK,
        GR_SLCR };
 
@@ -290,9 +290,16 @@ static const page_t PAGES[] = {
     {"EDIT 2", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E4, P_E5, P_E6, P_E7}},
     {"VOICE", FAM_EDIT, SC_TRACK, GR_NONE, {P_VOICE, P_GLIDE, P_GLMODE, P_PRIO}},
     {"VOICE 2", FAM_EDIT, SC_TRACK, GR_NONE, {P_ALLOC, P_DETUNE, P_PAN, P_MUTE}},
+    {"ALGO", FAM_EDIT, SC_FLOYD, GR_NONE, {P_E0, P_LEVEL, P_PAN, P_DETUNE}},
+    {"OP1", FAM_EDIT, SC_FLOYD, GR_NONE, {P_ATK, P_DEC, P_SUS, P_REL}},
+    {"OP2", FAM_EDIT, SC_FLOYD, GR_NONE, {0, 1, 2, 3}},
+    {"OP3", FAM_EDIT, SC_FLOYD, GR_NONE, {0, 1, 2, 3}},
+    {"OP4", FAM_EDIT, SC_FLOYD, GR_NONE, {0, 1, 2, 3}},
+    {"LEVEL", FAM_EDIT, SC_FLOYD, GR_NONE, {0, 1, 2, 3}},
+    {"RATIO", FAM_EDIT, SC_FLOYD, GR_NONE, {0, 1, 2, 3}},
     {"GLOBAL", FAM_GLO, SC_GLOBAL, GR_NONE, {G_BPM, G_SWING, G_CLOCK, G_TUNE}},
     {"MASTER", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DUST, G_DUCK, G_FILT, G_ROLL}},
-    {"SYSTEM", FAM_GLO, SC_GLOBAL, GR_NONE, {G_MIDI, G_SYNC, G_ROUTE, G_INFO}},
+    {"SYSTEM", FAM_GLO, SC_GLOBAL, GR_NONE, {G_MIDI, G_SYNC, G_NOTELIT, G_INFO}},
     {"DRUMS", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DRCH, G_DRLVL, G_DRREV, 0xFF}},   /* GM kit on MIDI ch 10 */
     {"PRESETS", FAM_SAVE, SC_GLOBAL, GR_BROWSE, {0xFF, 0xFF, 0xFF, 0xFF}},   /* browser: PRESETS knob / KNOB 1 */
     {"USER", FAM_SAVE, SC_GLOBAL, GR_USER, {0xFF, 0xFF, 0xFF, 0xFF}},       /* user presets: SLOT LOAD ERASE SAVE */
@@ -308,6 +315,22 @@ static const page_t PAGES[] = {
 };
 #define NPAGES (sizeof(PAGES) / sizeof(PAGES[0]))
 
+static int is_floyd_trk(const track_t *t)
+{
+    return !is_drum(t) && ENGINES[t->eng_req % NENGINES] == &ENG_FLOYD;
+}
+
+static int page_valid_for_trk(const page_t *pg)
+{
+    if (pg->fam == FAM_EDIT) {
+        if (is_floyd_trk(TSEL))
+            return pg->scope == SC_FLOYD;
+        else
+            return pg->scope == SC_ENGINE || pg->scope == SC_TRACK;
+    }
+    return 1;
+}
+
 /* the drum track has no sound of its own: it uses the global pages (not the preset
  * pages, nor TOOLS > INIT: page_desc), STEP, PATTERN, SLICER and TRACKS; every other page
  * shows "DRUM TRACK" */
@@ -315,8 +338,22 @@ static int page_for_drum(const page_t *pg)
 {
     if (pg->scope == SC_GLOBAL)
         return pg->graph != GR_BROWSE && pg->graph != GR_USER;
-    return pg->scope != SC_ENGINE && (pg->scope != SC_TRACK || pg->fam == FAM_SEQ || pg->graph == GR_SLCR);
+    return pg->scope != SC_ENGINE && pg->scope != SC_FLOYD && (pg->scope != SC_TRACK || pg->fam == FAM_SEQ || pg->graph == GR_SLCR);
 }
+
+static const param_desc_t FL_LVL[4] = {
+    PD("LVL 1", F_PCT, 0, 127, 127),
+    PD("LVL 2", F_PCT, 0, 127, 64),
+    PD("LVL 3", F_PCT, 0, 127, 40),
+    PD("LVL 4", F_PCT, 0, 127, 32),
+};
+
+static const param_desc_t FL_RAT[4] = {
+    PD("FDBK", F_PCT, 0, 127, 0),
+    PE("RAT 2", N_FLOYD_RATIO, 1),
+    PE("RAT 3", N_FLOYD_RATIO, 2),
+    PE("RAT 4", N_FLOYD_RATIO, 4),
+};
 
 static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **valp)
 {
@@ -332,6 +369,41 @@ static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **
     if (pg->scope == SC_GLOBAL) {
         *valp = &song.g[id];
         return &GP[id];
+    }
+    if (pg->scope == SC_FLOYD) {
+        uint32_t part = floyd_part(TSEL);
+        if (pg->title[0] == 'A') { /* ALGO */
+            if (slot == 0) { *valp = &TSEL->p[P_E0]; return &ENG_FLOYD.edit[0]; }
+            if (slot == 1) { *valp = &TSEL->p[P_LEVEL]; return &TP[P_LEVEL]; }
+            if (slot == 2) { *valp = &TSEL->p[P_PAN]; return &TP[P_PAN]; }
+            *valp = &TSEL->p[P_DETUNE]; return &TP[P_DETUNE];
+        }
+        if (pg->title[0] == 'O' && pg->title[1] == 'P') {
+            uint32_t op_idx = (uint32_t)(pg->title[2] - '1');
+            if (op_idx == 0) {
+                if (slot == 0) { *valp = &TSEL->p[P_ATK]; return &TP[P_ATK]; }
+                if (slot == 1) { *valp = &TSEL->p[P_DEC]; return &TP[P_DEC]; }
+                if (slot == 2) { *valp = &TSEL->p[P_SUS]; return &TP[P_SUS]; }
+                *valp = &TSEL->p[P_REL]; return &TP[P_REL];
+            } else {
+                if (slot == 0) { *valp = &floyd_state[part].atk[op_idx]; return &TP[P_ATK]; }
+                if (slot == 1) { *valp = &floyd_state[part].dec[op_idx]; return &TP[P_DEC]; }
+                if (slot == 2) { *valp = &floyd_state[part].sus[op_idx]; return &TP[P_SUS]; }
+                *valp = &floyd_state[part].rel[op_idx]; return &TP[P_REL];
+            }
+        }
+        if (pg->title[0] == 'L') { /* LEVEL */
+            if (slot == 0) { *valp = &floyd_state[part].lvl[0]; return &FL_LVL[0]; }
+            if (slot == 1) { *valp = &TSEL->p[P_E4]; return &FL_LVL[1]; }
+            if (slot == 2) { *valp = &TSEL->p[P_E6]; return &FL_LVL[2]; }
+            *valp = &floyd_state[part].lvl[3]; return &FL_LVL[3];
+        }
+        if (pg->title[0] == 'R') { /* RATIO */
+            if (slot == 0) { *valp = &TSEL->p[P_E7]; return &FL_RAT[0]; }
+            if (slot == 1) { *valp = &TSEL->p[P_E1]; return &FL_RAT[1]; }
+            if (slot == 2) { *valp = &TSEL->p[P_E2]; return &FL_RAT[2]; }
+            *valp = &TSEL->p[P_E3]; return &FL_RAT[3];
+        }
     }
     *valp = &TSEL->p[id];
     return track_desc(TSEL, id);

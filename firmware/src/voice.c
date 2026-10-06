@@ -285,7 +285,7 @@ static void voice_start(track_t *t, voice_t *v, uint32_t note, uint32_t vel, int
         if (e == &ENG_ANALOG) {
             v->s[0] = s0;
             v->s[1] = s1;
-        } else if (e == &ENG_DIGITAL) {
+        } else if (e == &ENG_DIGITAL || e == &ENG_FLOYD) {
             v->s[5] = s5;
             v->s[6] = s6;
             v->s[7] = s7;                               /* op 4 phase; the modulator envelope restarts */

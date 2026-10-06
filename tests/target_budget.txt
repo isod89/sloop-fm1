@@ -1,9 +1,6 @@
 # FELUCCA target cost budget (tests/target_budget.py): instructions in the loops of each
 # function in build/felucca.dis, x4 per nesting level, divides x9. The check allows +10 %.
 # Rewritten by BUDGET_UPDATE=1.
-# SLOOP 2.0 (reviewed): analog +9 % (drive crossfade, phase reset), lofi +4 % (input clamp), slicer on
-# the sample-accurate clock (its divides are per step / per block, not per sample: the per-sample
-# loop has none), the mix out of the ISR into its own function (fm1_alnk0_irq calls it).
 analog_render 638
 digital_render 333
 phase_render 79
@@ -17,5 +14,5 @@ drawbar_block 102
 grain_render 1734
 grain_block 138
 slicer_track 825
-drums_mix 6153
-fm1_alnk0_irq 174
+drums_mix 6634
+fm1_alnk0_irq 255

@@ -463,6 +463,58 @@ int main(int argc, char **argv)
         ui.menu = 0; ui.force = 1; go_home(); frame();
     }
 
+    {   /* FLOYD engine: 7 EDIT pages, per-operator ADSR, levels, ratios */
+        song.sel = 0;
+        uint32_t floyd_idx = 0;
+        for (i = 0; i < NENGINES; i++) if (ENGINES[i] == &ENG_FLOYD) floyd_idx = i;
+        trk[0].eng_req = (uint8_t)floyd_idx;
+        trk[0].engine = (uint8_t)floyd_idx;
+        ui.home = 1; open_family(FAM_EDIT); ui.force = 1; frame(); ppm("floyd-1-algo");
+        check(strcmp(cur_page()->title, "ALGO") == 0, "FLOYD page 1: ALGO");
+        open_family(FAM_EDIT); ui.force = 1; frame(); ppm("floyd-2-op1");
+        check(strcmp(cur_page()->title, "OP1") == 0, "FLOYD page 2: OP1");
+        open_family(FAM_EDIT); ui.force = 1; frame(); ppm("floyd-3-op2");
+        check(strcmp(cur_page()->title, "OP2") == 0, "FLOYD page 3: OP2");
+        encs[panel.enc[EN_K1]] = 10; frame();
+        check(floyd_state[0].atk[1] > 5, "FLOYD OP2 ATK knob turned");
+        open_family(FAM_EDIT); ui.force = 1; frame(); ppm("floyd-4-op3");
+        check(strcmp(cur_page()->title, "OP3") == 0, "FLOYD page 4: OP3");
+        open_family(FAM_EDIT); ui.force = 1; frame(); ppm("floyd-5-op4");
+        check(strcmp(cur_page()->title, "OP4") == 0, "FLOYD page 5: OP4");
+        open_family(FAM_EDIT); ui.force = 1; frame(); ppm("floyd-6-level");
+        check(strcmp(cur_page()->title, "LEVEL") == 0, "FLOYD page 6: LEVEL");
+        open_family(FAM_EDIT); ui.force = 1; frame(); ppm("floyd-7-ratio");
+        check(strcmp(cur_page()->title, "RATIO") == 0, "FLOYD page 7: RATIO");
+
+        /* Live note tracer screenshot */
+        trk[0].v[0].active = 1;
+        trk[0].v[0].gate = 1;
+        trk[0].v[0].stage = 2;
+        trk[0].v[0].env_out = 18000;
+        trk[0].v[0].s[0] = 1 << 23; /* OP2 env level */
+        trk[0].v[0].s[3] = 2;        /* OP2 decay stage */
+        open_family(FAM_EDIT); open_family(FAM_EDIT); open_family(FAM_EDIT); /* OP2 page */
+        ui.force = 1; frame(); ppm("floyd-live-tracer");
+        trk[0].v[0].active = 0; trk[0].v[0].gate = 0;
+
+        open_family(FAM_EDIT); open_family(FAM_EDIT); open_family(FAM_EDIT); open_family(FAM_EDIT); open_family(FAM_EDIT);
+        check(strcmp(cur_page()->title, "ALGO") == 0, "FLOYD cycles back to ALGO (7 pages total)");
+
+        /* Non-Floyd engine: standard 4 pages */
+        trk[0].eng_req = 0; /* ANALOG */
+        trk[0].engine = 0;
+        ui.home = 1; open_family(FAM_EDIT); frame();
+        check(strcmp(cur_page()->title, "EDIT 1") == 0, "ANALOG page 1: EDIT 1");
+        open_family(FAM_EDIT); frame();
+        check(strcmp(cur_page()->title, "EDIT 2") == 0, "ANALOG page 2: EDIT 2");
+        open_family(FAM_EDIT); frame();
+        check(strcmp(cur_page()->title, "VOICE") == 0, "ANALOG page 3: VOICE");
+        open_family(FAM_EDIT); frame();
+        check(strcmp(cur_page()->title, "VOICE 2") == 0, "ANALOG page 4: VOICE 2");
+        open_family(FAM_EDIT); frame();
+        check(strcmp(cur_page()->title, "EDIT 1") == 0, "ANALOG cycles back to EDIT 1 (4 pages total)");
+    }
+
     {   /* fuzz: 20000 frames of random buttons (held or tapped), knobs and keys, with the audio running
          * between frames; every draw stays on the screen (lcd_blit / lcd_fill assert it) */
         uint32_t f, seed = 777, held = 0;
