@@ -503,9 +503,8 @@ static void graph_floyd(const track_t *t, uint16_t c)
     /* 4. Spectral Gradient Background Glow (Dark to Light Harmonic Tones) */
     {
         int32_t tot_mod = (op_lvl[1] + op_lvl[2] + op_lvl[3]) / 3;
-        uint16_t glow_col = (tot_mod < 25) ? FLOYD_OP1_COL :
-                            (tot_mod < 60) ? FLOYD_OP2_COL :
-                            (tot_mod < 95) ? FLOYD_OP3_COL : FLOYD_OP4_COL;
+        uint32_t lut_idx = (uint32_t)clamp(tot_mod * 11 / 127, 0, 11);
+        uint16_t glow_col = SPECTRAL_LUT_RGB565[lut_idx];
 
         /* Soft luminous aura under the sound */
         for (int32_t seg = 0; seg < 4; seg++) {
