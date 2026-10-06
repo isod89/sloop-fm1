@@ -966,8 +966,13 @@ static void key_down(uint32_t k)
         int32_t fx = punch_key(k);
         kb_kind[k] = KS_FX;
         if (fx >= 0 && fx < (int32_t)PUNCH_NFX) {
-            punch.req = (int8_t)fx;
-            punch.keybit = 1u << k;
+            if (punch_latch) {                        /* LATCH: the key switches it on, the same key off */
+                punch.req = punch.req == (int8_t)fx ? (int8_t)-1 : (int8_t)fx;
+                punch.keybit = 0;                     /* (no key-up ends it) */
+            } else {
+                punch.req = (int8_t)fx;
+                punch.keybit = 1u << k;
+            }
         }
         return;
     }
@@ -1293,6 +1298,8 @@ static void seq_stop(void)
     live_req = -1;
 #endif
     song.playing = 0;
+    if (punch_latch && !punch.keybit)
+        punch.req = -1;                            /* STOP ends a latched punch-in effect */
     for (i = 0; i < NTRK; i++) {
         seq_release(&trk[i]);
         trk[i].rh_n = 0;                           /* a recorded note held over the stop: as far as it got */

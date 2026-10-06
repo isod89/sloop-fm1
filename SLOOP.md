@@ -114,7 +114,7 @@ The tiles are four rows of four, keys 1–4, 5–8, 9–12, 13–16. To find the
 
 | Hold | Keys | KNOB 1 · 2 · 3 · 4 | Tap |
 | --- | --- | --- | --- |
-| **FX** — *punch* | a punch-in effect while the key is held | FILTER · DUST · DUCK · — | FX pages |
+| **FX** — *punch* | a punch-in effect while the key is held (or latched: menu PUNCH) | FILTER · DUST · DUCK · — | FX pages |
 | **EDIT** — *erase* | erase that sound / note from the pattern | SHIFT · LENGTH ×2 / ½ · TRANSPOSE · — | EDIT pages (drums: grid / kit) |
 | **ARP** — *roll* | note repeat on the grid | RATE · — · — · — | ARP pages |
 | **SEQ** — *steps* | steps 1–16 of the page | SOUND / NOTE · DIV · SWING · LENGTH | SEQ pages (drums: grid / kit) |
@@ -185,7 +185,7 @@ MODE and START are settings of the FM-1: they stay as you left them. In a projec
 
 ### FX — punch
 
-The 16 white keys are the [punch-in effects](#punch-in-effects); they run while the key is held. The knobs drive the [master](#master-dust-duck-filt): **KNOB 1 FILTER** (turn left: low-pass, right: high-pass, centre: off), **KNOB 2 DUST**, **KNOB 3 DUCK**. Keys pressed while FX is held never play or record notes.
+The 16 white keys are the [punch-in effects](#punch-in-effects); they run while the key is held — or, with HOME menu → **PUNCH** set to **LATCH**, a key switches its effect on and it stays with both hands free: the same key again switches it off, another key changes it, STOP ends it (the layer's subtitle reads *key: on/off*). The knobs drive the [master](#master-dust-duck-filt): **KNOB 1 FILTER** (turn left: low-pass, right: high-pass, centre: off), **KNOB 2 DUST**, **KNOB 3 DUCK**. Keys pressed while FX is held never play or record notes.
 
 ### EDIT — erase
 
@@ -378,7 +378,7 @@ USB AUDIO is a setting of the FM-1: it stays as you left it. MIDI, the web edito
 
 ## Lights
 
-Hold **HOME** for the menu: **LIGHTS**, **KEYS** and **NOTES** are together there (with **USB AUDIO**, the level of the USB audio input: see [USB audio](#usb-audio-record-on-a-computer)). PRESETS moves, **KNOB 1** sets, OCT+ steps round, OCT− closes. They are saved with the settings of the FM-1, not with a project: loading a project or NEW PROJECT does not change them.
+Hold **HOME** for the menu: **LIGHTS**, **KEYS** and **NOTES** are together there (with **USB AUDIO**, the level of the USB audio input: see [USB audio](#usb-audio-record-on-a-computer), and **PUNCH**, HOLD or LATCH for the punch-in effects: see [FX — punch](#fx--punch)). PRESETS moves, **KNOB 1** sets, OCT+ steps round, OCT− closes. They are saved with the settings of the FM-1, not with a project: loading a project or NEW PROJECT does not change them.
 
 - **LIGHTS** — OFF, LOW, MID, HIGH: every button glows at that level, so its label can be read in the dark (on a black FM-1 the labels are unreadable unlit). What is on — the page, PLAY, REC, an octave — stays at full light and still blinks as before.
 - **KEYS** — OFF, C KEYS, WHITE KEYS: the Cs, or every white key, glow at the LIGHTS level too (KEYS turns LIGHTS on at LOW if it was off). Played keys and the layer landmarks keep their own light.

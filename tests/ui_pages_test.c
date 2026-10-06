@@ -428,6 +428,33 @@ int main(int argc, char **argv)
         check(lights_notes == 0u && ui.menu == 1, "menu NOTES: OCT+ toggles it off");
         ui.menu = 0; ui.force = 1; go_home(); frame();
     }
+    {   /* menu PUNCH: HOLD (the effect while its key is held) or LATCH (a key switches it on and off) */
+        ui.menu = 1; ui.menu_sel = MI_PUNCH; ui.force = 1; frame(); ppm("menu-punch");
+        encs[panel.enc[EN_K1]] = 1; frame();
+        check(punch_latch == 1u && (lights_word() >> 14 & 1u) == 1u, "menu PUNCH: KNOB 1 right -> LATCH, saved with the settings");
+        ui.menu = 0; ui.force = 1; go_home(); frame();
+        press(B_FX); frames(12);
+        fm1_in.notes = 1u << 4; frame(); fm1_in.notes = 0; frame();
+        check(punch.req == 2 && !punch.keybit, "LATCH: FX + the 3rd white key: effect 3 stays after the key is up");
+        fm1_in.notes = 1u << 6; frame(); fm1_in.notes = 0; frame();
+        check(punch.req == 3, "LATCH: another key switches the effect");
+        fm1_in.notes = 1u << 6; frame(); fm1_in.notes = 0; frame();
+        check(punch.req == -1, "LATCH: the same key again switches it off");
+        fm1_in.notes = 1u << 4; frame(); fm1_in.notes = 0; frame();
+        release(B_FX); frames(2);
+        check(punch.req == 2 && !punch.hold, "LATCH: the effect stays with FX let go");
+        tap(B_PLAY); frames(4); tap(B_PLAY); frames(4);
+        check(punch.req == -1 && !song.playing, "LATCH: STOP ends it");
+        press(B_FX); frames(12); fm1_in.notes = 1u << 4; frame(); fm1_in.notes = 0; frame(); release(B_FX); frames(2);
+        ui.menu = 1; ui.menu_sel = MI_PUNCH; ui.force = 1; frame();
+        encs[panel.enc[EN_K1]] = -1; frame();
+        check(punch_latch == 0u && punch.req == -1, "menu PUNCH: KNOB 1 left -> HOLD, a latched effect ends");
+        ui.menu = 0; ui.force = 1; go_home(); frame();
+        press(B_FX); frames(12); fm1_in.notes = 1u << 4; frame();
+        check(punch.req == 2, "HOLD again: FX + key: the effect while held ...");
+        fm1_in.notes = 0; frame(); release(B_FX); frames(2);
+        check(punch.req == -1, "... and gone with the key, as before");
+    }
 
     {   /* menu LIGHTS / KEYS: the backlight for playing in the dark */
         uint32_t m, nbits;

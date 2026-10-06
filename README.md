@@ -82,7 +82,7 @@ Every function button is a **layer**: hold it and the 16 white keys and the four
 
 | Hold | The white keys | KNOB 1 · 2 · 3 · 4 |
 | --- | --- | --- |
-| **FX** — punch | 16 punch-in effects on the whole mix: loops 1/4–1/32, stutter, reverse, tape stop, half speed, filter sweeps, phone, bit crush, alias, gate, echo, tape wobble | FILTER · DUST · DUCK |
+| **FX** — punch | 16 punch-in effects on the whole mix: loops 1/4–1/32, stutter, reverse, tape stop, half speed, filter sweeps, phone, bit crush, alias, gate, echo, tape wobble (while the key is held, or latched: HOME menu → PUNCH) | FILTER · DUST · DUCK |
 | **EDIT** — erase | erase a sound or a note as the loop plays (stopped: from the whole pattern) | SHIFT · LENGTH ×2 / ½ · TRANSPOSE |
 | **ARP** — roll | note repeat on the grid, recorded as ratchets | RATE (1/8 … 1/64) |
 | **SEQ** — steps | the 16 steps of the page, with a level and a ratchet per step | SOUND / NOTE · DIV · SWING · LENGTH |
@@ -221,6 +221,7 @@ Hold **HOME**. **PRESETS** moves, **KNOB 1** sets, **OCT+** steps round, **OCT�
 | **KEYS** | OFF / C KEYS / WHITE KEYS | the C keys, or every white key, glow too |
 | **NOTES** | OFF / ON | the notes playing on a synth track light their keys, on every page and in every layer |
 | **USB AUDIO** | MASTER / FULL | the level of the USB audio input: follows the MASTER knob, or a fixed full level |
+| **PUNCH** | HOLD / LATCH | the punch-in effects (FX + a key): **HOLD**, the effect lasts while its key is held, as on a pocket operator; **LATCH**, a key switches it on and it stays with both hands free — the same key again, or STOP, switches it off, another key changes it |
 | **HARDWARE CALIBRATION** | | the panel table, if a key or a knob answers wrongly |
 | **ABOUT** | | the version (*SLOOP 2.3*) and its build date, the credits |
 

@@ -481,7 +481,7 @@ static void layer_screen_draw(void)
     switch (layer) {
     case LY_FX:                                         /* the 16 punch-in effects */
         col = TE_DRUM;
-        str_cpy(sub, "hold + key", sizeof sub);
+        str_cpy(sub, punch_latch ? "key: on/off" : "hold + key", sizeof sub);
         for (i = 0; i < 16u; i++) {
             static const char *const PSHORT[16] = {"loop 4", "loop 8", "loop16", "loop32", "stutt", "rev", "stop", "half",
                                                    "low", "high", "phone", "crush", "alias", "gate", "echo", "wobble"};

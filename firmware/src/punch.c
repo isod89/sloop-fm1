@@ -34,6 +34,10 @@ static struct {
     int32_t f1l, f2l, f1r, f2r, f3l, f4l, f3r, f4r;   /* filter states */
     int32_t cut;                  /* sweep, 0..127 << 8 */
 } punch = {.req = -1, .cur = -1};
+/* menu PUNCH: 0 HOLD (the effect lasts while its key is held, as above), 1 LATCH (a key switches the effect on
+ * and it stays after the key is up; the same key again, or STOP, switches it off; another key changes it).
+ * A setting of the FM-1 (panel.c lights_word), not of a project. */
+static uint8_t punch_latch;
 
 static uint32_t beat_samples(void) { return (uint32_t)FS * 60u / (uint32_t)song.g[G_BPM]; }
 

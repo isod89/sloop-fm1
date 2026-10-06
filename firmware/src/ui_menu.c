@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* SLOOP menu (HOME held): COLOR, LOWCUT, ZOOM, LIGHTS, KEYS, NOTES, USB AUDIO, HARDWARE CALIBRATION, ABOUT. */
+/* SLOOP menu (HOME held): COLOR, LOWCUT, ZOOM, LIGHTS, KEYS, NOTES, USB AUDIO, PUNCH, HARDWARE CALIBRATION, ABOUT. */
 /* ------------------------------------------------------------ menu --- */
-enum { MI_COLOR, MI_LOWCUT, MI_ZOOM, MI_LIGHTS, MI_KEYS, MI_NOTES, MI_USB, MI_PANEL, MI_ABOUT, MI_BACK, MI_COUNT };
-static const char *const MI_NAME[MI_COUNT] = {"COLOR", "LOWCUT", "ZOOM", "LIGHTS", "KEYS", "NOTES", "USB AUDIO",
+enum { MI_COLOR, MI_LOWCUT, MI_ZOOM, MI_LIGHTS, MI_KEYS, MI_NOTES, MI_USB, MI_PUNCH, MI_PANEL, MI_ABOUT, MI_BACK, MI_COUNT };
+static const char *const MI_NAME[MI_COUNT] = {"COLOR", "LOWCUT", "ZOOM", "LIGHTS", "KEYS", "NOTES", "USB AUDIO", "PUNCH",
                                               "HARDWARE CALIBRATION", "ABOUT", "BACK"};
 static const char *const LIGHTS_NAME[LIGHTS_N] = {"OFF", "LOW", "MID", "HIGH"};   /* every button lit, the labels readable */
 static const char *const KEYS_NAME[KEYS_N] = {"OFF", "C KEYS", "WHITE KEYS"};      /* keys lit too, at the LIGHTS level */
@@ -13,7 +13,7 @@ static void draw_menu(void)
 {
     uint32_t i, pass, sig = ui.menu * 7u + ui.menu_sel * 131u + settings.palette * 1009u + settings.lowcut * 7919u +
                             settings.zoom * 104729u + lights_lvl * 1299709u + lights_keys * 15485863u +
-                            lights_notes * 32452843u + usb_full * 49979687u;
+                            lights_notes * 32452843u + usb_full * 49979687u + punch_latch * 67867967u;
     if (!ui.force && sig == ui.menu_sig)
         return;
     ui.menu_sig = sig;
@@ -57,6 +57,8 @@ static void draw_menu(void)
                     cv_text(100, y, &FONT_S, LIGHTS_NAME[lights_lvl % LIGHTS_N], C_HI);
                 if (i == MI_USB)                       /* the USB audio input: follows MASTER, or full level */
                     cv_text(100, y, &FONT_S, usb_full ? "FULL" : "MASTER", C_HI);
+                if (i == MI_PUNCH)                     /* the punch-in effects: while the key is held, or latched */
+                    cv_text(100, y, &FONT_S, punch_latch ? "LATCH" : "HOLD", C_HI);
                 if (i == MI_KEYS)
                     cv_text(100, y, &FONT_S, KEYS_NAME[lights_keys % KEYS_N], lights_lvl ? C_HI : C_DIM);   /* (needs LIGHTS) */
                 if (i == MI_COLOR) {
@@ -120,6 +122,12 @@ static void menu_input(uint32_t pressed)
     }
     if ((s != 0 || ok) && ui.menu == 1 && ui.menu_sel == MI_USB) {     /* right FULL, left MASTER; OCT+ toggles */
         usb_full = (uint8_t)(s > 0 ? 1u : s < 0 ? 0u : !usb_full);
+        ok = 0;
+    }
+    if ((s != 0 || ok) && ui.menu == 1 && ui.menu_sel == MI_PUNCH) {   /* right LATCH, left HOLD; OCT+ toggles */
+        punch_latch = (uint8_t)(s > 0 ? 1u : s < 0 ? 0u : !punch_latch);
+        if (!punch_latch && !punch.keybit)
+            punch.req = -1;                           /* back to HOLD: a latched effect ends */
         ok = 0;
     }
     if ((s != 0 || ok) && ui.menu == 1 && ui.menu_sel == MI_NOTES) {   /* (the same: right ON, left OFF) */
