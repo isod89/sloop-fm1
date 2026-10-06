@@ -191,6 +191,34 @@ int main(int argc, char **argv)
     open_family(FAM_GLO); ui.force = 1; frame(); ppm("page-global");
     open_family(FAM_GLO); ui.force = 1; frame(); ppm("page-master");
     open_family(FAM_SCL); ui.force = 1; frame(); ppm("page-scale");
+#if FELUCCA_DX7
+    {   /* the screens with DX7 voices, for a look (after the song is set up: a frame renders audio): TRACKS with
+         * a 10-char name + the engine, the PRESETS page with the DX1..DX4 tags and the KIND column, EDIT 1 and 2,
+         * the bank question in the header */
+        uint32_t total1;
+        memset(dx_host_store, 0xFF, sizeof dx_host_store);
+        memcpy(dx_host_store + 40u * 128u, DX_INIT, 128);
+        memcpy(dx_host_store + 40u * 128u + 118u, "SAW EM UP2", 10);
+        memcpy(dx_host_store + 5u * 128u, DX_INIT, 128);
+        memcpy(dx_host_store + 5u * 128u + 118u, "E.PIANO 1 ", 10);
+        dx_gen++;
+        track_select(0);
+        preset_pos(&total1);
+        preset_go(total1 - 2u - 1u);                     /* SAW EM UP2 (the last DX7 voice, before the 2 user presets) */
+        go_home(); ui.force = 1; frame(); ppm("tracks-dx7");
+        open_family(FAM_ENV); open_family(FAM_SAVE); ui.force = 1; frame();
+        check(cur_page()->graph == GR_BROWSE, "ENV then SAVE opens the PRESETS page (SAVE on TRACKS is the song)");
+        ppm("page-presets-dx7");
+        open_family(FAM_EDIT); ui.force = 1; frame(); ppm("page-edit-dx7");
+        open_family(FAM_EDIT); ui.force = 1; frame(); ppm("page-tone-dx7");
+        go_home(); ui_message("DX7 BANK 1? SAVE=YES"); ui.force = 1; frame(); ppm("head-dx-ask");
+        ui.msg_t = 0; ui.force = 1; frame();
+        preset_go(0);
+        memset(dx_host_store, 0xFF, sizeof dx_host_store);
+        dx_gen++;
+        go_home(); ui.force = 1; frame();
+    }
+#endif
 
     /* ---- taps open pages, holds are layers */
     go_home(); ui.force = 1; frame();
