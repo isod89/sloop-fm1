@@ -114,7 +114,10 @@ The **DX7** engine (track engine 10) is a six-operator FM synth that reads Yamah
 operators, detune, feedback, the pitch envelope and the LFO. Its voices live in **four banks of 32 on the
 FM-1** (PTCH 001–128), loaded from the web editor's **Library → DX7 voices**: open a `.syx` — a 32-voice bank
 replaces the bank shown, a single voice goes into the selected slot — and the FM-1 plays it at once. Export a
-bank as `.syx` for Dexed, erase it, or pick a voice and press *Play on this track*. The banks are part of a
+bank as `.syx` for Dexed, erase it, or pick a voice and press *Play on this track*. **On the FM-1 the loaded
+voices are in the PRESETS list by name**, tagged DX7, after the factory sounds and before your user presets:
+turn PRESETS as for any sound and the track switches to the DX7 engine on that voice. (With no voice loaded
+the list has a single DX7 entry, INIT VOICE.) HOME knob 1 still steps through the 128 slots directly. The banks are part of a
 backup, and they survive a firmware update like everything else on the FM-1.
 
 Where to find voices: the FM-1's **own factory sounds** as four DX7 banks at

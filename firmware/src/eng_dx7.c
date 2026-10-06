@@ -81,6 +81,58 @@ static uint32_t dx_bank_used(uint32_t b)             /* voices in user bank b th
 /* the voice slot k plays; INIT VOICE for an empty or damaged one */
 static const uint8_t *dx_source(uint32_t slot) { return dx_user_ok(slot) ? dx_user_slot(slot) : DX_INIT; }
 
+/* the loaded voices as a bitmap, for the PRESETS browser (ui.c): recomputed after a bank was written
+ * (dx_gen), in the main loop — a scan of the 128 slots, never from the audio ISR */
+static uint8_t dx_map[DX_USER_SLOTS / 8u];
+static uint32_t dx_map_gen = 0xFFFFFFFFu;
+static void dx_map_refresh(void)
+{
+    uint32_t k;
+    if (dx_map_gen == dx_gen)
+        return;
+    for (k = 0; k < DX_USER_SLOTS; k++) {
+        if (dx_user_ok(k))
+            dx_map[k >> 3] |= (uint8_t)(1u << (k & 7u));
+        else
+            dx_map[k >> 3] &= (uint8_t)~(1u << (k & 7u));
+    }
+    dx_map_gen = dx_gen;
+}
+static int dx_loaded(uint32_t k) { dx_map_refresh(); return k < DX_USER_SLOTS && ((dx_map[k >> 3] >> (k & 7u)) & 1u); }
+static uint32_t dx_count(void)                       /* loaded voices */
+{
+    uint32_t k, n = 0;
+    for (k = 0; k < DX_USER_SLOTS; k++)
+        n += (uint32_t)dx_loaded(k);
+    return n;
+}
+static uint32_t dx_rank(uint32_t slot)               /* loaded voices before slot */
+{
+    uint32_t k, n = 0;
+    for (k = 0; k < slot && k < DX_USER_SLOTS; k++)
+        n += (uint32_t)dx_loaded(k);
+    return n;
+}
+static uint32_t dx_nth(uint32_t n)                   /* slot of the n-th loaded voice (n < dx_count()) */
+{
+    uint32_t k;
+    for (k = 0; k < DX_USER_SLOTS; k++)
+        if (dx_loaded(k) && !n--)
+            return k;
+    return 0;
+}
+/* the name of slot k's voice (INIT VOICE when empty), trimmed; b holds 13 */
+static void dx_slot_name(uint32_t k, char *b)
+{
+    const uint8_t *p = dx_source(k & 127u);
+    uint32_t i, n = 10;
+    while (n && p[118 + n - 1u] == ' ')
+        n--;
+    for (i = 0; i < n; i++)
+        b[i] = p[118 + i] > 126u ? ' ' : (char)p[118 + i];
+    b[i] = 0;
+}
+
 /* ---- Yamaha bulk dumps on the MIDI input (editor.c ed_dx_native), as a DX7 and the stock FM-1 take them:
  * a single voice (F0 43 0n 00 01 1B, 155 bytes VCED, checksum) or a 32-voice bank (F0 43 0n 09 20 00, 4096
  * bytes VMEM, checksum). p / n: the 7-bit bytes between F0 and F7. */
@@ -556,13 +608,7 @@ static void dx7_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
 /* the sound's name on the screen: the voice's own (ui_draw.c trk_short_name) */
 static const char *dx7_sound(const track_t *t, char *b)
 {
-    const uint8_t *p = dx_source((uint32_t)t->p[P_E0] & 127u);
-    uint32_t i, n = 10;
-    while (n && p[118 + n - 1u] == ' ')
-        n--;
-    for (i = 0; i < n; i++)
-        b[i] = p[118 + i] > 126u ? ' ' : (char)p[118 + i];
-    b[i] = 0;
+    dx_slot_name((uint32_t)t->p[P_E0] & 127u, b);
     return b;
 }
 

@@ -338,6 +338,16 @@ static const struct { uint8_t kind, e; const char *name; } BANK[] = {
 #endif
 };
 #define NBANK (sizeof BANK / sizeof BANK[0])
+/* The PRESETS list: the factory sounds by kind, then (DX7) every loaded DX7 voice by name, then the used user
+ * presets. The DX7 entry of BANK is the engine's INIT VOICE: it is the LAST entry and is shown only while no
+ * voice is loaded, so a device with voices browses them in its place. PRESET_DX7 marks a voice in the list. */
+#define PRESET_DX7 (NENGINES + 1u)
+#if FELUCCA_DX7
+static uint32_t dx_count(void);
+static uint32_t nbank_shown(void) { return NBANK - (dx_count() ? 1u : 0u); }
+#else
+static uint32_t nbank_shown(void) { return NBANK; }
+#endif
 static uint8_t bank_pi[NBANK];                       /* the preset index of each entry in its engine */
 static uint8_t bank_ready;
 static void bank_resolve(void)
@@ -354,31 +364,58 @@ static void bank_resolve(void)
 }
 static uint32_t preset_pos(uint32_t *total)          /* list index of the selected track's preset */
 {
-    uint32_t i, cur = 0;
+    uint32_t i, cur = 0, nb = nbank_shown(), ndx = 0;
     if (!bank_ready)
         bank_resolve();
-    for (i = 0; i < NBANK; i++)
+    for (i = 0; i < nb; i++)
         if (BANK[i].e == TSEL->eng_req && bank_pi[i] == TSEL->preset)
             cur = i;
+#if FELUCCA_DX7
+    ndx = dx_count();
+    if (ENGINES[TSEL->eng_req % NENGINES] == &ENG_DX7 && ndx) {   /* a DX7 track: its voice in the list */
+        uint32_t slot = (uint32_t)TSEL->p[P_E0] & 127u;
+        cur = nb + (dx_loaded(slot) ? dx_rank(slot) : 0u);
+    }
+#endif
     if (user_of(TSEL) < UP_SLOTS)
-        cur = NBANK + up_rank(user_of(TSEL));
-    *total = NBANK + up_count();
+        cur = nb + ndx + up_rank(user_of(TSEL));
+    *total = nb + ndx + up_count();
     return cur;
 }
 
-/* list index n (< total) -> engine, *k its preset; NENGINES = user preset, *k its slot */
+/* list index n (< total) -> engine, *k its preset; PRESET_DX7 = a DX7 voice, *k its slot; NENGINES = user
+ * preset, *k its slot */
 static uint32_t preset_at(uint32_t n, uint32_t *k)
 {
+    uint32_t nb = nbank_shown();
     if (!bank_ready)
         bank_resolve();
-    if (n >= NBANK) {
-        *k = up_nth(n - NBANK);
+    if (n >= nb) {
+        n -= nb;
+#if FELUCCA_DX7
+        if (n < dx_count()) {
+            *k = dx_nth(n);
+            return PRESET_DX7;
+        }
+        n -= dx_count();
+#endif
+        *k = up_nth(n);
         return NENGINES;
     }
     *k = bank_pi[n] == 0xFF ? 0u : bank_pi[n];
     return BANK[n].e;
 }
-static const char *preset_kind(uint32_t n) { return n < NBANK ? BANK_KIND[BANK[n].kind] : "USER"; }
+static const char *preset_kind(uint32_t n)
+{
+    uint32_t nb = nbank_shown();
+    if (n < nb)
+        return BANK_KIND[BANK[n].kind];
+#if FELUCCA_DX7
+    if (n - nb < dx_count())
+        return "DX7";
+#endif
+    return "USER";
+}
 
 static void preset_go(uint32_t n)                    /* load list index n into the selected track */
 {
@@ -389,6 +426,21 @@ static void preset_go(uint32_t n)                    /* load list index n into t
         up_load(k);
         return;
     }
+#if FELUCCA_DX7
+    if (e == PRESET_DX7) {                           /* a DX7 voice: the engine (its preset), then the slot */
+        if (TSEL->eng_req != ENG_DX7_IDX)
+            select_engine(ENG_DX7_IDX);
+        else
+            apply_preset(0);                         /* (the macros back to neutral, as any preset) */
+        fm1_irq_off();
+        TSEL->p[P_E0] = (int16_t)k;
+        fm1_irq_on();
+        TSEL->user = 0;
+        sync_reload = 1;
+        ui.force = 1;
+        return;
+    }
+#endif
     if (e != TSEL->eng_req)
         select_engine(e);
     apply_preset(k);

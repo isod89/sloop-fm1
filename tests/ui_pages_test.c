@@ -105,6 +105,39 @@ int main(int argc, char **argv)
 {
     uint32_t i;
     outdir = argc > 1 ? argv[1] : "build/host";
+#if FELUCCA_DX7
+    {   /* the PRESETS list with DX7 voices loaded (ui.c preset_*): the engine's INIT entry gives way to the
+         * loaded voices, by name, between the factory sounds and the user presets; picking one selects the
+         * engine and the slot; the selected track's position follows its PTCH */
+        uint32_t total0, total1, cur, k, e, i;
+        char nm[13];
+        preset_pos(&total0);
+        memset(dx_host_store, 0xFF, sizeof dx_host_store);
+        for (i = 0; i < 3u; i++) {                       /* slots 5, 40 and 127 */
+            uint32_t slot = i == 0 ? 5u : i == 1 ? 40u : 127u;
+            memcpy(dx_host_store + slot * 128u, DX_INIT, 128);
+            memcpy(dx_host_store + slot * 128u + 118u, i == 0 ? "E.PIANO 1 " : i == 1 ? "BRASS 1   " : "TUB BELLS ", 10);
+        }
+        dx_gen++;
+        preset_pos(&total1);
+        check(total1 == total0 + 2u, "DX7 voices: 3 loaded -> the list grows by 2 (the INIT entry gives way)");
+        e = preset_at(total1 - 2u - 1u, &k);             /* the last DX7 voice: before the 2 user presets */
+        dx_slot_name(k, nm);
+        check(e == PRESET_DX7 && k == 127u && str_eq(nm, "TUB BELLS") && str_eq(preset_kind(total1 - 3u), "DX7"),
+              "DX7 voices: the last voice in the list is slot 128, TUB BELLS, kind DX7");
+        track_select(0);
+        preset_go(total1 - 4u);                          /* BRASS 1 */
+        cur = preset_pos(&total1);
+        check(TSEL->eng_req == ENG_DX7_IDX && TSEL->p[P_E0] == 40 && cur == total1 - 4u && str_eq(preset_kind(cur), "DX7"),
+              "DX7 voices: picking one selects the engine, the slot and the list position");
+        preset_go(0);                                    /* back to the first factory sound */
+        check(TSEL->eng_req == 0 && preset_pos(&total1) == 0, "DX7 voices: the first entry is a factory sound again");
+        memset(dx_host_store, 0xFF, sizeof dx_host_store);
+        dx_gen++;
+        preset_pos(&total1);
+        check(total1 == total0, "DX7 voices: none loaded -> the INIT entry is back");
+    }
+#endif
     {   /* the preset list by kind (ui.c BANK): every factory preset of every engine once, every name found */
         uint32_t e, k, n, hits;
         bank_resolve();

@@ -392,6 +392,11 @@ static void graph_browse(void)
         if (e == NENGINES) {                             /* user preset: "U07" and its name */
             up_slot_label(tag, k);
             up_name(k, nm);
+#if FELUCCA_DX7
+        } else if (e == PRESET_DX7) {                    /* a DX7 voice: "DX7" and its name */
+            str_cpy(tag, "DX7", sizeof tag);
+            dx_slot_name(k, nm);
+#endif
         } else {                                         /* its kind: BASS, KEYS, PAD... */
             str_cpy(tag, preset_kind(n), sizeof tag);
             str_cpy(nm, ENGINES[e]->presets[k].name, sizeof nm);
