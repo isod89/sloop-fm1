@@ -48,7 +48,7 @@ static uint32_t drain(uint8_t *out, int *cin_ok)
 
 static int test_usb_sysex(void)
 {
-    static uint8_t msg[700], got[700];
+    static uint8_t msg[4200], got[700];
     uint32_t n, i;
     int bad = 0, enc_ok = 1, rt_ok = 1, cin_ok;
     usb.config = 1;
@@ -81,7 +81,7 @@ static int test_usb_sysex(void)
     memset(msg + 1, 0x55, sizeof msg - 2u);
     msg[sizeof msg - 1u] = 0xF7;
     feed(msg, sizeof msg);
-    bad += check("usb: an oversized frame (698 B) is not taken", !sx_ready);
+    bad += check("usb: an oversized frame (4200 B, more than a DX7 bank dump) is not taken", !sx_ready);
     feed((const uint8_t *)"\xF0\x22\x24\x35\x7D\xF7", 6);
     bad += check("usb: soft key -> uboot_req, not a frame", usb.uboot_req && !sx_ready);
     feed((const uint8_t *)"\xF0\x22\x24\x35\x7F\xF7", 6);

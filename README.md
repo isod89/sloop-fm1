@@ -123,6 +123,15 @@ cartridges and thousands of free patches (any DX7 `.syx` works). A build can als
 firmware (`FELUCCA_DX7_ROM=1`, see [BUILDING.md](BUILDING.md)); the release leaves that off, since the voice
 data in those collections is not SLOOP's to redistribute.
 
+**Straight from Dexed, as on a DX7 or the stock FM-1:** send a single voice over USB MIDI and it is written
+into the selected DX7 track's slot and heard at once (no question asked, as the stock firmware does); send a
+32-voice bank and the screen asks *DX7 BANK n? SAVE=YES* for the bank the track's voice is in — SAVE writes
+it, any other button drops it. The editor is the same thing with names and files.
+
+A user preset or a project saved with a DX7 track remembers **which slot** it plays, not a copy of the voice
+(the stock FM-1 stores the voice inside each of its 128 presets instead): replace that slot and the preset
+follows. Keep the bank, or export it as `.syx`.
+
 On the FM-1: EDIT 1 is **PTCH · BANK · BRGT · ENVS** (the voice, its bank, the modulators' level — brighter or
 darker — and every envelope faster or slower), EDIT 2 **LFOD · TRN · ALG · FB** (more or less pitch LFO,
 transpose, and an algorithm or feedback override; 0 = the voice's own). The ENV page is a VCA in front of the

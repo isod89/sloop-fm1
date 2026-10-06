@@ -548,6 +548,9 @@ static int ed_backup(uint32_t cmd, const uint8_t *a, uint32_t na)   /* 1: a back
         } else if (op == 0u && na == 12u && (id <= ED_BK_LAST)) {  /* begin: id, length (5), CRC-32 (5) */
             uint32_t cap;
             ed_bk_raw(id, &cap);
+#if FELUCCA_DX7
+            dx_ask.pending = 0;                           /* (a bank waiting for SAVE: gone, the RAM is needed) */
+#endif
             len = ed_bk_r32(a + 2);
             if (id >= 2u || len) {                        /* (the working project and the settings are never empty) */
                 if (len <= cap) {
@@ -1004,12 +1007,113 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
 }
 
 /* main loop: editor frames first; anything else stays for ota_service() */
+#if FELUCCA_DX7 && FELUCCA_FLASH
+/* A Yamaha DX7 dump on the MIDI input, as Dexed sends it (and as the stock FM-1 and a DX7 take it). A single
+ * voice goes straight into the selected track's voice slot (its PTCH in the user bank; the track is switched
+ * to BANK USR so it is heard at once) — the stock FM-1 does the same, with no question. A bank is staged
+ * (ed_dx_stage) and the screen asks "DX7 BANK n? SAVE=YES" for the bank the track's PTCH is in: SAVE writes
+ * it, any other button or 15 s drops it. Returns 1 when the frame was a DX7 dump (good or bad). */
+static int ed_dx_native(const uint8_t *p, uint32_t n)
+{
+    uint8_t voice[DX_VOICE];
+    const uint8_t *bank = 0;
+    uint32_t kind = dx_syx_parse(p, n, voice, &bank), slot, b;
+    track_t *t = TSEL;
+    char msg[24];
+    if (kind == DXS_NONE)
+        return 0;
+    if (kind == DXS_BAD) {
+        ui_message("DX7: BAD CHECKSUM");
+        return 1;
+    }
+    if (is_drum(t) || ENGINES[t->eng_req % NENGINES] != &ENG_DX7) {
+        ui_message("DX7: SELECT A DX7 TRACK");
+        return 1;
+    }
+    slot = (uint32_t)t->p[P_E0] & 127u;
+    b = slot / DX_BANK_N;
+    if (kind == DXS_VOICE) {
+        if (!flash_ok || dx_voice_check(voice) != DXV_OK) {
+            ui_message("DX7: VOICE REFUSED");
+            return 1;
+        }
+        memcpy(ed_dx_stage, dx_user_xip() + b * 0x1000u, sizeof ed_dx_stage);   /* the bank as it is */
+        memcpy(ed_dx_stage + (slot % DX_BANK_N) * DX_VOICE, voice, DX_VOICE);
+        if (dx_bank_write(b, ed_dx_stage)) {
+            ui_message("DX7: WRITE ERROR");
+            return 1;
+        }
+        fm1_irq_off();
+        t->p[P_E1] = DXB_USR;                             /* heard at once, whatever bank was selected */
+        fm1_irq_on();
+        str_cpy(msg, "DX7 ", sizeof msg);
+        msg[4] = (char)('0' + (slot + 1u) / 100u);
+        msg[5] = (char)('0' + (slot + 1u) / 10u % 10u);
+        msg[6] = (char)('0' + (slot + 1u) % 10u);
+        msg[7] = ' ';
+        dx7_sound(t, msg + 8);
+        ui_message(msg);
+        sync_reload = 1;
+        ui.force = 1;
+        return 1;
+    }
+    memcpy(ed_dx_stage, bank, sizeof ed_dx_stage);        /* a bank: staged, then the question */
+    dx_ask.pending = (uint8_t)(b + 1u);
+    dx_ask.decided = 0;
+    dx_ask.ms = fm1_ms;
+    str_cpy(msg, "DX7 BANK ?? SAVE=YES", sizeof msg);
+    msg[9] = (char)('1' + b);
+    ui_message(msg);
+    ui.force = 1;
+    return 1;
+}
+static void ed_dx_ask_poll(void)                          /* the answer to "DX7 BANK n? SAVE=YES" */
+{
+    uint32_t b;
+    if (!dx_ask.pending)
+        return;
+    b = dx_ask.pending - 1u;
+    if (!dx_ask.decided && fm1_ms - dx_ask.ms < 15000u)
+        return;
+    if (dx_ask.decided == 1u) {
+        char msg[24];
+        if (ed_bk_put) {                                  /* a restore took the staging RAM meanwhile */
+            ui_message("DX7 BANK: CANCELLED");
+        } else if (!flash_ok || dx_bank_write(b, ed_dx_stage)) {
+            ui_message("DX7: WRITE ERROR");
+        } else {
+            str_cpy(msg, "DX7 BANK ? WRITTEN", sizeof msg);
+            msg[9] = (char)('1' + b);
+            ui_message(msg);
+            sync_reload = 1;
+        }
+    } else {
+        ui_message("DX7 BANK: CANCELLED");
+    }
+    dx_ask.pending = 0;
+    dx_ask.decided = 0;
+    ui.force = 1;
+}
+#endif
+
 static void ed_service(void)
 {
     const uint8_t *p;
     uint32_t n;
     ed_sync();                                             /* v2 pushes (while watched) */
-    if (!ota_frame_get(&p, &n) || n < 4u || p[0] != ED_HDR0 || p[1] != ED_HDR1 || p[2] != ED_HDR2)
+#if FELUCCA_DX7 && FELUCCA_FLASH
+    ed_dx_ask_poll();
+#endif
+    if (!ota_frame_get(&p, &n))
+        return;
+#if FELUCCA_DX7 && FELUCCA_FLASH
+    if (p[0] == 0x43u) {                                   /* a Yamaha DX7 dump (Dexed): handled in place */
+        ed_dx_native(p, n);
+        ota_frame_done();
+        return;
+    }
+#endif
+    if (n < 4u || p[0] != ED_HDR0 || p[1] != ED_HDR1 || p[2] != ED_HDR2)
         return;
     ed_w.last_ms = fm1_ms;                                 /* any request keeps WATCH alive */
     if (p[3] >= ED_SMP_BEGIN) {                            /* large frames: handled in place, then freed */

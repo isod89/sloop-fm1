@@ -107,6 +107,64 @@ static const uint8_t *dx_source(uint32_t bank, uint32_t slot)
     return dx_user_ok(slot) ? dx_user_slot(slot) : DX_INIT;
 }
 
+/* ---- Yamaha bulk dumps on the MIDI input (editor.c ed_dx_native), as a DX7 and the stock FM-1 take them:
+ * a single voice (F0 43 0n 00 01 1B, 155 bytes VCED, checksum) or a 32-voice bank (F0 43 0n 09 20 00, 4096
+ * bytes VMEM, checksum). p / n: the 7-bit bytes between F0 and F7. */
+enum { DXS_NONE, DXS_VOICE, DXS_BANK, DXS_BAD };
+static void dx_pack_vced(const uint8_t *d, uint8_t *out)   /* 155-byte single voice -> the 128-byte bank form */
+{
+    uint32_t j, i;
+    for (j = 0; j < 6u; j++) {
+        const uint8_t *s = d + j * 21u;
+        uint8_t *o = out + j * 17u;
+        for (i = 0; i < 11u; i++)
+            o[i] = s[i];
+        o[11] = (uint8_t)(s[11] | s[12] << 2);
+        o[12] = (uint8_t)(s[13] | s[20] << 3);
+        o[13] = (uint8_t)(s[14] | s[15] << 2);
+        o[14] = s[16];
+        o[15] = (uint8_t)(s[17] | s[18] << 1);
+        o[16] = s[19];
+    }
+    for (i = 0; i < 8u; i++)
+        out[102 + i] = d[126 + i];
+    out[110] = d[134];
+    out[111] = (uint8_t)(d[135] | d[136] << 3);
+    for (i = 0; i < 4u; i++)
+        out[112 + i] = d[137 + i];
+    out[116] = (uint8_t)(d[141] | d[142] << 1 | d[143] << 4);
+    out[117] = d[144];
+    for (i = 0; i < 10u; i++)
+        out[118 + i] = d[145 + i];
+}
+/* DXS_VOICE: *voice (128 bytes) filled; DXS_BANK: *bank points at the 4096 bytes in the frame; DXS_BAD: a
+ * Yamaha dump whose checksum fails; DXS_NONE: not a DX7 dump */
+static uint32_t dx_syx_parse(const uint8_t *p, uint32_t n, uint8_t *voice, const uint8_t **bank)
+{
+    uint32_t i, s = 0, len;
+    if (n < 6u || p[0] != 0x43u || (p[1] & 0xF0u) != 0u)
+        return DXS_NONE;
+    if (p[2] == 0x00u && p[3] == 0x01u && p[4] == 0x1Bu && n == 161u)
+        len = 155;
+    else if (p[2] == 0x09u && p[3] == 0x20u && p[4] == 0x00u && n == 4102u)
+        len = 4096;
+    else
+        return DXS_NONE;
+    for (i = 0; i < len; i++)
+        s += p[5 + i];
+    if (((0u - s) & 0x7Fu) != p[5 + len])
+        return DXS_BAD;
+    if (len == 155u) {
+        dx_pack_vced(p + 5, voice);
+        return DXS_VOICE;
+    }
+    *bank = p + 5;
+    return DXS_BANK;
+}
+/* a bank arrived: the screen asks "DX7 BANK n? SAVE=YES" and ui_input.c answers (SAVE: 1, any other
+ * button: 2); editor.c writes or drops the staged bank. pending = bank + 1 (0: nothing asked) */
+static struct { uint8_t pending, decided; uint32_t ms; } dx_ask;
+
 /* ---------------------------------------------------------------- tables --- */
 /* algorithm j of 32: per operator (OP6 first, as in the voice) a flag byte: bits 0-1 the bus it writes
  * (0 = the output), bit 2 add to the bus instead of replacing, bits 4-5 the bus it reads, bit 6 takes
@@ -155,7 +213,7 @@ static const uint8_t DX_VELOCITY[64] = {
     186, 189, 190, 194, 196, 198, 200, 202, 205, 206, 209, 211, 214, 216, 218, 220, 222, 224, 225, 227, 229, 230,
     232, 233, 235, 237, 238, 240, 241, 242, 243, 244, 246, 246, 248, 249, 250, 251, 252, 253, 254};
 static const uint8_t DX_EXPSCALE[33] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 14, 16, 19, 23, 27, 33, 39, 47, 56, 66, 80,
-                                        94, 110, 126, 142, 170, 180, 192, 212, 234, 255, 255};
+                                        94, 110, 126, 142, 158, 174, 190, 206, 222, 238, 250};
 static const uint8_t DX_OLLUT[20] = {0, 5, 9, 13, 17, 20, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41, 42, 43, 45, 46};
 static const uint8_t DX_PMS[8] = {0, 10, 20, 33, 55, 92, 153, 255};
 static const int32_t DX_AMS[4] = {0, 4342338, 7171437, 16777216};   /* Q24 */
@@ -280,7 +338,7 @@ static void dx7_block(track_t *t)                        /* once per block and p
         x = (int32_t)(((~ph) >> 7) & DX_LOG_ONE);
         break;
     case 4:
-        x = (1 << 23) + (sine_i(ph) << 7);
+        x = (1 << 23) + (sine_i(ph) << 8);
         break;
     case 5:
         if (ph < d->lfo_delta)
@@ -399,8 +457,8 @@ static void dx7_note_on(track_t *t, voice_t *v)
         dx_op_t *e = &s->op[j];
         const uint8_t *o = p + j * 17u;
         int32_t ol = dx_scale_ol(o[14]), off = (int32_t)v->note - (int32_t)dx99(o[8]) - 17;
-        ol += off >= 0 ? dx_scale_curve((off + 1) / 3, (int32_t)dx99(o[10]), (o[11] >> 2) & 3u)
-                       : dx_scale_curve((1 - off) / 3, (int32_t)dx99(o[9]), o[11] & 3u);
+        ol += off >= 0 ? dx_scale_curve(off / 3, (int32_t)dx99(o[10]), (o[11] >> 2) & 3u)
+                       : dx_scale_curve(-off / 3, (int32_t)dx99(o[9]), o[11] & 3u);
         if (ol > 127)
             ol = 127;
         ol <<= 5;
@@ -485,10 +543,10 @@ static void dx7_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
         uint32_t coarse = (o[15] >> 1) & 31u, k;
         int32_t det = (int32_t)(o[12] >> 3) - 7;
         if (o[15] & 1u) {                                 /* fixed frequency: 10^(coarse%4 + fine/100) Hz */
-            uint32_t hz16 = dx_exp2_q16((int32_t)(((coarse & 3u) * 100u + dx99(o[16])) * DX_LOG10) + det * 13457);
+            uint32_t hz16 = dx_exp2_q16((int32_t)(((coarse & 3u) * 100u + dx99(o[16])) * DX_LOG10) + (det > 0 ? det * 13457 : 0));
             k = (uint32_t)(((uint64_t)hz16 * DX_HZ_INC) >> 16);
         } else {
-            int32_t lg = base + DX_COARSE[coarse] + (int32_t)DX_FINE[dx99(o[16])] + det * 25000;
+            int32_t lg = base + DX_COARSE[coarse] + (int32_t)DX_FINE[dx99(o[16])] + det * 12606;   /* 7.2 Hz a step at 9.6 kHz */
             k = (uint32_t)(((uint64_t)m->inc * dx_exp2_q16(lg)) >> 16);
         }
         inc[j] = k > 0x73000000u ? 0x73000000u : k;

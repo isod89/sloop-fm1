@@ -109,8 +109,9 @@ static struct {
 #if FELUCCA_OTA
 /* M-UPGRADE SysEx (ota.c): one received frame at a time (7-bit bytes between
  * F0 and F7; frames arriving while one is pending are dropped, the host
- * retries), and a TX ring of SysEx event packets sent before any MIDI. */
-static uint8_t sx_frame[640];
+ * retries), and a TX ring of SysEx event packets sent before any MIDI. The
+ * frame holds a DX7 32-voice bulk dump (4102 bytes, eng_dx7.c dx_syx_parse). */
+static uint8_t sx_frame[4104];
 static uint32_t sx_pos;
 static volatile uint32_t sx_frame_len;
 static volatile uint8_t sx_ready, sx_collect, sx_busy;

@@ -309,6 +309,11 @@ The banks are **backup objects 8..11** and use the v6 commands unchanged:
 - An **older firmware** has no `DX7` engine and no objects 8..11: `BK_LIST` does not list them, and a restore
   of a file that carries them gets rc 1 at `BK_PUT` begin — the editor only restores what the device lists.
 
+**Native Yamaha dumps:** the firmware also takes a DX7 single voice (`F0 43 0n 00 01 1B`, 155 bytes, checksum)
+and a 32-voice bank (`F0 43 0n 09 20 00`, 4096 bytes, checksum) on its MIDI input, as Dexed sends them: the
+voice is written into the selected DX7 track's slot at once, the bank is staged and the FM-1 asks on its screen
+(*DX7 BANK n? SAVE=YES*). The receive frame holds 4104 bytes for this; the editor's own frames are unchanged.
+
 **Editor:** the Library tab's *DX7 voices* group (shown with v7 firmware that has the engine): the four
 banks, their 32 names, *Load .syx* (a 32-voice bank replaces the bank shown after a confirmation; a single
 voice goes into the selected slot), *Export .syx* (a 4104-byte bulk dump with INIT VOICE in the empty slots,

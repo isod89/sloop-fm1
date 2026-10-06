@@ -91,7 +91,7 @@ $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/slicer_test" tests/slicer_test.c 
 mkdir -p build/slicer_demo
 run "SLICER: no clicks, timing, sync with the sequencer, STUT, cost, demos" "$OUT/slicer_test" build/slicer_demo
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/dx7_test" tests/dx7_test.c -lm
-run "DX7: voice check, the user store, 32 algorithms, fixed operators, macros, store rewrite, 8 notes" "$OUT/dx7_test" "$OUT/dx7.wav"
+run "DX7: voice check, Yamaha dumps, the user store, 32 algorithms, fixed operators, macros, store rewrite, 8 notes" "$OUT/dx7_test" "$OUT/dx7.wav"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress" tests/regress.c -lm
 run "regression: golden renders, health, voices, CPU budget" "$OUT/regress" tests/golden.txt tests/cpu_baseline.txt
 # SLICE (tests/slice_test.c) needs a FELUCCA_SLICE=1 build; the engine is not built by default

@@ -134,6 +134,46 @@ int main(int argc, char **argv)
         check(what, peak > 500 && peak < 30000 && rms > 100 && rms2 < rms && part_voices(t) == 0);
     }
 
+    /* ---- Yamaha dumps as Dexed sends them (dx_syx_parse): a bank, a single voice, a bad checksum */
+    {
+        static uint8_t fr[4102];
+        uint8_t vo[DX_VOICE];
+        const uint8_t *bk = 0;
+        uint32_t s = 0, k;
+        fr[0] = 0x43; fr[1] = 0x00; fr[2] = 0x09; fr[3] = 0x20; fr[4] = 0x00;
+        for (k = 0; k < 32u; k++)
+            memcpy(fr + 5 + k * DX_VOICE, DX_INIT, DX_VOICE);
+        for (k = 0; k < 4096u; k++)
+            s += fr[5 + k];
+        fr[4101] = (uint8_t)((0u - s) & 0x7Fu);
+        check("a 32-voice bulk dump parses as a bank", dx_syx_parse(fr, 4102, vo, &bk) == DXS_BANK && bk == fr + 5);
+        fr[4101] ^= 1u;
+        check("... and fails its checksum when damaged", dx_syx_parse(fr, 4102, vo, &bk) == DXS_BAD);
+        {   /* a single voice (VCED) of INIT VOICE packs to DX_INIT */
+            static uint8_t sv[161];
+            uint32_t j;
+            memset(sv, 0, sizeof sv);
+            sv[0] = 0x43; sv[1] = 0x00; sv[2] = 0x00; sv[3] = 0x01; sv[4] = 0x1B;
+            for (j = 0; j < 6u; j++) {
+                uint8_t *o = sv + 5 + j * 21;
+                static const uint8_t op[21] = {99, 99, 99, 99, 99, 99, 99, 0, 39, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 7};
+                memcpy(o, op, 21);
+                o[16] = j == 5u ? 99 : 0;
+            }
+            {
+                static const uint8_t tail[19] = {99, 99, 99, 99, 50, 50, 50, 50, 0, 0, 1, 35, 0, 0, 0, 1, 0, 3, 24};
+                memcpy(sv + 5 + 126, tail, 19);
+                memcpy(sv + 5 + 145, "INIT VOICE", 10);
+            }
+            for (s = 0, k = 0; k < 155u; k++)
+                s += sv[5 + k];
+            sv[160] = (uint8_t)((0u - s) & 0x7Fu);
+            check("a single-voice dump packs to INIT VOICE's bank form", dx_syx_parse(sv, 161, vo, &bk) == DXS_VOICE && memcmp(vo, DX_INIT, DX_VOICE) == 0);
+            sv[0] = 0x7D;
+            check("an editor frame is not a DX7 dump", dx_syx_parse(sv, 161, vo, &bk) == DXS_NONE);
+        }
+    }
+
     /* ---- the voice with 127s: plays, bounded, freed */
     t->p[P_E0] = 60;
     trk_note_on(t, 60, 100);

@@ -748,6 +748,12 @@ static void ui_input(void)
     int layered;
     if (pressed || notes)
         ui_input_ms = fm1_ms;
+#if FELUCCA_DX7
+    if (dx_ask.pending && !dx_ask.decided && pressed) {   /* "DX7 BANK n? SAVE=YES": SAVE yes, anything else no */
+        dx_ask.decided = (pressed & (1u << panel.btn[B_SAVE])) ? 1u : 2u;
+        pressed = 0;
+    }
+#endif
     if (home == BT_HOLD) {                              /* HOME held: open the menu, or leave it */
         if (ui.menu) {
             menu_close();
