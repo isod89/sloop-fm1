@@ -874,11 +874,25 @@ async function dx7Mock() {
   ok((await E.bkGetObject(rq, 9)).length === 0, "dx7: bank 2 erased (length 0)");
   await E.backupRestore(rq, arc);
   ok((await E.bkGetObject(rq, 9)).length === 4096, "dx7: a restore brings bank 2 back");
-  threw = 0;
-  try { await E.bkPutObject(rq, 10, D.objectOf([bad, ...new Array(31).fill(null)])); } catch (e) { threw = e.code; }
-  ok(threw === "bkWrite" && (await E.bkGetObject(rq, 10)).length === 0, "dx7: a bank with a damaged voice is refused at the commit");
+  await E.bkPutObject(rq, 10, D.objectOf([bad, voices[1], ...new Array(30).fill(null)]));
+  const v10 = D.voicesOf(await E.bkGetObject(rq, 10));
+  ok(!v10[0] && v10[1] && D.name(v10[1]) === "VOICE 02", "dx7: a damaged voice in a bank is blanked at the commit, the rest written");
   ok(E.BK.RESTORE.includes(8) && E.BK.RESTORE.includes(11) && E.backupObjects(arc).has(9), "dx7: the restore list and file check know objects 8..11");
   link.close && link.close();
+  {   /* a v7 backup onto a firmware without the DX7 banks (SLOOP 2.3): everything else is restored, nothing aborts */
+    const m6 = E.makeMockDevice({ v6: true });
+    const inp6 = [...m6.access.inputs.values()][0], out6 = [...m6.access.outputs.values()][0];
+    const link6 = new E.Link((d) => out6.send(d), { timeout: 300 });
+    inp6.onmidimessage = (e) => link6.receive(e.data);
+    const rq6 = async (r, o) => link6.request(r, o);
+    const i6 = E.parse[E.CMD.INFO](await rq6(E.req.info()));
+    let failed = null;
+    try { await E.backupRestore(rq6, arc); } catch (e) { failed = e.message; }
+    const l6 = E.parse[E.CMD.BK_LIST](await rq6(E.req.bkList()));
+    ok(i6.proto === 6 && i6.nengines === 9 && failed === null && !l6.items.some((it) => it.id === 9) && l6.items.some((it) => it.id === 6 && it.len > 0),
+      "dx7: a v7 backup restores onto a v6 firmware (the DX7 banks skipped, the user banks written, no abort)");
+    link6.close && link6.close();
+  }
 }
 await editorMock();
 await dx7Mock();

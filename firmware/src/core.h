@@ -20,8 +20,8 @@ enum { V_POLY, V_MONO, V_LEGATO, V_UNISON };   /* P_VOICE */
 #ifndef FELUCCA_DX7
 #define FELUCCA_DX7 1            /* the DX7 engine (eng_dx7.c): six-operator FM playing DX7 voices */
 #endif
-#define ENG_DX7_IDX 9            /* its engine number when built (after GRAIN; SLICE, when built, follows) */
-#define NENGINES (9 + FELUCCA_DX7 + FELUCCA_SLICE)   /* engines added later come LAST: the others keep their numbers */
+#define ENG_DX7_IDX (9 + FELUCCA_SLICE)   /* its engine number: after GRAIN, and after SLICE when that is built (SLICE kept 9) */
+#define NENGINES (9 + FELUCCA_SLICE + FELUCCA_DX7)   /* an engine added later comes LAST: the others keep their numbers */
 #define UP_SLOTS 32u             /* user presets (upreset.c) */
 
 /* ------------------------------------------------------- parameters --- */

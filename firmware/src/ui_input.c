@@ -558,7 +558,7 @@ static void layer_unlock(void)
  * Returns 1 while one is held or locked (the page does not take the knobs then) */
 static int layers_input(uint32_t note_edges, uint32_t *pressed, uint32_t home)
 {
-    static uint8_t down[LY_COUNT], used[LY_COUNT];
+    static uint8_t down[LY_COUNT], used[LY_COUNT], answered[LY_COUNT];   /* answered: the press said yes / no to a question */
     static uint32_t t0[LY_COUNT];
     uint32_t l, now = fm1_ms, held = LY_PLAY, eat = 0;
     if (ly_lock != LY_PLAY) {
@@ -576,15 +576,24 @@ static int layers_input(uint32_t note_edges, uint32_t *pressed, uint32_t home)
         if (d && !down[l]) {
             t0[l] = now;
             used[l] = (uint8_t)((eat & ly_bit[l]) != 0u);  /* (the press that unlocked: not a tap) */
+#if FELUCCA_DX7
+            answered[l] = (uint8_t)((dx_ask.eat & ly_bit[l]) != 0u);   /* (the press that answered: not a tap, no layer) */
+            used[l] |= answered[l];
+#endif
         }
         if (d && note_edges)
             used[l] = 1;                                  /* a key while held: not a tap */
         if (!d && down[l] && !used[l] && now - t0[l] < TAP_MS && !ui.menu && !ui.confirm)
             layer_tap(l);
         down[l] = (uint8_t)d;
-        if (d && held == LY_PLAY)
+        if (!d)
+            answered[l] = 0;
+        if (d && held == LY_PLAY && !answered[l])
             held = l;
     }
+#if FELUCCA_DX7
+    dx_ask.eat = 0;
+#endif
     if (held != LY_PLAY && home == BT_TAP && !home_eat) {  /* held + HOME: locked open */
         ly_lock = (uint8_t)held;
         used[held] = 1;
@@ -751,6 +760,9 @@ static void ui_input(void)
 #if FELUCCA_DX7
     if (dx_ask.pending && !dx_ask.decided && pressed) {   /* "DX7 BANK n? SAVE=YES": SAVE yes, anything else no */
         dx_ask.decided = (pressed & (1u << panel.btn[B_SAVE])) ? 1u : 2u;
+        dx_ask.eat = pressed;                           /* the press answers: no tap, no layer (layers_input) */
+        if (pressed & (1u << panel.btn[B_HOME]))
+            home_eat = 1;                               /* (and no HOME tap on release) */
         pressed = 0;
     }
 #endif

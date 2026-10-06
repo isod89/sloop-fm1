@@ -11,20 +11,20 @@
 #include "eng_trio.c"
 #include "eng_drawbar.c"
 #include "eng_grain.c"
-#if FELUCCA_DX7
-#include "eng_dx7.c"
-#endif
 #if FELUCCA_SLICE
 #include "eng_slice.c"
+#endif
+#if FELUCCA_DX7
+#include "eng_dx7.c"
 #endif
 
 static const engine_t *const ENGINES[NENGINES] = {&ENG_ANALOG, &ENG_DIGITAL, &ENG_PHASE, &ENG_LOFI, &ENG_SAMPLE,
                                                     &ENG_FORMANT, &ENG_TRIO, &ENG_DRAWBAR, &ENG_GRAIN,
-#if FELUCCA_DX7
-                                                    &ENG_DX7,
-#endif
 #if FELUCCA_SLICE
                                                     &ENG_SLICE,
+#endif
+#if FELUCCA_DX7
+                                                    &ENG_DX7,
 #endif
 };
 

@@ -1253,7 +1253,7 @@ function b64dec(s) {
 }
 /* object ids (firmware editor.c ED_BK_IDS): 0 the working project, 1 the settings, 2..5 projects A..D,
    6..7 the user preset banks, 32..34 the sample slots USR1..3 */
-const BK = { FORMAT: "sloop-backup", VERSION: 1, SAMPLES: [32, 33, 34], RESTORE: [6, 7, 8, 9, 10, 11, 2, 3, 4, 5, 0, 1] };   /* 8..11: the DX7 banks (v7) */
+const BK = { FORMAT: "sloop-backup", VERSION: 1, SAMPLES: [32, 33, 34], RESTORE: [6, 7, 2, 3, 4, 5, 0, 1, 8, 9, 10, 11] };   /* 8..11: the DX7 banks (v7) */
 class BackupError extends Error { constructor(code, msg) { super(msg); this.code = code; } }
 /* read everything; progress(done, total bytes) */
 async function backupCapture(rq, info, progress = () => {}) {
@@ -1304,13 +1304,24 @@ async function bkPutObject(rq, id, d, progress = () => {}) {
   if (r.rc === 3) throw new BackupError("bkStop", "stop the song first");
   if (r.rc) throw new BackupError("bkWrite", `commit ${id} rc ${r.rc}`);
 }
-/* one object from the device (LIST, then GET): null = the firmware has no such object, an empty
-   Uint8Array = empty */
-async function bkGetObject(rq, id) {
+/* objects from the device (one LIST, then GET): a Map id -> Uint8Array (empty = empty object); an id the
+   firmware does not list is absent */
+async function bkGetObjects(rq, ids) {
   const L = parse[CMD.BK_LIST](await rq(req.bkList(), { timeout: 5000, retries: 0 }));
   if (L.rc) throw new BackupError("bkRc" + L.rc, `LIST rc ${L.rc}`);
-  const it = L.items.find((x) => x.id === id);
-  if (!it) return null;
+  const out = new Map();
+  for (const id of ids) {
+    const it = L.items.find((x) => x.id === id);
+    if (it) out.set(id, await bkGetListed(rq, it));
+  }
+  return out;
+}
+async function bkGetObject(rq, id) {                     /* one object; null = not listed */
+  const m = await bkGetObjects(rq, [id]);
+  return m.has(id) ? m.get(id) : null;
+}
+async function bkGetListed(rq, it) {
+  const id = it.id;
   const data = new Uint8Array(it.len);
   for (let off = 0; off < it.len; off += 256) {
     const n = Math.min(256, it.len - off);
@@ -1403,18 +1414,22 @@ const DX7 = {
     return o;
   },
 };
-/* write it back: banks, projects, the working project, the settings, then the samples */
+/* write it back: banks, projects, the working project, the settings, the DX7 banks, then the samples. Only the
+   objects the device LISTs: a v7 file onto a firmware without the DX7 banks (SLOOP 2.3) restores everything else */
 async function backupRestore(rq, file, progress = () => {}) {
   const m = backupObjects(file);
-  const total = [...m.values()].reduce((s, d) => s + d.length, 0) || 1;
+  const L = parse[CMD.BK_LIST](await rq(req.bkList(), { timeout: 5000, retries: 0 }));
+  if (L.rc) throw new BackupError("bkRc" + L.rc, `LIST rc ${L.rc}`);
+  const has = new Set(L.items.map((it) => it.id));
+  const total = [...m.entries()].filter(([id]) => has.has(id)).reduce((s, [, d]) => s + d.length, 0) || 1;
   let done = 0;
   for (const id of BK.RESTORE) {
-    if (!m.has(id)) continue;
+    if (!m.has(id) || !has.has(id)) continue;
     const d = m.get(id);
     await bkPutObject(rq, id, d, (k) => { done += k; progress(done, total); });
   }
   for (const id of BK.SAMPLES) {
-    if (!m.has(id)) continue;
+    if (!m.has(id) || !has.has(id)) continue;
     const d = m.get(id), k = id - 32;
     if (!d.length) {
       const e = parse[CMD.SMP_ERASE](await rq(req.smpErase(k), { timeout: 2500, retries: 0 }));
@@ -1623,9 +1638,9 @@ function makeMockDevice(opt = {}) {
         D("PTCH", F.SEMI, -24, 24, 0), D("SPRD", F.PCT, 0, 127, 30), D("RAND", F.PCT, 0, 127, 10), D("TONE", F.PCT, 0, 127, 127)],
       presets: [P("LOFI CLOUD", [0, 45, 95, 85, 0, 35, 12, 80], [70, 90, 120, 90], 0), P("VIBE HAZE", [2, 30, 100, 90, 0, 25, 10, 90], [50, 100, 120, 95], 0),
         P("FLUTE DUST", [5, 50, 108, 72, 0, 10, 10, 85], [50, 100, 127, 100], 0)] },
-    { name: "DX7", titles: ["PATCH", "TONE"], edit: [D("PTCH", F.INT, 0, 127, 0), NONE, D("BRGT", F.BIPCT, -64, 63, 0), D("ENVS", F.BIPCT, -64, 63, 0),
+    ...(opt.v6 ? [] : [{ name: "DX7", titles: ["PATCH", "TONE"], edit: [D("PTCH", F.INT, 0, 127, 0), NONE, D("BRGT", F.BIPCT, -64, 63, 0), D("ENVS", F.BIPCT, -64, 63, 0),
         D("LFOD", F.BIPCT, -64, 63, 0), D("TRN", F.SEMI, -24, 24, 0), D("ALG", F.INT, 0, 32, 0), D("FB", F.INT, 0, 8, 0)],
-      presets: [P("DX7", [0, 0, 0, 0, 0, 0, 0, 0], [0, 127, 127, 110], 0)] },
+      presets: [P("DX7", [0, 0, 0, 0, 0, 0, 0, 0], [0, 127, 127, 110], 0)] }]),
   ];
   /* demo patterns of the mock only (the LIVE firmware has no factory patterns: a preset never writes the
      sequencer); used to seed the mock's user presets and track 1 as if they had been recorded */
@@ -1802,7 +1817,7 @@ function makeMockDevice(opt = {}) {
         s(opt.legacy ? "FELUCCA 0.4 BETA (MOCK)" : opt.v3 ? "FELUCCA 0.8 (MOCK)" : "FELUCCA SLOOP 2.0 (MOCK)"); b(ENG.length); b(P_COUNT); b(G_COUNT); b(NSTEP); b(P_E0);
         ENG.forEach((e) => s(e.name));
         if (!opt.legacy) b(NTRK);
-        if (v5) b(opt.noBackup ? 5 : 7);                 /* v6: backup / restore; v7: the DX7 banks */
+        if (v5) b(opt.noBackup ? 5 : opt.v6 ? 6 : 7);    /* v6: backup / restore; v7: the DX7 banks */
         break;
       case CMD.GET: case CMD.SET: {
         if (a.length < 2) return null;
@@ -1963,7 +1978,7 @@ function makeMockDevice(opt = {}) {
         const enc = (o) => Uint8Array.from(Array.from(JSON.stringify(o), (c) => c.charCodeAt(0) & 0x7F));
         const bankOf = (h) => { const x = st.bank.slice(h * 16, h * 16 + 16); return x.some(Boolean) ? enc(x) : new Uint8Array(0); };
         st.bkSnap = new Map([[0, enc(project())], [1, st.settings.slice()], ...[0, 1, 2, 3].map((k) => [2 + k, st.slots[k] ? enc(st.slots[k]) : new Uint8Array(0)]),
-          [6, bankOf(0)], [7, bankOf(1)], ...[0, 1, 2, 3].map((k) => [8 + k, st.dx[k] || new Uint8Array(0)]), ...[0, 1, 2].map((k) => [32 + k, st.smp[k].zones ? st.smp[k].flash.slice(0, SMP.DATA_OFF + st.smp[k].len) : new Uint8Array(0)])]);
+          [6, bankOf(0)], [7, bankOf(1)], ...(opt.v6 ? [] : [0, 1, 2, 3].map((k) => [8 + k, st.dx[k] || new Uint8Array(0)])), ...[0, 1, 2].map((k) => [32 + k, st.smp[k].zones ? st.smp[k].flash.slice(0, SMP.DATA_OFF + st.smp[k].len) : new Uint8Array(0)])]);
         st.bkPut = null;
         b(0); b(st.bkSnap.size);
         for (const [id, d] of st.bkSnap) { b(id); out.push(...u35enc(d.length), ...u35enc(crc32(d))); }
@@ -1982,7 +1997,7 @@ function makeMockDevice(opt = {}) {
         if (opt.noBackup || a.length < 2) return null;
         const op = a[0], id = a[1], r = new Reader(a.slice(2));
         let rc = 1;
-        if (op === 0 && a.length === 12 && id <= 11) {
+        if (op === 0 && a.length === 12 && id <= (opt.v6 ? 7 : 11)) {
           const len = u35dec(r), crc = u35dec(r);
           if ((id >= 2 || len) && len <= 1 << 20) { st.bkPut = { id, len, crc, pos: 0, buf: new Uint8Array(len) }; st.bkSnap = null; rc = 0; }
         } else if (!st.bkPut || st.bkPut.id !== id) rc = 5;
@@ -1998,10 +2013,11 @@ function makeMockDevice(opt = {}) {
             if (id === 1) { if (P.len !== st.settings.length) throw 0; st.settings = P.buf.slice(); }
             else if (id === 0) { const o = js(); st.tracks = o.tracks; st.sel = o.sel; st.g = o.g; }
             else if (id <= 5) st.slots[id - 2] = P.len ? js() : null;
-            else if (id >= 8) {                      /* a DX7 bank: 32 packed voices, or empty */
+            else if (id >= 8) {                      /* a DX7 bank: 32 packed voices, or empty; a damaged voice is blanked */
               if (P.len && P.len !== 4096) throw 0;
-              for (let i = 0; i < P.len; i += 128) { const v = P.buf.subarray(i, i + 128); if (!DX7.blank(v) && DX7.check(v)) throw 0; }
-              st.dx[id - 8] = P.len ? P.buf.slice() : null;
+              const d = P.buf.slice();
+              for (let i = 0; i < P.len; i += 128) { const v = d.subarray(i, i + 128); if (!DX7.blank(v) && DX7.check(v)) v.fill(0xFF); }
+              st.dx[id - 8] = P.len ? d : null;
             } else { const x = P.len ? js() : new Array(16).fill(null); for (let i = 0; i < 16; i++) st.bank[(id - 6) * 16 + i] = x[i] || null; }
           } catch (e) { rc = 2; }
         } else if (op === 3) { st.bkPut = null; rc = 0; }
@@ -2642,6 +2658,7 @@ function buildUI() {
   $("bkgroup").hidden = !(dev.info.proto >= 6);       /* v6 firmware: backup / restore */
   dxBanks = [null, null, null, null];
   dxLoaded = false;
+  dxTried = false;
   renderDx();                                        /* v7 firmware with the DX7 engine: its voice banks */
 }
 
@@ -4457,14 +4474,14 @@ $("bk-file").addEventListener("change", async () => {
 
 /* ---- v7: the DX7 voice banks (the work: DX7, bkGetObject, bkPutObject above). Shown with a firmware that
    has the DX7 engine and protocol 7; the banks are read the first time the group shows. */
-let dxBanks = [null, null, null, null], dxBank = 0, dxSel = null, dxLoaded = false, dxLoading = false;
+let dxBanks = [null, null, null, null], dxBank = 0, dxSel = null, dxLoaded = false, dxLoading = false, dxTried = false;
 const dxOn = () => !!(dev && dev.info && dev.info.proto >= 7 && dev.info.engines.includes("DX7"));
 const dxTrackIsDx7 = () => !!(dev && dev.dump && dev.info.engines[dev.dump.engine] === "DX7");
 function renderDx() {
   const g = $("dxgroup");
   g.hidden = !dxOn();
   if (g.hidden) return;
-  if (!dxLoaded && !dxLoading && !libBusy) { dxRefresh(); return; }
+  if (!dxLoaded && !dxLoading && !dxTried && !libBusy) { dxRefresh(); return; }   /* once; Reload retries */
   const sel = $("dxbank");
   if (sel.children.length !== DX7.BANKS || sel.dataset.lang !== lang) {
     sel.dataset.lang = lang;
@@ -4492,8 +4509,10 @@ function renderDx() {
 }
 async function dxRefresh() {
   dxLoading = true;
+  dxTried = true;
   await libOp(async () => {
-    for (let k = 0; k < DX7.BANKS; k++) dxBanks[k] = await bkGetObject(rq, DX7.OBJ + k);
+    const m = await bkGetObjects(rq, [0, 1, 2, 3].map((k) => DX7.OBJ + k));
+    for (let k = 0; k < DX7.BANKS; k++) dxBanks[k] = m.get(DX7.OBJ + k) || null;
     dxLoaded = true;
   });
   dxLoading = false;

@@ -16,7 +16,7 @@ drawbar_render 267
 drawbar_block 102
 grain_render 1734
 grain_block 138
-dx7_render 348
+dx7_render 345
 dx7_amp 137
 dx7_block 7
 slicer_track 825

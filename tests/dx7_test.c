@@ -181,6 +181,66 @@ int main(int argc, char **argv)
     render(1.5, &rms2, 0);
     check("a voice with 127s beyond the DX7 ranges plays, bounded and freed", peak > 500 && peak < 30000 && part_voices(t) == 0);
 
+    /* ---- the pitch LFO at full depth (PMD 99, PMS 7, sine, delay 0): the pitch really moves (a sine's zero
+     * crossings per block vary), bounded; PMD 0 is steady. (A 32-bit product here once flipped the sign.) */
+    {
+        uint32_t zc[2], k, b, zmin = 0xFFFFFFFFu, zmax = 0;
+        for (k = 0; k < 2u; k++) {
+            make_voice(v, 0, 1, 99, 1);
+            v[112] = 60;                                  /* LFO speed */
+            v[114] = k ? 99 : 0;                          /* PMD */
+            v[116] = (0 << 1) | (7 << 4) | (4 << 1);      /* sine, PMS 7 */
+            memcpy(dx_host_store + 42 * DX_VOICE, v, DX_VOICE);
+            dx_gen++;
+            t->p[P_E0] = 42;
+            trk_note_on(t, 60, 100);
+            render(0.2, &rms, 0);
+            zmin = 0xFFFFFFFFu;
+            zmax = 0;
+            for (b = 0; b < 40u; b++) {                   /* 40 blocks of 1024 samples: the zero crossings of each */
+                uint32_t i2, z = 0;
+                int32_t last = 0;
+                for (i2 = 0; i2 < 1024u / CTL; i2++) {
+                    uint32_t q;
+                    mix_block(outbuf, CTL);
+                    for (q = 0; q < CTL; q++) {
+                        z += (outbuf[2 * q] >= 0) != (last >= 0);
+                        last = outbuf[2 * q];
+                    }
+                }
+                zmin = z < zmin ? z : zmin;
+                zmax = z > zmax ? z : zmax;
+            }
+            zc[k] = zmax - zmin;
+            trk_note_off(t, 60);
+            render(1.5, &rms2, 0);
+        }
+        check("pitch LFO: PMD 99 / PMS 7 sweeps the pitch (zero crossings vary), PMD 0 holds it", zc[1] > 6u && zc[0] <= 2u);
+    }
+
+    /* ---- six carriers at level 99, velocity 127 (algorithm 32): bounded, no wrap, louder than one carrier */
+    {
+        double r6;
+        make_voice(v, 31, 1, 99, 1);
+        for (i = 0; i < 6u; i++)
+            v[i * 17 + 14] = 99;
+        memcpy(dx_host_store + 43 * DX_VOICE, v, DX_VOICE);
+        dx_gen++;
+        t->p[P_E0] = 43;
+        trk_note_on(t, 60, 127);
+        peak = render(0.5, &r6, 0);
+        trk_note_off(t, 60);
+        render(1.5, &rms2, 0);
+        make_voice(v, 31, 1, 99, 1);                      /* one carrier at 99 */
+        memcpy(dx_host_store + 43 * DX_VOICE, v, DX_VOICE);
+        dx_gen++;
+        trk_note_on(t, 60, 127);
+        render(0.5, &rms, 0);
+        trk_note_off(t, 60);
+        render(1.5, &rms2, 0);
+        check("six carriers at 99: bounded and louder than one (the sum does not wrap)", peak <= 32767 && r6 > rms * 1.2 && part_voices(t) == 0);
+    }
+
     /* ---- a fixed-frequency operator: the note does not change the pitch */
     {
         int32_t p1, p2;

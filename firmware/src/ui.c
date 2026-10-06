@@ -374,7 +374,7 @@ static uint32_t preset_pos(uint32_t *total)          /* list index of the select
     ndx = dx_count();
     if (ENGINES[TSEL->eng_req % NENGINES] == &ENG_DX7 && ndx) {   /* a DX7 track: its voice in the list */
         uint32_t slot = (uint32_t)TSEL->p[P_E0] & 127u;
-        cur = nb + (dx_loaded(slot) ? dx_rank(slot) : 0u);
+        cur = nb + (dx_rank(slot) < ndx ? dx_rank(slot) : ndx - 1u);   /* (an empty slot: the voice before it) */
     }
 #endif
     if (user_of(TSEL) < UP_SLOTS)

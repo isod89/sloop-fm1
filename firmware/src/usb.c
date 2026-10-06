@@ -111,7 +111,11 @@ static struct {
  * F0 and F7; frames arriving while one is pending are dropped, the host
  * retries), and a TX ring of SysEx event packets sent before any MIDI. The
  * frame holds a DX7 32-voice bulk dump (4102 bytes, eng_dx7.c dx_syx_parse). */
+#if defined(FELUCCA_DX7) && !FELUCCA_DX7
+static uint8_t sx_frame[640];
+#else
 static uint8_t sx_frame[4104];
+#endif
 static uint32_t sx_pos;
 static volatile uint32_t sx_frame_len;
 static volatile uint8_t sx_ready, sx_collect, sx_busy;

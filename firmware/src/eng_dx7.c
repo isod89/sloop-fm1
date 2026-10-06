@@ -189,7 +189,7 @@ static uint32_t dx_syx_parse(const uint8_t *p, uint32_t n, uint8_t *voice, const
 }
 /* a bank arrived: the screen asks "DX7 BANK n? SAVE=YES" and ui_input.c answers (SAVE: 1, any other
  * button: 2); editor.c writes or drops the staged bank. pending = bank + 1 (0: nothing asked) */
-static struct { uint8_t pending, decided; uint32_t ms; } dx_ask;
+static struct { uint8_t pending, decided; uint32_t ms, eat; } dx_ask;   /* eat: the button bits that answered it */
 
 /* ---------------------------------------------------------------- tables --- */
 /* algorithm j of 32: per operator (OP6 first, as in the voice) a flag byte: bits 0-1 the bus it writes
@@ -243,7 +243,8 @@ static const uint8_t DX_EXPSCALE[33] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 14, 16
 static const uint8_t DX_OLLUT[20] = {0, 5, 9, 13, 17, 20, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41, 42, 43, 45, 46};
 static const uint8_t DX_PMS[8] = {0, 10, 20, 33, 55, 92, 153, 255};
 static const int32_t DX_AMS[4] = {0, 4342338, 7171437, 16777216};   /* Q24 */
-static const uint16_t DX_CARNORM[7] = {16384, 16384, 11585, 9459, 8192, 7327, 6689};   /* 1 / sqrt(carriers), Q14 */
+static const uint16_t DX_CARNORM[7] = {8192, 8192, 5793, 4730, 4096, 3664, 3345};   /* 0.5 / sqrt(carriers), Q14: a carrier at
+                                                                                        * level 99 (gain 2.0) is full scale */
 
 #define DX_LFO_UNIT 18279u                   /* CTL x 2^32 / (FS x 15.5): the LFO's phase step scale */
 #define DX_PENV_UNIT 572u                    /* CTL x 2^24 / (21.3 x FS): the pitch envelope's step scale */
@@ -560,14 +561,18 @@ static void dx7_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
     fbs = fbs ? 8u - fbs : 16u;
     {   /* the pitch of this block: transpose, TRN, the pitch envelope, the LFO (Q24 octaves) */
         int32_t pmd = clamp((int32_t)p[114] + t->p[P_E4], 0, 99), sens = DX_PMS[(p[116] >> 4) & 7u];
-        pmd = (((pmd * 165) >> 6) * d->dly) >> 8;         /* Q24-ish */
+        pmd = (int32_t)(((int64_t)((pmd * 165) >> 6) * d->dly) >> 8);   /* Q24 (255 x 2^24 needs 64 bits) */
         pm_lfo = (int32_t)(((int64_t)pmd * (sens * (d->lfo - (1 << 23)))) >> 31);
         base = ((int32_t)(p[117] > 48u ? 48u : p[117]) - 24 + t->p[P_E5]) * DX_SEMI + s->penv + pm_lfo;
     }
     for (j = 0; j < 6u; j++) {
         const uint8_t *o = p + j * 17u;
         uint32_t coarse = (o[15] >> 1) & 31u, k;
-        int32_t det = (int32_t)(o[12] >> 3) - 7;
+        int32_t det = (int32_t)(o[12] >> 3) - 7, g0 = s->op[j].gain0, g1 = s->op[j].gain;
+        if ((alg[j] & 3u) == 0u) {                        /* a carrier: the output scale in its gain */
+            g0 = (g0 * norm) >> 14;
+            g1 = (g1 * norm) >> 14;
+        }
         if (o[15] & 1u) {                                 /* fixed frequency: 10^(coarse%4 + fine/100) Hz */
             uint32_t hz16 = dx_exp2_q16((int32_t)(((coarse & 3u) * 100u + dx99(o[16])) * DX_LOG10) + (det > 0 ? det * 13457 : 0));
             k = (uint32_t)(((uint64_t)hz16 * DX_HZ_INC) >> 16);
@@ -576,8 +581,8 @@ static void dx7_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
             k = (uint32_t)(((uint64_t)m->inc * dx_exp2_q16(lg)) >> 16);
         }
         inc[j] = k > 0x73000000u ? 0x73000000u : k;
-        g[j] = s->op[j].gain0;
-        gstep[j] = (s->op[j].gain - s->op[j].gain0) / (int32_t)n;
+        g[j] = g0;
+        gstep[j] = (g1 - g0) / (int32_t)n;
     }
     for (i = 0; i < n; i++) {
         int32_t bus[3] = {0, 0, 0}, fbnew = fb0, sum;
@@ -598,7 +603,7 @@ static void dx7_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
         }
         fb1 = fb0;
         fb0 = fbnew;
-        sum = clamp((bus[0] * norm) >> 15, -32767, 32767);
+        sum = clamp(bus[0], -32767, 32767);                /* (the carriers' gains carry the scale) */
         out[i] += mulq15(mulq15(sum, amp_at(m, i)), VOICE_FS);
     }
     s->fb0 = fb0;

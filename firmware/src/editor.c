@@ -431,15 +431,16 @@ static const uint8_t *ed_bk_obj(uint32_t id, uint32_t *len)   /* 0 = no such obj
 static const uint8_t ED_BK_IDS[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 32, 33, 34};
 static uint8_t ed_dx_stage[DX_BANK_N * DX_VOICE] __attribute__((aligned(4)));   /* a DX7 bank being restored */
 #define ED_BK_LAST 11u
-/* user bank b <- 32 packed voices (data, 4 KiB; 0 = erase the bank): 0 ok, 2 a damaged voice, 4 flash.
- * Checked before the erase; the parts re-read their voice afterwards (dx_gen) */
-static uint32_t dx_bank_write(uint32_t b, const uint8_t *data)
+/* user bank b <- 32 packed voices (data: the staging RAM, 4 KiB; 0 = erase the bank): 0 ok, 4 flash. A damaged
+ * voice (an 8-bit byte, a bad name: a write cut by a power loss leaves one) is blanked, not refused, so a bank
+ * with one can always be rewritten and restored; the parts re-read their voice afterwards (dx_gen) */
+static uint32_t dx_bank_write(uint32_t b, uint8_t *data)
 {
     uint32_t off = DX_USER_BASE + b * 0x1000u, i, took;
     if (data)
         for (i = 0; i < DX_BANK_N; i++)
             if (dx_voice_check(data + i * DX_VOICE) == DXV_BAD)
-                return 2;
+                memset(data + i * DX_VOICE, 0xFF, DX_VOICE);
     if (fl_erase4k_quiet(off, &took))
         return 4;
     if (data && fl_write(off, data, DX_BANK_N * DX_VOICE))
@@ -549,7 +550,8 @@ static int ed_backup(uint32_t cmd, const uint8_t *a, uint32_t na)   /* 1: a back
             uint32_t cap;
             ed_bk_raw(id, &cap);
 #if FELUCCA_DX7
-            dx_ask.pending = 0;                           /* (a bank waiting for SAVE: gone, the RAM is needed) */
+            if (id >= 8u)
+                dx_ask.pending = 0;                       /* (a bank waiting for SAVE: gone, its RAM is needed) */
 #endif
             len = ed_bk_r32(a + 2);
             if (id >= 2u || len) {                        /* (the working project and the settings are never empty) */
@@ -1032,6 +1034,10 @@ static int ed_dx_native(const uint8_t *p, uint32_t n)
     }
     slot = (uint32_t)t->p[P_E0] & 127u;
     b = slot / DX_BANK_N;
+    if (song.playing || transport_req) {                  /* a flash erase stops the audio ~50 ms (upreset.c) */
+        ui_message("STOP BEFORE SAVE");
+        return 1;
+    }
     if (kind == DXS_VOICE) {
         if (!flash_ok || dx_voice_check(voice) != DXV_OK) {
             ui_message("DX7: VOICE REFUSED");
@@ -1070,12 +1076,21 @@ static void ed_dx_ask_poll(void)                          /* the answer to "DX7 
     if (!dx_ask.pending)
         return;
     b = dx_ask.pending - 1u;
-    if (!dx_ask.decided && fm1_ms - dx_ask.ms < 15000u)
+    if (!dx_ask.decided && fm1_ms - dx_ask.ms < 15000u) {
+        if (ui.msg_t < 2u) {                              /* the question stays up while it is open */
+            char q[24];
+            str_cpy(q, "DX7 BANK ?? SAVE=YES", sizeof q);
+            q[9] = (char)('1' + b);
+            ui_message(q);
+        }
         return;
+    }
     if (dx_ask.decided == 1u) {
         char msg[24];
         if (ed_bk_put) {                                  /* a restore took the staging RAM meanwhile */
             ui_message("DX7 BANK: CANCELLED");
+        } else if (song.playing || transport_req) {
+            ui_message("STOP BEFORE SAVE");
         } else if (!flash_ok || dx_bank_write(b, ed_dx_stage)) {
             ui_message("DX7: WRITE ERROR");
         } else {

@@ -297,26 +297,30 @@ The banks are **backup objects 8..11** and use the v6 commands unchanged:
 - `BK_LIST` lists them with the others (length 0 while a bank holds no valid voice), `BK_GET` reads them,
   and a backup file carries them; `backupRestore` writes them back before the projects.
 - `BK_PUT` begin accepts ids 8..11 with length 0 or 4096 (anything else: rc 1). At the commit every slot
-  must be blank (all `0xFF`, or all 0) or a usable voice — 7-bit bytes and a printable name — else rc 2 and
-  nothing is written. Fields beyond their DX7 range (real dumps carry 127s; 7 of the FM-1's own factory
+  must be 4096 bytes (or 0 to erase); a slot that is neither blank (all `0xFF`, or all 0) nor a usable voice —
+  7-bit bytes and a printable name; a write cut by a power loss leaves one — is blanked rather than refused,
+  so a bank can always be rewritten. Fields beyond their DX7 range (real dumps carry 127s; 7 of the FM-1's own factory
   voices do) are accepted and clamped by the engine, as a DX7 and Dexed do. Length 0
   erases the bank. The bank is erased and rewritten in one go (not A/B: a 4 KiB object has no room for the
   storage header), and a cut-off write leaves the unwritten slots blank, so the editor's file is the copy
   to keep; the write is read back and compared (rc 4 on a mismatch).
 - A part that plays from a rewritten bank re-reads its voice at the next block (`dx_gen`), so a write never
   changes a voice under a sounding note half way.
-- An **older firmware** has no `DX7` engine and no objects 8..11: `BK_LIST` does not list them, and a restore
-  of a file that carries them gets rc 1 at `BK_PUT` begin — the editor only restores what the device lists.
+- An **older firmware** has no `DX7` engine and no objects 8..11: `BK_LIST` does not list them, and `BK_PUT`
+  begin answers rc 1 for them — `backupRestore` LISTs first and restores only the objects the device lists,
+  so a v7 file restores onto SLOOP 2.3 with the DX7 banks skipped.
 
 **Native Yamaha dumps:** the firmware also takes a DX7 single voice (`F0 43 0n 00 01 1B`, 155 bytes, checksum)
 and a 32-voice bank (`F0 43 0n 09 20 00`, 4096 bytes, checksum) on its MIDI input, as Dexed sends them: the
-voice is written into the selected DX7 track's slot at once, the bank is staged and the FM-1 asks on its screen
-(*DX7 BANK n? SAVE=YES*). The receive frame holds 4104 bytes for this; the editor's own frames are unchanged.
+voice is written into the selected DX7 track's slot at once; the bank is staged and the FM-1 asks on its screen
+(*DX7 BANK n? SAVE=YES*: SAVE writes it, any other button or 15 s drops it, and the press that answers opens
+nothing). Neither writes while the song plays (*STOP BEFORE SAVE*, as SAVE > USER and the projects do). The
+receive frame holds 4104 bytes for this; the editor's own frames are unchanged.
 
 **Editor:** the Library tab's *DX7 voices* group (shown with v7 firmware that has the engine): the four
 banks, their 32 names, *Load .syx* (a 32-voice bank replaces the bank shown after a confirmation; a single
 voice goes into the selected slot), *Export .syx* (a 4104-byte bulk dump with INIT VOICE in the empty slots,
-for Dexed or a DX7), *Erase bank*, and *Play on this track* (sets `BANK` and `PTCH` of the selected track
-when it runs the DX7 engine). The protocol section of `editor.html` exposes `DX7` (parse / check / pack /
+for Dexed or a DX7), *Erase bank*, and *Play on this track* (sets `PTCH` of the selected track when it runs
+the DX7 engine). The protocol section of `editor.html` exposes `DX7` (parse / check / pack /
 bankSyx / voicesOf / objectOf), `bkGetObject` and `bkPutObject`; `web/test_web.mjs` checks them against the
 mock device.
