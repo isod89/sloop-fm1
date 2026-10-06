@@ -34,7 +34,7 @@ const E = vm.runInNewContext(proto + `
    CHOP, chopNovelty, chopHits, chopSnap, chopGrid, chopEqual, chopList, chopPick, chopFit, chopZones, wavFile, zipStore, crc32,
    UP, bank, capturePatch, auditionPatch, startWatch, libraryFile, readLibraryFile, paramKeys, patternFromSteps, stepsFromPattern, upName,
    mixer, GM_DRUM, drumName, parseNotes, fmtValue, F, DRUM_LANES, LV_NAMES, emptyDrum,
-   backupCapture, backupRestore, backupObjects, b64enc, b64dec })`,
+   backupCapture, backupRestore, backupObjects, b64enc, b64dec, DX7, bkGetObject, bkPutObject, BK })`,
 { setTimeout, clearTimeout, setInterval, clearInterval, console, TextEncoder });
 
 async function editorMock() {
@@ -44,7 +44,7 @@ async function editorMock() {
   inp.onmidimessage = (e) => link.receive(e.data);
   const rq = async (r, o) => link.request(r, o);
   const info = E.parse[E.CMD.INFO](await rq(E.req.info()));
-  ok(info.nengines === 9 && info.engines[5] === "VOICE" && info.engines[6] === "TRIO" && info.engines[7] === "WHEEL" && info.engines[8] === "GRAIN" && info.pcount === 58 && info.pe0 === 50 && info.engines[4] === "SAMPLE",
+  ok(info.nengines === 10 && info.engines[5] === "VOICE" && info.engines[6] === "TRIO" && info.engines[7] === "WHEEL" && info.engines[8] === "GRAIN" && info.engines[9] === "DX7" && info.pcount === 58 && info.pe0 === 50 && info.engines[4] === "SAMPLE",
     "editor: INFO");
   let descs = 0;
   for (let i = 0; i < info.pcount; i++) if (E.parse[E.CMD.DESC](await rq(E.req.desc(0, i))).label) descs++;
@@ -198,7 +198,7 @@ async function editorLibrarian() {
   const ctx = { keys, engines: info.engines, firmware: info.version, pe0: info.pe0 };
   const pts = [cap, { ...bass, engineName: info.engines[bass.engine], tags: ["bass", "device"] }];
   const file = JSON.parse(JSON.stringify(E.libraryFile("library", pts, ctx)));
-  ok(file.format === "felucca-library" && file.version === 1 && file.pCount === 58 && file.paramLabels.length === 58 && file.engines.length === 9,
+  ok(file.format === "felucca-library" && file.version === 1 && file.pCount === 58 && file.paramLabels.length === 58 && file.engines.length === 10,
     "library file: versioned, with P_COUNT, labels and engines");
   const back = E.readLibraryFile(file, ctx);
   ok(back.patches.length === 2 && !back.skipped && eq(back.patches[0].p, cap.p) && eq(back.patches[1].p, bass.p)
@@ -443,9 +443,9 @@ async function editorBackup() {
   const C = E.CMD;
   const { rq, done } = attachMock({});
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 6, "backup: INFO protocol v6");
+  ok(info.proto === 7, "backup: INFO protocol v7");
   const ec = readFileSync(join(HERE, "../firmware/src/editor.c"), "utf8");
-  ok(/ED_BK_IDS\[\] = \{0, 1, 2, 3, 4, 5, 6, 7, 32, 33, 34\}/.test(ec), "backup: the object ids == editor.c ED_BK_IDS");
+  ok(/ED_BK_IDS\[\] = \{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 32, 33, 34\}/.test(ec), "backup: the object ids == editor.c ED_BK_IDS (with the DX7 banks)");
   await rq(E.req.upStore(3, "BACKUP ME"));
   await rq(E.req.project(1, 2), { timeout: 4000, retries: 0 });
   const s = Int16Array.from({ length: 3000 }, (_, i) => Math.round(8000 * Math.sin(i / 7)));
@@ -455,8 +455,8 @@ async function editorBackup() {
   await rq(E.req.smpEnd(1, hdr), { timeout: 2000, retries: 0 });
   const A = await E.backupCapture(rq, info);
   const obj = (id) => A.objects.find((o) => o.id === id);
-  ok(A.format === "sloop-backup" && A.objects.map((o) => o.id).join() === "0,1,2,3,4,5,6,7,32,33,34" && obj(33).len > 512
-    && obj(4).len > 0 && obj(3).len === 0 && obj(32).len === 0, "backup: LIST + GET: 11 objects (project in C, sample in USR2, B empty)");
+  ok(A.format === "sloop-backup" && A.objects.map((o) => o.id).join() === "0,1,2,3,4,5,6,7,8,9,10,11,32,33,34" && obj(33).len > 512
+    && obj(4).len > 0 && obj(3).len === 0 && obj(32).len === 0 && obj(8).len === 0, "backup: LIST + GET: 15 objects (project in C, sample in USR2, B and the DX7 banks empty)");
   await rq(E.req.upErase(3));
   await rq(E.req.smpErase(1), { timeout: 2500, retries: 0 });
   await rq(E.req.set(0, 3, 5));
@@ -481,14 +481,14 @@ async function editorV5() {
   const C = E.CMD;
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 6 && /SLOOP/.test(info.version) && info.pcount === 58 && info.gcount === 32 && info.pe0 === 50, "v5/v6: INFO ends with the protocol version (6: backup)");
+  ok(info.proto === 7 && /SLOOP/.test(info.version) && info.pcount === 58 && info.gcount === 32 && info.pe0 === 50, "v5/v6/v7: INFO ends with the protocol version (7: the DX7 banks)");
   /* the firmware says the same: ED_DRUM_STEP is command 33, INFO sends 5, P_CHORD / the master globals as the mock has them */
   const ec = readFileSync(join(HERE, "../firmware/src/editor.c"), "utf8"), pc = readFileSync(join(HERE, "../firmware/src/params.c"), "utf8");
   const en = (/enum \{ ED_INFO = 1,([^}]*)\}/.exec(ec) || [])[1] || "";
   const names = ["ED_INFO", ...en.replace(/\/\*[^*]*\*\//g, "").split(",").map((x) => x.trim()).filter(Boolean)];
   ok(names.indexOf("ED_DRUM_STEP") + 1 === C.DRUM_STEP && names.indexOf("ED_TRACK_CHANGED") + 1 === C.TRACK_CHANGED
     && names.indexOf("ED_BK_LIST") + 1 === C.BK_LIST && names.indexOf("ED_BK_PUT") + 1 === C.BK_PUT
-    && /ed_b\(6\);\s*\/\* v6: the protocol version/.test(ec), "v5/v6: command numbers and INFO == editor.c");
+    && /ed_b\(7\);\s*\/\* v7: the protocol version/.test(ec), "v5/v6/v7: command numbers and INFO == editor.c");
   const enumNames = (id) => (new RegExp(`${id}\\[\\] = \\{([^}]*)\\}`).exec(pc) || [])[1].split(",").map((x) => x.trim().replace(/"/g, ""));
   const chord = E.parse[C.DESC](await rq(E.req.desc(0, 49)));
   const gd = [];
@@ -825,7 +825,63 @@ async function updater() {
   ok(e6 && /official FM-1 V15/.test(e6.message), "fm1pkg.js: only the exact official V15 is accepted (SHA-256)");
 }
 
+
+/* ------------------------------------------------------------------ v7: DX7 voices --- */
+async function dx7Mock() {
+  const m = E.makeMockDevice();
+  const inp = [...m.access.inputs.values()][0], out = [...m.access.outputs.values()][0];
+  const link = new E.Link((d) => out.send(d), { timeout: 300 });
+  inp.onmidimessage = (e) => link.receive(e.data);
+  const rq = async (r, o) => link.request(r, o);
+  const D = E.DX7;
+  ok(D.INIT.length === 128 && D.check(D.INIT) === null && D.name(D.INIT) === "INIT VOICE" && D.blank(new Uint8Array(128).fill(0xFF)) && !D.blank(D.INIT),
+    "dx7: INIT VOICE is a valid voice, an erased slot is blank");
+  const bad = D.INIT.slice(); bad[120] = 7;
+  const bad8 = D.INIT.slice(); bad8[3] = 0x80;
+  const r127 = D.INIT.slice(); r127[3] = 127; r127[110] = 127;
+  ok(/name/.test(D.check(bad)) && /8-bit/.test(D.check(bad8)) && D.check(r127) === null, "dx7: a control character in the name and an 8-bit byte are refused, 127s are not (clamped)");
+  /* a bank file round trip: 32 voices named V01..V32 */
+  const voices = Array.from({ length: 32 }, (_, i) => { const v = D.INIT.slice(); v.set(Array.from(`VOICE ${String(i + 1).padStart(2, "0")}  `, (c) => c.charCodeAt(0)), 118); v[110] = i; return v; });
+  const syx = D.bankSyx(voices);
+  const back = D.parse(syx);
+  ok(syx.length === 4104 && syx[4102] === ((-syx.subarray(6, 4102).reduce((a, b) => a + b, 0)) & 0x7F) && back.kind === "bank"
+    && back.voices.length === 32 && back.voices.every((v, i) => eq([...v], [...voices[i]])), "dx7: 32-voice bank .syx round trip, Yamaha checksum");
+  let threw = null;
+  try { const x = syx.slice(); x[4102] ^= 1; D.parse(x); } catch (e) { threw = e.message; }
+  ok(threw === "checksum", "dx7: a damaged bank is refused by its checksum");
+  /* a single voice (VCED, 155 bytes) packs to the bank form */
+  const vced = new Uint8Array(155);
+  for (let j = 0; j < 6; j++) { const o = vced.subarray(j * 21, j * 21 + 21); o.set([99, 99, 99, 99, 99, 99, 99, 0, 39, 0, 0, 0, 0, 0, 0, 0, j === 5 ? 99 : 0, 0, 1, 0, 7]); }
+  vced.set([99, 99, 99, 99, 50, 50, 50, 50, 0, 0, 1, 35, 0, 0, 0, 1, 0, 3, 24], 126);
+  vced.set(Array.from("INIT VOICE", (c) => c.charCodeAt(0)), 145);
+  const one = new Uint8Array(163);
+  one.set([0xF0, 0x43, 0x00, 0x00, 0x01, 0x1B]); one.set(vced, 6);
+  one[161] = (-vced.reduce((a, b) => a + b, 0)) & 0x7F; one[162] = 0xF7;
+  const pv = D.parse(one);
+  ok(pv.kind === "voice" && eq([...pv.voices[0]], [...D.INIT]), "dx7: a single-voice .syx packs to INIT VOICE's bank form");
+  /* the banks on the device: empty, written, read back, part of a backup, erased */
+  const e0 = await E.bkGetObject(rq, 8);
+  ok(e0 && e0.length === 0 && (await E.bkGetObject(rq, 11)).length === 0, "dx7: the four banks start empty (objects 8..11, length 0)");
+  const half = voices.map((v, i) => (i % 2 ? v : null));
+  await E.bkPutObject(rq, 9, D.objectOf(half));
+  const r9 = await E.bkGetObject(rq, 9), v9 = D.voicesOf(r9);
+  ok(r9.length === 4096 && v9.filter(Boolean).length === 16 && v9[1] && D.name(v9[1]) === "VOICE 02" && !v9[0], "dx7: bank 2 written with 16 voices reads back (blank slots 0xFF)");
+  const info = E.parse[E.CMD.INFO](await rq(E.req.info()));
+  const arc = await E.backupCapture(rq, info);
+  const o9 = arc.objects.find((o) => o.id === 9);
+  ok(o9 && o9.len === 4096 && arc.objects.some((o) => o.id === 8 && o.len === 0), "dx7: a backup carries the banks (9 full, 8 empty)");
+  await E.bkPutObject(rq, 9, new Uint8Array(0));
+  ok((await E.bkGetObject(rq, 9)).length === 0, "dx7: bank 2 erased (length 0)");
+  await E.backupRestore(rq, arc);
+  ok((await E.bkGetObject(rq, 9)).length === 4096, "dx7: a restore brings bank 2 back");
+  threw = 0;
+  try { await E.bkPutObject(rq, 10, D.objectOf([bad, ...new Array(31).fill(null)])); } catch (e) { threw = e.code; }
+  ok(threw === "bkWrite" && (await E.bkGetObject(rq, 10)).length === 0, "dx7: a bank with a damaged voice is refused at the commit");
+  ok(E.BK.RESTORE.includes(8) && E.BK.RESTORE.includes(11) && E.backupObjects(arc).has(9), "dx7: the restore list and file check know objects 8..11");
+  link.close && link.close();
+}
 await editorMock();
+await dx7Mock();
 await editorLibrarian();
 await editorLive();
 await editorTracks();

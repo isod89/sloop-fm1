@@ -288,6 +288,20 @@
             <span class="dim" data-t="dndHelp"></span>
           </p>
         </div>
+        <div id="dxgroup" style="margin-top:16px" hidden>
+          <h2 data-t="dxTitle" data-ic="symbol_audio"></h2>
+          <p class="dim" data-t="dxHelp"></p>
+          <div class="bar"><select id="dxbank"></select> <b id="dxhead"></b></div>
+          <div class="list" id="dxlist"></div>
+          <p class="bar" style="margin-top:6px">
+            <button id="dxplay" data-t="dxPlay" data-ic="symbol_audio"></button>
+            <button id="dxload" data-t="dxLoad" data-ic="symbol_upload"></button>
+            <button id="dxexport" data-t="dxExport" data-ic="symbol_download"></button>
+            <button id="dxerase" data-t="dxErase" data-ic="symbol_trash"></button>
+            <button id="dxrefresh" data-t="reload" data-ic="control_arrow_loop"></button>
+            <input type="file" id="dxfile" accept=".syx,.SYX,application/octet-stream" hidden>
+          </p>
+        </div>
       </div>
     </div>
   </section>
@@ -1239,7 +1253,7 @@ function b64dec(s) {
 }
 /* object ids (firmware editor.c ED_BK_IDS): 0 the working project, 1 the settings, 2..5 projects A..D,
    6..7 the user preset banks, 32..34 the sample slots USR1..3 */
-const BK = { FORMAT: "sloop-backup", VERSION: 1, SAMPLES: [32, 33, 34], RESTORE: [6, 7, 2, 3, 4, 5, 0, 1] };
+const BK = { FORMAT: "sloop-backup", VERSION: 1, SAMPLES: [32, 33, 34], RESTORE: [6, 7, 8, 9, 10, 11, 2, 3, 4, 5, 0, 1] };   /* 8..11: the DX7 banks (v7) */
 class BackupError extends Error { constructor(code, msg) { super(msg); this.code = code; } }
 /* read everything; progress(done, total bytes) */
 async function backupCapture(rq, info, progress = () => {}) {
@@ -1276,6 +1290,119 @@ function backupObjects(file) {
   if (!m.has(0) || !m.has(1)) throw new BackupError("bkBad", "incomplete backup");
   return m;
 }
+/* one object to the device (begin, data, commit); progress(bytes) per chunk. A firmware without the
+   object (an older one asked for a DX7 bank) answers rc 1 at begin. */
+async function bkPutObject(rq, id, d, progress = () => {}) {
+  let r = parse[CMD.BK_PUT](await rq(req.bkBegin(id, d.length, crc32(d)), { timeout: 1500, retries: 1 }));
+  if (r.rc) throw new BackupError("bkWrite", `begin ${id} rc ${r.rc}`);
+  for (let off = 0; off < d.length; off += 256) {
+    r = parse[CMD.BK_PUT](await rq(req.bkData(id, off, d.subarray(off, off + 256)), { timeout: 1500, retries: 1 }));
+    if (r.rc) throw new BackupError("bkWrite", `data ${id}+${off} rc ${r.rc}`);
+    progress(Math.min(256, d.length - off));
+  }
+  r = parse[CMD.BK_PUT](await rq(req.bkCommit(id), { timeout: 5000, retries: 0 }));
+  if (r.rc === 3) throw new BackupError("bkStop", "stop the song first");
+  if (r.rc) throw new BackupError("bkWrite", `commit ${id} rc ${r.rc}`);
+}
+/* one object from the device (LIST, then GET): null = the firmware has no such object, an empty
+   Uint8Array = empty */
+async function bkGetObject(rq, id) {
+  const L = parse[CMD.BK_LIST](await rq(req.bkList(), { timeout: 5000, retries: 0 }));
+  if (L.rc) throw new BackupError("bkRc" + L.rc, `LIST rc ${L.rc}`);
+  const it = L.items.find((x) => x.id === id);
+  if (!it) return null;
+  const data = new Uint8Array(it.len);
+  for (let off = 0; off < it.len; off += 256) {
+    const n = Math.min(256, it.len - off);
+    const g = parse[CMD.BK_GET](await rq(req.bkGet(id, off, n), { timeout: 1500, retries: 2 }));
+    if (g.rc) throw new BackupError(g.rc === 5 ? "bkStale" : "bkRead", `GET ${id}+${off} rc ${g.rc}`);
+    if (g.data.length !== n) throw new BackupError("bkRead", `GET ${id}+${off}: ${g.data.length} bytes`);
+    data.set(g.data, off);
+  }
+  if (crc32(data) !== it.crc) throw new BackupError("bkStale", `object ${id}: CRC`);
+  return data;
+}
+/* ---- v7: DX7 voices. A voice is the 128 packed bytes of a 32-voice bulk dump (VMEM); the FM-1 keeps four
+   user banks of 32 (backup objects 8..11, 4096 bytes each, length 0 = empty; an erased slot reads 0xFF).
+   The DX7 engine's PTCH 0..127 = bank x 32 + slot, with BANK = USR. */
+const DX7 = {
+  BANKS: 4, N: 32, VOICE: 128, OBJ: 8,
+  INIT: Uint8Array.from([99, 99, 99, 99, 99, 99, 99, 0, 39, 0, 0, 0, 56, 0, 0, 2, 0, 99, 99, 99, 99, 99, 99, 99, 0, 39, 0, 0, 0, 56, 0, 0, 2, 0,
+    99, 99, 99, 99, 99, 99, 99, 0, 39, 0, 0, 0, 56, 0, 0, 2, 0, 99, 99, 99, 99, 99, 99, 99, 0, 39, 0, 0, 0, 56, 0, 0, 2, 0,
+    99, 99, 99, 99, 99, 99, 99, 0, 39, 0, 0, 0, 56, 0, 0, 2, 0, 99, 99, 99, 99, 99, 99, 99, 0, 39, 0, 0, 0, 56, 0, 99, 2, 0,
+    99, 99, 99, 99, 50, 50, 50, 50, 0, 8, 35, 0, 0, 0, 49, 24, 73, 78, 73, 84, 32, 86, 79, 73, 67, 69]),
+  name: (v) => Array.from(v.subarray(118, 128), (c) => String.fromCharCode(c < 32 || c > 126 ? 32 : c)).join("").trimEnd(),
+  blank: (v) => v.every((b) => b === 0xFF) || v.every((b) => b === 0),
+  /* why a packed voice cannot be used (as eng_dx7.c dx_voice_check): 7-bit bytes and a printable name. Fields
+     beyond their DX7 range are not refused — real dumps carry 127s, and the engine clamps them as a DX7 does */
+  check(v) {
+    if (v.length !== 128) return "length";
+    if (v.some((b) => b > 127)) return "8-bit data";
+    if (v.subarray(118, 128).some((b) => b < 32)) return "name";
+    return null;
+  },
+  /* a 155-byte single voice (VCED) packed into the 128-byte bank form (VMEM) */
+  pack(d) {
+    const out = new Uint8Array(128);
+    for (let j = 0; j < 6; j++) {
+      const s = d.subarray(j * 21, j * 21 + 21), o = out.subarray(j * 17, j * 17 + 17);
+      o.set(s.subarray(0, 11));
+      o[11] = s[11] | s[12] << 2;
+      o[12] = s[13] | s[20] << 3;
+      o[13] = s[14] | s[15] << 2;
+      o[14] = s[16];
+      o[15] = s[17] | s[18] << 1;
+      o[16] = s[19];
+    }
+    out.set(d.subarray(126, 134), 102);
+    out[110] = d[134];
+    out[111] = d[135] | d[136] << 3;
+    out.set(d.subarray(137, 141), 112);
+    out[116] = d[141] | d[142] << 1 | d[143] << 4;
+    out[117] = d[144];
+    out.set(d.subarray(145, 155), 118);
+    return out;
+  },
+  /* a .syx file: {kind: "bank" | "voice", voices: [Uint8Array(128)...]}; throws on anything else */
+  parse(raw) {
+    const d = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
+    const sum = (a, b) => (-d.subarray(a, b).reduce((x, y) => x + y, 0)) & 0x7F;
+    if (d.length === 4104 && d[0] === 0xF0 && d[1] === 0x43 && (d[2] & 0xF0) === 0 && d[3] === 0x09 && d[4] === 0x20 && d[5] === 0 && d[4103] === 0xF7) {
+      if (sum(6, 4102) !== d[4102]) throw new Error("checksum");
+      return { kind: "bank", voices: Array.from({ length: 32 }, (_, i) => d.slice(6 + i * 128, 6 + (i + 1) * 128)) };
+    }
+    if (d.length === 163 && d[0] === 0xF0 && d[1] === 0x43 && (d[2] & 0xF0) === 0 && d[3] === 0 && d[4] === 1 && d[5] === 0x1B && d[162] === 0xF7) {
+      if (sum(6, 161) !== d[161]) throw new Error("checksum");
+      return { kind: "voice", voices: [DX7.pack(d.subarray(6, 161))] };
+    }
+    throw new Error("not a DX7 32-voice (4104 bytes) or single-voice (163 bytes) dump");
+  },
+  /* 32 voices (null = INIT VOICE) -> a 4104-byte bulk dump that Dexed and a DX7 accept */
+  bankSyx(voices) {
+    const out = new Uint8Array(4104);
+    out.set([0xF0, 0x43, 0x00, 0x09, 0x20, 0x00]);
+    for (let i = 0; i < 32; i++) out.set(voices[i] && !DX7.blank(voices[i]) ? voices[i] : DX7.INIT, 6 + i * 128);
+    out[4102] = (-out.subarray(6, 4102).reduce((x, y) => x + y, 0)) & 0x7F;
+    out[4103] = 0xF7;
+    return out;
+  },
+  /* a bank object (4096 bytes, or empty / null) -> 32 voices, null where blank or damaged */
+  voicesOf(obj) {
+    const v = [];
+    for (let i = 0; i < 32; i++) {
+      const x = obj && obj.length === 4096 ? obj.subarray(i * 128, (i + 1) * 128) : null;
+      v.push(x && !DX7.blank(x) && !DX7.check(x) ? x : null);
+    }
+    return v;
+  },
+  /* 32 voices -> the 4096-byte object (blank slots erased), or an empty one when none is used */
+  objectOf(voices) {
+    if (!voices.some(Boolean)) return new Uint8Array(0);
+    const o = new Uint8Array(4096).fill(0xFF);
+    voices.forEach((v, i) => { if (v) o.set(v, i * 128); });
+    return o;
+  },
+};
 /* write it back: banks, projects, the working project, the settings, then the samples */
 async function backupRestore(rq, file, progress = () => {}) {
   const m = backupObjects(file);
@@ -1284,17 +1411,7 @@ async function backupRestore(rq, file, progress = () => {}) {
   for (const id of BK.RESTORE) {
     if (!m.has(id)) continue;
     const d = m.get(id);
-    let r = parse[CMD.BK_PUT](await rq(req.bkBegin(id, d.length, crc32(d)), { timeout: 1500, retries: 1 }));
-    if (r.rc) throw new BackupError("bkWrite", `begin ${id} rc ${r.rc}`);
-    for (let off = 0; off < d.length; off += 256) {
-      r = parse[CMD.BK_PUT](await rq(req.bkData(id, off, d.subarray(off, off + 256)), { timeout: 1500, retries: 1 }));
-      if (r.rc) throw new BackupError("bkWrite", `data ${id}+${off} rc ${r.rc}`);
-      done += Math.min(256, d.length - off);
-      progress(done, total);
-    }
-    r = parse[CMD.BK_PUT](await rq(req.bkCommit(id), { timeout: 5000, retries: 0 }));
-    if (r.rc === 3) throw new BackupError("bkStop", "stop the song first");
-    if (r.rc) throw new BackupError("bkWrite", `commit ${id} rc ${r.rc}`);
+    await bkPutObject(rq, id, d, (k) => { done += k; progress(done, total); });
   }
   for (const id of BK.SAMPLES) {
     if (!m.has(id)) continue;
@@ -1506,6 +1623,9 @@ function makeMockDevice(opt = {}) {
         D("PTCH", F.SEMI, -24, 24, 0), D("SPRD", F.PCT, 0, 127, 30), D("RAND", F.PCT, 0, 127, 10), D("TONE", F.PCT, 0, 127, 127)],
       presets: [P("LOFI CLOUD", [0, 45, 95, 85, 0, 35, 12, 80], [70, 90, 120, 90], 0), P("VIBE HAZE", [2, 30, 100, 90, 0, 25, 10, 90], [50, 100, 120, 95], 0),
         P("FLUTE DUST", [5, 50, 108, 72, 0, 10, 10, 85], [50, 100, 127, 100], 0)] },
+    { name: "DX7", titles: ["PATCH", "TONE"], edit: [D("PTCH", F.INT, 0, 127, 0), E("BANK", ["USR"], 0), D("BRGT", F.BIPCT, -64, 63, 0), D("ENVS", F.BIPCT, -64, 63, 0),
+        D("LFOD", F.BIPCT, -64, 63, 0), D("TRN", F.SEMI, -24, 24, 0), D("ALG", F.INT, 0, 32, 0), D("FB", F.INT, 0, 8, 0)],
+      presets: [P("DX7 USER", [0, 0, 0, 0, 0, 0, 0, 0], [0, 127, 127, 110], 0)] },
   ];
   /* demo patterns of the mock only (the LIVE firmware has no factory patterns: a preset never writes the
      sequencer); used to seed the mock's user presets and track 1 as if they had been recorded */
@@ -1537,6 +1657,7 @@ function makeMockDevice(opt = {}) {
     slots: [null, null, null, null],
     smp: [0, 1, 2].map(() => ({ flash: new Uint8Array(SMP.SLOT_SIZE).fill(0xFF), zones: 0, name: "", len: 0, next: SMP.DATA_OFF })),
     bank: new Array(opt.slots || 32).fill(null),     /* user presets: {engine, name, p, pattern} */
+    dx: [null, null, null, null],                    /* v7: the DX7 user banks (Uint8Array(4096) or null) */
     settings: Uint8Array.from({ length: 88 }, (_, i) => (i * 37 + 5) & 0xFF),   /* v6: the settings object (opaque here) */
     bkSnap: null, bkPut: null,
     watch: false, v4: false, lastReq: 0,
@@ -1681,7 +1802,7 @@ function makeMockDevice(opt = {}) {
         s(opt.legacy ? "FELUCCA 0.4 BETA (MOCK)" : opt.v3 ? "FELUCCA 0.8 (MOCK)" : "FELUCCA SLOOP 2.0 (MOCK)"); b(ENG.length); b(P_COUNT); b(G_COUNT); b(NSTEP); b(P_E0);
         ENG.forEach((e) => s(e.name));
         if (!opt.legacy) b(NTRK);
-        if (v5) b(opt.noBackup ? 5 : 6);                 /* v6: backup / restore */
+        if (v5) b(opt.noBackup ? 5 : 7);                 /* v6: backup / restore; v7: the DX7 banks */
         break;
       case CMD.GET: case CMD.SET: {
         if (a.length < 2) return null;
@@ -1842,7 +1963,7 @@ function makeMockDevice(opt = {}) {
         const enc = (o) => Uint8Array.from(Array.from(JSON.stringify(o), (c) => c.charCodeAt(0) & 0x7F));
         const bankOf = (h) => { const x = st.bank.slice(h * 16, h * 16 + 16); return x.some(Boolean) ? enc(x) : new Uint8Array(0); };
         st.bkSnap = new Map([[0, enc(project())], [1, st.settings.slice()], ...[0, 1, 2, 3].map((k) => [2 + k, st.slots[k] ? enc(st.slots[k]) : new Uint8Array(0)]),
-          [6, bankOf(0)], [7, bankOf(1)], ...[0, 1, 2].map((k) => [32 + k, st.smp[k].zones ? st.smp[k].flash.slice(0, SMP.DATA_OFF + st.smp[k].len) : new Uint8Array(0)])]);
+          [6, bankOf(0)], [7, bankOf(1)], ...[0, 1, 2, 3].map((k) => [8 + k, st.dx[k] || new Uint8Array(0)]), ...[0, 1, 2].map((k) => [32 + k, st.smp[k].zones ? st.smp[k].flash.slice(0, SMP.DATA_OFF + st.smp[k].len) : new Uint8Array(0)])]);
         st.bkPut = null;
         b(0); b(st.bkSnap.size);
         for (const [id, d] of st.bkSnap) { b(id); out.push(...u35enc(d.length), ...u35enc(crc32(d))); }
@@ -1861,7 +1982,7 @@ function makeMockDevice(opt = {}) {
         if (opt.noBackup || a.length < 2) return null;
         const op = a[0], id = a[1], r = new Reader(a.slice(2));
         let rc = 1;
-        if (op === 0 && a.length === 12 && [0, 1, 2, 3, 4, 5, 6, 7].includes(id)) {
+        if (op === 0 && a.length === 12 && id <= 11) {
           const len = u35dec(r), crc = u35dec(r);
           if ((id >= 2 || len) && len <= 1 << 20) { st.bkPut = { id, len, crc, pos: 0, buf: new Uint8Array(len) }; st.bkSnap = null; rc = 0; }
         } else if (!st.bkPut || st.bkPut.id !== id) rc = 5;
@@ -1877,7 +1998,11 @@ function makeMockDevice(opt = {}) {
             if (id === 1) { if (P.len !== st.settings.length) throw 0; st.settings = P.buf.slice(); }
             else if (id === 0) { const o = js(); st.tracks = o.tracks; st.sel = o.sel; st.g = o.g; }
             else if (id <= 5) st.slots[id - 2] = P.len ? js() : null;
-            else { const x = P.len ? js() : new Array(16).fill(null); for (let i = 0; i < 16; i++) st.bank[(id - 6) * 16 + i] = x[i] || null; }
+            else if (id >= 8) {                      /* a DX7 bank: 32 packed voices, or empty */
+              if (P.len && P.len !== 4096) throw 0;
+              for (let i = 0; i < P.len; i += 128) { const v = P.buf.subarray(i, i + 128); if (!DX7.blank(v) && DX7.check(v)) throw 0; }
+              st.dx[id - 8] = P.len ? P.buf.slice() : null;
+            } else { const x = P.len ? js() : new Array(16).fill(null); for (let i = 0; i < 16; i++) st.bank[(id - 6) * 16 + i] = x[i] || null; }
           } catch (e) { rc = 2; }
         } else if (op === 3) { st.bkPut = null; rc = 0; }
         b(op); b(id); b(rc);
@@ -2120,6 +2245,11 @@ const TEXT = {
     bkRestoring: "復元中 ", bkRestored: "復元しました", bkConfirm: "FM-1 の今の内容をすべてこのバックアップで置き換えます。続けますか？",
     bkBad: "SLOOP のバックアップファイルではないか、壊れています: ", bkStop: "FM-1 の再生を止めてから、もう一度復元してください。",
     bkStale: "本体の内容が途中で変わりました。もう一度バックアップしてください: ", bkRead: "読み取りエラー: ", bkWrite: "書き込みエラー: ", bkRc4: "フラッシュがありません",
+    dxTitle: "DX7 音色", dxHelp: "FM-1 の DX7 エンジン用に 32 音色 × 4 バンク（PTCH 001〜128）。Dexed などの DX7 の .syx を読み込めます — 32 音色のバンクは表示中のバンクを置き換え、1 音色は選択中のスロットに入ります。バンクを .syx に書き出せます。バックアップにも含まれます。",
+    dxBank: "バンク", dxPlay: "このトラックで鳴らす", dxLoad: ".syx を読み込む", dxExport: ".syx に書き出す", dxErase: "バンクを消去",
+    dxConfirmBank: "バンク {n} のすべての音色をこのファイルで置き換えますか？", dxConfirmVoice: "「{name}」をこの音色で置き換えますか？", dxConfirmErase: "バンク {n} のすべての音色を消去しますか？",
+    dxBad: "DX7 の .syx ではないか、壊れています: ", dxWritten: "FM-1 に書き込みました", dxErased: "バンクを消去しました", dxNoTrack: "先に DX7 エンジンのトラックを選んでください",
+    dxFull: "バンクがいっぱいです: 置き換える音色を選んでください", dxLoading: "DX7 バンクを読み込み中 ",
     system: "システム", firmware: "ファームウェア", sync: "同期", tracksN: "トラック", stepsN: "ステップ数", enginesL: "エンジン",
     smpSlots: "サンプルスロット", userBank: "ユーザープリセット", none: "なし",
   },
@@ -2200,6 +2330,11 @@ const TEXT = {
     bkRestoring: "Restoring ", bkRestored: "Restored", bkConfirm: "Replace everything on the FM-1 with this backup?",
     bkBad: "Not a SLOOP backup, or damaged: ", bkStop: "Stop the FM-1 (PLAY), then restore again.",
     bkStale: "The FM-1 changed during the backup; back up again: ", bkRead: "Read error: ", bkWrite: "Write error: ", bkRc4: "No flash",
+    dxTitle: "DX7 voices", dxHelp: "Four banks of 32 DX7 voices on the FM-1: the DX7 engine's PTCH 001–128. Load a .syx from Dexed or any DX7 collection — a 32-voice bank replaces the bank shown, a single voice goes into the selected slot. Export a bank as .syx. A bank is also part of a backup.",
+    dxBank: "Bank", dxPlay: "Play on this track", dxLoad: "Load .syx", dxExport: "Export .syx", dxErase: "Erase bank",
+    dxConfirmBank: "Replace every voice of bank {n} with this file?", dxConfirmVoice: "Replace \"{name}\" with this voice?", dxConfirmErase: "Erase every voice of bank {n}?",
+    dxBad: "Not a DX7 .syx, or damaged: ", dxWritten: "Written to the FM-1", dxErased: "Bank erased", dxNoTrack: "Select a track that uses the DX7 engine first",
+    dxFull: "The bank is full: select a voice to replace", dxLoading: "Reading the DX7 banks ",
     system: "System", firmware: "Firmware", sync: "Sync", tracksN: "Tracks", stepsN: "Steps", enginesL: "Engines",
     smpSlots: "Sample slots", userBank: "User presets", none: "none",
   },
@@ -2505,6 +2640,9 @@ function buildUI() {
   renderSamples();
   renderSysinfo();
   $("bkgroup").hidden = !(dev.info.proto >= 6);       /* v6 firmware: backup / restore */
+  dxBanks = [null, null, null, null];
+  dxLoaded = false;
+  renderDx();                                        /* v7 firmware with the DX7 engine: its voice banks */
 }
 
 /* the track selector (v3): T1..T3 synth parts, T4 the drum track; the editor shows the selected one */
@@ -4165,7 +4303,7 @@ async function libOp(fn) {
   libBusy = true;
   busy++;
   renderLib(); renderBank();
-  try { await fn(); } catch (err) { report(err); } finally { busy--; libBusy = false; renderLib(); renderBank(); }
+  try { await fn(); } catch (err) { report(err); } finally { busy--; libBusy = false; renderLib(); renderBank(); renderDx(); }
 }
 const rqf = (r, o) => rq(r, o);
 const checkRc = (rc) => { if (rc) throw new Error(t("flashFail").replace("{rc}", rc)); };
@@ -4261,6 +4399,14 @@ $("libdel").addEventListener("click", async () => {
   renderLib();
 });
 
+function downloadBytes(name, bytes, type = "application/octet-stream") {
+  const blob = new Blob([bytes], { type });
+  const a = el("a", { href: URL.createObjectURL(blob), download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
 function download(name, obj) {
   const blob = new Blob([JSON.stringify(obj, null, 1)], { type: "application/json" });
   const a = el("a", { href: URL.createObjectURL(blob), download: name });
@@ -4307,6 +4453,101 @@ $("bk-file").addEventListener("change", async () => {
       await afterSoundChange("bkRestored");
     } catch (e) { bkReport(e); } finally { $("bk-prog").hidden = true; }
   });
+});
+
+/* ---- v7: the DX7 voice banks (the work: DX7, bkGetObject, bkPutObject above). Shown with a firmware that
+   has the DX7 engine and protocol 7; the banks are read the first time the group shows. */
+let dxBanks = [null, null, null, null], dxBank = 0, dxSel = null, dxLoaded = false, dxLoading = false;
+const dxOn = () => !!(dev && dev.info && dev.info.proto >= 7 && dev.info.engines.includes("DX7"));
+const dxTrackIsDx7 = () => !!(dev && dev.dump && dev.info.engines[dev.dump.engine] === "DX7");
+function renderDx() {
+  const g = $("dxgroup");
+  g.hidden = !dxOn();
+  if (g.hidden) return;
+  if (!dxLoaded && !dxLoading && !libBusy) { dxRefresh(); return; }
+  const sel = $("dxbank");
+  if (sel.children.length !== DX7.BANKS || sel.dataset.lang !== lang) {
+    sel.dataset.lang = lang;
+    sel.replaceChildren(...[0, 1, 2, 3].map((k) => el("option", { value: k, text: `${t("dxBank")} ${k + 1}` })));
+  }
+  sel.value = String(dxBank);
+  const voices = DX7.voicesOf(dxBanks[dxBank]), used = voices.filter(Boolean).length;
+  $("dxhead").textContent = dxLoaded ? `${used} / ${DX7.N} ${t("used")}` : t("dxLoading");
+  const tb = el("table", {}, el("colgroup", {}, el("col", { class: "n" }), el("col")),
+    el("tr", {}, el("th", { text: "#" }), el("th", { text: t("name") })));
+  voices.forEach((v, i) => {
+    const tr = el("tr", { class: [i === dxSel ? "sel" : "", v ? "" : "empty"].join(" ").trim() || null },
+      el("td", { text: String(dxBank * DX7.N + i + 1).padStart(3, "0") }), el("td", { text: v ? DX7.name(v) : t("empty") }));
+    tr.addEventListener("click", () => { dxSel = i; renderDx(); });
+    tr.addEventListener("dblclick", () => { dxSel = i; dxPlay(); });
+    tb.append(tr);
+  });
+  $("dxlist").replaceChildren(tb);
+  const v = dxSel == null ? null : voices[dxSel], idle = !libBusy && dxLoaded;
+  $("dxplay").disabled = !v || !idle || !dxTrackIsDx7();
+  $("dxload").disabled = !idle;
+  $("dxexport").disabled = !used || !idle;
+  $("dxerase").disabled = !used || !idle;
+  $("dxrefresh").disabled = !idle;
+}
+async function dxRefresh() {
+  dxLoading = true;
+  await libOp(async () => {
+    for (let k = 0; k < DX7.BANKS; k++) dxBanks[k] = await bkGetObject(rq, DX7.OBJ + k);
+    dxLoaded = true;
+  });
+  dxLoading = false;
+  renderDx();
+}
+async function dxPlay() {
+  if (!dxTrackIsDx7() || dxSel == null) { sayK("dxNoTrack"); return; }
+  const slot = dxBank * DX7.N + dxSel;
+  await libOp(async () => {
+    selfLoad();
+    await rq(req.set(0, dev.info.pe0 + 1, 0));            /* BANK = USR */
+    await rq(req.set(0, dev.info.pe0, slot));             /* PTCH */
+    await afterSoundChange();
+  });
+}
+async function dxWrite(k, voices, msg) {
+  await libOp(async () => {
+    const o = DX7.objectOf(voices);
+    await bkPutObject(rq, DX7.OBJ + k, o);
+    dxBanks[k] = o;
+    sayK(msg);
+  });
+}
+$("dxbank").addEventListener("change", () => { dxBank = +$("dxbank").value; dxSel = null; renderDx(); });
+$("dxrefresh").addEventListener("click", () => { if (dev) dxRefresh(); });
+$("dxplay").addEventListener("click", dxPlay);
+$("dxerase").addEventListener("click", () => {
+  if (dev && confirm(t("dxConfirmErase").replace("{n}", dxBank + 1))) dxWrite(dxBank, new Array(DX7.N).fill(null), "dxErased");
+});
+$("dxexport").addEventListener("click", () => {
+  downloadBytes(`SLOOP-DX7-bank${dxBank + 1}-${today()}.syx`, DX7.bankSyx(DX7.voicesOf(dxBanks[dxBank])));
+});
+$("dxload").addEventListener("click", () => { if (dev) { $("dxfile").value = ""; $("dxfile").click(); } });
+$("dxfile").addEventListener("change", async () => {
+  const f = $("dxfile").files[0];
+  $("dxfile").value = "";
+  if (!f || !dev) return;
+  let syx;
+  try {
+    syx = DX7.parse(new Uint8Array(await f.arrayBuffer()));
+    for (const v of syx.voices) { const why = DX7.check(v); if (why) throw new Error(`${DX7.name(v)}: ${why}`); }
+  } catch (e) { sayK("dxBad", e.message); return; }
+  const voices = DX7.voicesOf(dxBanks[dxBank]);
+  if (syx.kind === "bank") {
+    if (voices.some(Boolean) && !confirm(t("dxConfirmBank").replace("{n}", dxBank + 1))) return;
+    await dxWrite(dxBank, syx.voices, "dxWritten");
+  } else {
+    const slot = dxSel == null ? voices.findIndex((v) => !v) : dxSel;
+    if (slot < 0) { sayK("dxFull"); return; }
+    if (voices[slot] && !confirm(t("dxConfirmVoice").replace("{name}", DX7.name(voices[slot])))) return;
+    voices[slot] = syx.voices[0];
+    dxSel = slot;
+    await dxWrite(dxBank, voices, "dxWritten");
+  }
 });
 
 $("libexp1").addEventListener("click", () => {

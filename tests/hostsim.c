@@ -31,6 +31,8 @@ static struct { volatile uint32_t notes, buttons; } fm1_in;
 static void fm1_irq_off(void) {}                 /* (the host: one thread) */
 static void fm1_irq_on(void) {}
 #include "../firmware/src/core.h"
+static uint8_t dx_host_store[4 * 4096];     /* the DX7 user banks (eng_dx7.c): blank until a test fills them */
+#define DX_USER_XIP dx_host_store
 #include "../firmware/src/engines.c"
 #include "../firmware/src/drums.c"
 #include "../firmware/src/params.c"

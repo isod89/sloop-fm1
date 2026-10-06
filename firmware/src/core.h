@@ -17,7 +17,11 @@ enum { V_POLY, V_MONO, V_LEGATO, V_UNISON };   /* P_VOICE */
 #ifndef FELUCCA_SLICE
 #define FELUCCA_SLICE 0          /* the SLICE engine (eng_slice.c): kept in the tree, not built by default */
 #endif
-#define NENGINES (9 + FELUCCA_SLICE)   /* SLICE, when built, comes last: the other engines keep their numbers */
+#ifndef FELUCCA_DX7
+#define FELUCCA_DX7 1            /* the DX7 engine (eng_dx7.c): six-operator FM playing DX7 voices */
+#endif
+#define ENG_DX7_IDX 9            /* its engine number when built (after GRAIN; SLICE, when built, follows) */
+#define NENGINES (9 + FELUCCA_DX7 + FELUCCA_SLICE)   /* engines added later come LAST: the others keep their numbers */
 #define UP_SLOTS 32u             /* user presets (upreset.c) */
 
 /* ------------------------------------------------------- parameters --- */
@@ -137,6 +141,8 @@ typedef struct {
     const param_desc_t *(*desc)(const struct track *t, uint32_t k);
     /* optional: once per block and part, before its voices (also with no voice sounding) */
     void (*block)(struct track *t);
+    /* optional: the sound's name instead of the preset's (b holds 13), e.g. a DX7 voice's own */
+    const char *(*sound)(const struct track *t, char *b);
 } engine_t;
 
 /* ------------------------------------------------------------ track --- */

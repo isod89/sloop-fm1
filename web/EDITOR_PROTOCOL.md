@@ -3,7 +3,8 @@
 The firmware side is `firmware/src/editor.c` (SLOOP is based on Felucca: the frames keep its "FL"
 header). Commands 16-26 (user presets and live sync) form protocol v2; commands 27-30 (tracks) form
 protocol v3; commands 31-32 (any track's parameters) form protocol v4; command 33 and the extra step,
-`INFO` and `TRACK` bytes form protocol v5 (SLOOP 2.0).
+`INFO` and `TRACK` bytes form protocol v5 (SLOOP 2.0). Commands 34-36 (backup / restore) form protocol v6
+(SLOOP 2.3); the DX7 voice banks as backup objects 8..11 form protocol v7.
 
 **v3 (four tracks):** the device has four tracks: 1..3 are synth parts, 4 is the drum track. One
 of them is *selected* (the TRACKS page on the device, or `TRACK`). Every v1 / v2 command acts on the
@@ -46,7 +47,7 @@ after an engine change.
 
 | cmd | Request args | Reply args |
 | --- | --- | --- |
-| 1 INFO | — | version string, NENGINES, P_COUNT, G_COUNT, NSTEP, P_E0, then NENGINES engine-name strings, then (v3) NTRK (4), then (v5) the protocol version (5); older firmware ends after the names / NTRK |
+| 1 INFO | — | version string, NENGINES, P_COUNT, G_COUNT, NSTEP, P_E0, then NENGINES engine-name strings, then (v3) NTRK (4), then (v5) the protocol version (5, 6 with backup, 7 with the DX7 banks); older firmware ends after the names / NTRK |
 | 2 GET | scope, id | scope, id, v14 |
 | 3 SET | scope, id, v14 | scope, id, v14 (the value after clamping). Setting global `G_ENGSEL` (id from DESC label "ENG") changes the engine with its defaults |
 | 4 DUMP | — | engine, preset, then P_COUNT × v14 (the selected track), then G_COUNT × v14 (globals) |
@@ -278,3 +279,40 @@ written.
   work while the computer records.
 - **Safety.** Only `PROJECT` save, the sample-slot commands and `UP_PUT` / `UP_STORE` / `UP_ERASE` write flash, and only in
   Felucca's own storage; never the app or the update area.
+
+## v7: DX7 voices
+
+`INFO` ends with 7 and the engine list contains `DX7`. The DX7 engine plays Yamaha DX7 voices as they are
+stored in a 32-voice bulk dump: **128 packed bytes per voice** (the VMEM layout; a single-voice VCED dump of
+155 bytes is packed by the editor, `DX7.pack`). The FM-1 keeps **four user banks of 32 voices** in flash
+(`eng_dx7.c`, `0xE5000..0xE8FFF`, one sector per bank), addressed by the engine's `PTCH` 0..127 (bank × 32 +
+slot) with `BANK` = `USR`. A firmware built with `FELUCCA_DX7_ROM=1` also has a compiled-in bank, `BANK` =
+`ROM`; otherwise `BANK` has the single value `USR`.
+
+The banks are **backup objects 8..11** and use the v6 commands unchanged:
+
+| Object | Length | Content |
+| --- | --- | --- |
+| 8..11 | 4096, or 0 = empty | user bank 1..4: 32 × 128 bytes exactly as in flash; an unused slot is 128 × `0xFF` |
+
+- `BK_LIST` lists them with the others (length 0 while a bank holds no valid voice), `BK_GET` reads them,
+  and a backup file carries them; `backupRestore` writes them back before the projects.
+- `BK_PUT` begin accepts ids 8..11 with length 0 or 4096 (anything else: rc 1). At the commit every slot
+  must be blank (all `0xFF`, or all 0) or a usable voice — 7-bit bytes and a printable name — else rc 2 and
+  nothing is written. Fields beyond their DX7 range (real dumps carry 127s; 7 of the FM-1's own factory
+  voices do) are accepted and clamped by the engine, as a DX7 and Dexed do. Length 0
+  erases the bank. The bank is erased and rewritten in one go (not A/B: a 4 KiB object has no room for the
+  storage header), and a cut-off write leaves the unwritten slots blank, so the editor's file is the copy
+  to keep; the write is read back and compared (rc 4 on a mismatch).
+- A part that plays from a rewritten bank re-reads its voice at the next block (`dx_gen`), so a write never
+  changes a voice under a sounding note half way.
+- An **older firmware** has no `DX7` engine and no objects 8..11: `BK_LIST` does not list them, and a restore
+  of a file that carries them gets rc 1 at `BK_PUT` begin — the editor only restores what the device lists.
+
+**Editor:** the Library tab's *DX7 voices* group (shown with v7 firmware that has the engine): the four
+banks, their 32 names, *Load .syx* (a 32-voice bank replaces the bank shown after a confirmation; a single
+voice goes into the selected slot), *Export .syx* (a 4104-byte bulk dump with INIT VOICE in the empty slots,
+for Dexed or a DX7), *Erase bank*, and *Play on this track* (sets `BANK` and `PTCH` of the selected track
+when it runs the DX7 engine). The protocol section of `editor.html` exposes `DX7` (parse / check / pack /
+bankSyx / voicesOf / objectOf), `bkGetObject` and `bkPutObject`; `web/test_web.mjs` checks them against the
+mock device.

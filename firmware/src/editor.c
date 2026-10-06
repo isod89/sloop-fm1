@@ -411,6 +411,13 @@ static const uint8_t *ed_bk_obj(uint32_t id, uint32_t *len)   /* 0 = no such obj
             *len = sizeof up_bank[0];
         return (const uint8_t *)&up_bank[id - 6u];
     }
+#if FELUCCA_DX7
+    if (id >= 8u && id <= 11u) {                          /* a DX7 user bank: 32 packed voices, as in flash */
+        if (dx_bank_used(id - 8u))
+            *len = DX_BANK_N * DX_VOICE;
+        return dx_user_xip() + (id - 8u) * 0x1000u;
+    }
+#endif
     if (id >= 32u && id < 32u + SMP_USER_SLOTS) {
         const smp_user_hdr_t *h = (const smp_user_hdr_t *)smp_user_xip(id - 32u);
         if (h->magic == SMP_USER_MAGIC && h->version == 1u && h->nz && h->nz <= 16u &&
@@ -420,14 +427,62 @@ static const uint8_t *ed_bk_obj(uint32_t id, uint32_t *len)   /* 0 = no such obj
     }
     return 0;
 }
+#if FELUCCA_DX7
+static const uint8_t ED_BK_IDS[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 32, 33, 34};
+static uint8_t ed_dx_stage[DX_BANK_N * DX_VOICE] __attribute__((aligned(4)));   /* a DX7 bank being restored */
+#define ED_BK_LAST 11u
+/* user bank b <- 32 packed voices (data, 4 KiB; 0 = erase the bank): 0 ok, 2 a damaged voice, 4 flash.
+ * Checked before the erase; the parts re-read their voice afterwards (dx_gen) */
+static uint32_t dx_bank_write(uint32_t b, const uint8_t *data)
+{
+    uint32_t off = DX_USER_BASE + b * 0x1000u, i, took;
+    if (data)
+        for (i = 0; i < DX_BANK_N; i++)
+            if (dx_voice_check(data + i * DX_VOICE) == DXV_BAD)
+                return 2;
+    if (fl_erase4k_quiet(off, &took))
+        return 4;
+    if (data && fl_write(off, data, DX_BANK_N * DX_VOICE))
+        return 4;
+    fm1_irq_off();
+    fl_inval(off, 0x1000u);
+    fm1_irq_on();
+    dx_gen++;
+    return data && memcmp(dx_user_xip() + b * 0x1000u, data, DX_BANK_N * DX_VOICE) ? 4u : 0u;
+}
+#else
 static const uint8_t ED_BK_IDS[] = {0, 1, 2, 3, 4, 5, 6, 7, 32, 33, 34};
+#define ED_BK_LAST 7u
+#endif
+/* the staging RAM of object id and its size: the project buffer, or the DX7 bank's own */
+static uint8_t *ed_bk_raw(uint32_t id, uint32_t *cap)
+{
+#if FELUCCA_DX7
+    if (id >= 8u && id <= 11u) {
+        *cap = sizeof ed_dx_stage;
+        return ed_dx_stage;
+    }
+#endif
+    (void)id;
+    *cap = sizeof proj_tmp;
+    return ED_BK_RAW;
+}
 
 static uint32_t ed_bk_commit(void)
 {
-    uint8_t *raw = ED_BK_RAW;
-    uint32_t id = ed_bk_id, n = ed_bk_len;
+    uint32_t id = ed_bk_id, n = ed_bk_len, cap;
+    uint8_t *raw = ed_bk_raw(id, &cap);
     if (ed_bk_pos != n || st_crc32(raw, n) != ed_bk_crc)
         return 2;
+#if FELUCCA_DX7
+    if (id >= 8u && id <= 11u) {                          /* a DX7 user bank (n 0: erase it) */
+        if (n && n != sizeof ed_dx_stage)
+            return 2;
+        if (!flash_ok)
+            return 4;
+        return dx_bank_write(id - 8u, n ? raw : 0);
+    }
+#endif
     if (id == 1u)
         return settings_restore(raw, n);
     if (id <= 5u)
@@ -490,10 +545,12 @@ static int ed_backup(uint32_t cmd, const uint8_t *a, uint32_t na)   /* 1: a back
         rc = 1;
         if (!flash_ok) {
             rc = 4;
-        } else if (op == 0u && na == 12u && (id <= 7u)) {  /* begin: id, length (5), CRC-32 (5) */
+        } else if (op == 0u && na == 12u && (id <= ED_BK_LAST)) {  /* begin: id, length (5), CRC-32 (5) */
+            uint32_t cap;
+            ed_bk_raw(id, &cap);
             len = ed_bk_r32(a + 2);
             if (id >= 2u || len) {                        /* (the working project and the settings are never empty) */
-                if (len <= sizeof proj_tmp) {
+                if (len <= cap) {
                     ed_bk_put = 1;
                     ed_bk_valid = 0;                      /* (the staging RAM is the snapshot's) */
                     ed_bk_id = (uint8_t)id;
@@ -507,9 +564,10 @@ static int ed_backup(uint32_t cmd, const uint8_t *a, uint32_t na)   /* 1: a back
         } else if (!ed_bk_put || ed_bk_id != id || fm1_ms - ed_bk_ms > 15000u) {
             rc = 5;                                       /* no begin for this object (or too long ago) */
         } else if (op == 1u && na >= 9u && ed_bk_r32(a + 2) == ed_bk_pos) {   /* data: off (5), pack7 */
-            uint32_t k = ed_unpack7(a + 7, na - 7u, ed_smp_buf, 256u);
+            uint32_t k = ed_unpack7(a + 7, na - 7u, ed_smp_buf, 256u), cap;
+            uint8_t *raw = ed_bk_raw(id, &cap);
             if (k && k <= ed_bk_len - ed_bk_pos) {
-                memcpy(ED_BK_RAW + ed_bk_pos, ed_smp_buf, k);
+                memcpy(raw + ed_bk_pos, ed_smp_buf, k);
                 ed_bk_pos += k;
                 ed_bk_ms = fm1_ms;
                 rc = 0;
@@ -567,7 +625,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         for (i = 0; i < NENGINES; i++)
             ed_str(ENGINES[i]->name, 8);
         ed_b(NTRK);                                       /* v3 */
-        ed_b(6);                                          /* v6: the protocol version (backup) */
+        ed_b(7);                                          /* v7: the protocol version (DX7 banks as backup objects 8..11) */
         break;
     case ED_GET:
     case ED_SET:

@@ -480,6 +480,8 @@ static void trk_short_name(uint32_t c, char *b)      /* the track's sound, b hol
         str_cpy(b, "DRUM", 13);
     else if (user_of(t) < UP_SLOTS)
         up_name(user_of(t), b);
+    else if (e->sound)
+        e->sound(t, b);
     else if (e->npresets)
         str_cpy(b, e->presets[t->preset % e->npresets].name, 13);
     else
@@ -718,6 +720,8 @@ static void draw_foot(void)
         str_cpy(pn, DRUM_KIT_NAMES[drum_kit()], sizeof pn);
     else if (user_of(t) < UP_SLOTS)
         up_name(user_of(t), pn);                       /* a user preset */
+    else if (e->sound)
+        e->sound(t, pn);                               /* the engine's own name (a DX7 voice) */
     else if (e->npresets)
         str_cpy(pn, e->presets[TSEL->preset % e->npresets].name, sizeof pn);
     if (ui.home) {

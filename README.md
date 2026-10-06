@@ -101,12 +101,34 @@ Keys 1, 5, 9 and 13 glow dimly while a layer is held: the first key of each row 
 
 ### Synths and sounds
 
-- **Nine engines:** analog, 4-op FM, phase distortion, three-oscillator, tonewheel organ, formant voice, granular, lo-fi chip, sampler.
+- **Ten engines:** analog, 4-op FM, phase distortion, three-oscillator, tonewheel organ, formant voice, granular, lo-fi chip, sampler — and **DX7**, six-operator FM that plays real DX7 voices.
+- **DX7 voices (new):** four banks of 32 DX7 voices live on the FM-1, loaded from the web editor out of any `.syx` — the FM-1's own factory sounds (recovered as DX7 banks by [KingParamount/fm1-factory-presets](https://github.com/KingParamount/fm1-factory-presets)), the Yamaha ROM cartridges, thirty years of free patches, or a bank made in Dexed. Every voice plays with SLOOP's arpeggiator, chords, sequencer and effects; four knobs add brightness, envelope speed, LFO depth and transpose on top. See [DX7 voices](#dx7-voices).
 - **68 sounds, browsed by kind** — basses (sliding 808s, acid 303, reese, FM), keys (Rhodes, a real Steinway grand, house and afro keys), organs, pads, leads (supersaw, talkbox), plucks and bells, stabs and dub chords — every one level-matched. **32 slots** for your own presets.
 - Envelopes (with a pitch punch for 808s), LFO, arpeggiator, glide and voice modes (POLY, MONO, LEGATO, UNISON), per-track drive and slicer, sends to a **stereo chorus**, a **tempo delay** and a **stereo reverb**.
 - **Key and chords (SCL):** the key of the song for all synths, 16 scales, one-key chords (triad, 7th, 9th, sus4, power), keys snapped to the scale or the scale on the white keys.
 
-### Recording and the sequencer
+#### DX7 voices
+
+The **DX7** engine (track engine 10) is a six-operator FM synth that reads Yamaha DX7 voices as they are: the
+32 algorithms, the per-operator envelopes with keyboard level and rate scaling, velocity, fixed-frequency
+operators, detune, feedback, the pitch envelope and the LFO. Its voices live in **four banks of 32 on the
+FM-1** (PTCH 001–128), loaded from the web editor's **Library → DX7 voices**: open a `.syx` — a 32-voice bank
+replaces the bank shown, a single voice goes into the selected slot — and the FM-1 plays it at once. Export a
+bank as `.syx` for Dexed, erase it, or pick a voice and press *Play on this track*. The banks are part of a
+backup, and they survive a firmware update like everything else on the FM-1.
+
+Where to find voices: the FM-1's **own factory sounds** as four DX7 banks at
+[KingParamount/fm1-factory-presets](https://github.com/KingParamount/fm1-factory-presets), the Yamaha ROM
+cartridges and thousands of free patches (any DX7 `.syx` works). A build can also carry a bank inside the
+firmware (`FELUCCA_DX7_ROM=1`, see [BUILDING.md](BUILDING.md)); the release leaves that off, since the voice
+data in those collections is not SLOOP's to redistribute.
+
+On the FM-1: EDIT 1 is **PTCH · BANK · BRGT · ENVS** (the voice, its bank, the modulators' level — brighter or
+darker — and every envelope faster or slower), EDIT 2 **LFOD · TRN · ALG · FB** (more or less pitch LFO,
+transpose, and an algorithm or feedback override; 0 = the voice's own). The ENV page is a VCA in front of the
+voice: the DX7 presets leave it open. An empty slot plays INIT VOICE.
+
+## Recording and the sequencer
 
 - **Records as you play, no click needed:** while it plays, REC records at once and every pass is added on top (overdub). Notes land where you heard them: the ~12 ms of the keys are taken back.
 - **The REC screen (2.3):** **mode** *free* — no tempo, no grid: play, press REC on the "1" after your last bar, and the loop's length sets the tempo — or *tempo* — record at the tempo you set; **length** 1, 2 or 4 bars; **start** on your first note, or after a one-bar **count-in**.
@@ -309,7 +331,7 @@ Something else? [Open an issue](../../issues): what you did, what you expected, 
 | | |
 | --- | --- |
 | Tracks | 3 synth parts (8 voices shared) + drums (16 sounds, 6 voices) |
-| Sounds | 68 presets on 9 engines (browsed by kind, level-matched), 8 sampled sets (CC0), 3 slots for your own samples, 32 user presets |
+| Sounds | 68 presets on 10 engines (browsed by kind, level-matched), 128 slots for DX7 voices (`.syx`), 8 sampled sets (CC0), 3 slots for your own samples, 32 user presets |
 | Drum kits | 37 (5 sampled, 32 synthesised, 16 sounds each), level-matched |
 | Sequencer | 64 steps per track, own length and division each; chords with a level and ratchet per note; drums with a level and ratchet per sound; ties, slide; MPC swing 50–75 %; one sample-accurate clock (no drift) |
 | Recording | live, quantised as heard (latency-compensated), overdub; free take (the tempo follows you) or the tempo set; start on the first note or a one-bar count-in; 1, 2 or 4 bars |
