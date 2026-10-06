@@ -117,8 +117,8 @@ replaces the bank shown, a single voice goes into the selected slot — and the 
 bank as `.syx` for Dexed, erase it, or pick a voice and press *Play on this track*. **On the FM-1 the loaded
 voices are in the PRESETS list by name**, tagged DX7, after the factory sounds and before your user presets:
 turn PRESETS as for any sound and the track switches to the DX7 engine on that voice; the tag names the bank,
-DX1 to DX4. (With no voice loaded the list has a single DX7 entry, INIT VOICE.) HOME knob 1 still steps
-through the 128 slots directly. **To move faster, SAVE → PRESETS page, KNOB 3 (KIND)** jumps by kind:
+DX1 to DX4. (With no voice loaded the list has a single DX7 entry, INIT VOICE.) On the EDIT page PATCH, knob 1
+(PTCH) steps through the 128 slots directly. **To move faster, SAVE → PRESETS page, KNOB 3 (KIND)** jumps by kind:
 basses, keys, organs, pads, leads, plucks, stabs, FX, then each DX7 bank, then the user presets — new with
 this engine, and as useful for the 68 SLOOP sounds as for the 128 voices. The banks are part of a
 backup, and they survive a firmware update like everything else on the FM-1.
@@ -137,10 +137,10 @@ A user preset or a project saved with a DX7 track remembers **which slot** it pl
 (the stock FM-1 stores the voice inside each of its 128 presets instead): replace that slot and the preset
 follows. Keep the bank, or export it as `.syx`.
 
-On the FM-1: EDIT 1 (PATCH) is **PTCH · BRGT · ENVS · LFOD** (the voice, the modulators' level — brighter or
-darker — every envelope faster or slower, more or less pitch LFO), EDIT 2 (TONE) **TRN · ALG · FB**
-(transpose, and an algorithm or feedback override; 0 = the voice's own). The ENV page is a VCA in front of the
-voice: the DX7 presets leave it open. An empty slot plays INIT VOICE.
+On the FM-1, press EDIT: page PATCH is **PTCH · BRGT · ENVS · LFOD** (the voice, the modulators' level — brighter or
+darker — every envelope faster or slower, more or less pitch LFO), page TONE **TRN · ALG · FB**
+(transpose, and an algorithm or feedback override; 0 = the voice's own). The ENV page (ATK DEC SUS REL) is a VCA
+in front of the voice: the DX7 preset leaves it open. An empty slot plays INIT VOICE.
 
 ## Recording and the sequencer
 
