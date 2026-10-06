@@ -875,11 +875,20 @@ static void ui_input(void)
     if ((s = panel_enc(EN_PRESET)) != 0 && (ui.home || cur_page()->graph == GR_BROWSE || cur_fam() == FAM_TRK)) {
         /* PRESETS browses the selected part's presets (all engines, then user presets) on HOME, the PRESETS
          * page and TRACKS only (the drum track: its kits); elsewhere a stray turn would throw away the sound
-         * being edited. Every detent counts */
+         * being edited. Every detent counts. HOME held while turning: by KIND (basses, keys, ... each DX7
+         * bank, the user presets), the same jump as KNOB 3 on the PRESETS page; that HOME press then opens
+         * no menu and is no tap */
         uint32_t total, cur = preset_pos(&total);
+        int kind = ((fm1_in.buttons >> panel.btn[B_HOME]) & 1u) != 0u && ui.home_t0 != 0u;
+        if (kind)
+            ui.home_t0 |= 2u;                           /* (as a hold already taken: btn_hold) */
         if (is_drum(TSEL))
             TDRUM->p[P_E0] = (int16_t)clamp(TDRUM->p[P_E0] + s, 0, DRUM_KITS - 1);
-        else if (total)
+        else if (total && kind) {
+            uint32_t n = preset_group_jump(cur, s);
+            preset_go(n);
+            ui_message(preset_kind(n));
+        } else if (total)
             preset_go((uint32_t)(((int32_t)cur + s % (int32_t)total + (int32_t)total) % (int32_t)total));
     }
     if ((s = panel_enc(EN_ALGO)) != 0 && !ft_on)     /* ALGORITHM: the selected track, on every page (not in a take) */

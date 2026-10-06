@@ -213,6 +213,26 @@ int main(int argc, char **argv)
         open_family(FAM_EDIT); ui.force = 1; frame(); ppm("page-tone-dx7");
         go_home(); ui_message("DX7 BANK 1? SAVE=YES"); ui.force = 1; frame(); ppm("head-dx-ask");
         ui.msg_t = 0; ui.force = 1; frame();
+        {   /* HOME held + PRESETS: by kind, on the TRACKS screen; no menu opens, no HOME tap on release */
+            uint32_t before, after, k0, k1;
+            track_select(0);
+            preset_go(0);                                /* 808 BOOM: kind BASS */
+            go_home(); ui.force = 1; frame();
+            before = preset_pos(&total1);
+            k0 = preset_group(before);
+            fm1_in.buttons |= BT(B_HOME); frame();       /* HOME down ... */
+            encs[panel.enc[EN_PRESET]] = 1; frame();     /* ... and one click of PRESETS */
+            after = preset_pos(&total1);
+            k1 = preset_group(after);
+            check(k1 == k0 + 1u && after > before && !ui.menu, "HOME + PRESETS: the next kind (KEYS), no menu");
+            frames(60);                                  /* a second with HOME still down: still no menu */
+            check(!ui.menu && cur_page()->scope == SC_TRK, "HOME + PRESETS: HOME held on, the menu stays shut");
+            encs[panel.enc[EN_PRESET]] = -1; frame();
+            check(preset_group(preset_pos(&total1)) == k0, "HOME + PRESETS back: the previous kind");
+            fm1_in.buttons &= ~BT(B_HOME); frame(); frames(2);
+            check(!ui.menu && cur_page()->scope == SC_TRK, "HOME let go: no tap, TRACKS stays");
+            preset_go(0);
+        }
         preset_go(0);
         memset(dx_host_store, 0xFF, sizeof dx_host_store);
         dx_gen++;

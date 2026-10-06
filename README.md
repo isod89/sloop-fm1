@@ -118,9 +118,10 @@ bank as `.syx` for Dexed, erase it, or pick a voice and press *Play on this trac
 voices are in the PRESETS list by name**, tagged DX7, after the factory sounds and before your user presets:
 turn PRESETS as for any sound and the track switches to the DX7 engine on that voice; the tag names the bank,
 DX1 to DX4. (With no voice loaded the list has a single DX7 entry, INIT VOICE.) On the EDIT page PATCH, knob 1
-(PTCH) steps through the 128 slots directly. **To move faster, SAVE → PRESETS page, KNOB 3 (KIND)** jumps by kind:
-basses, keys, organs, pads, leads, plucks, stabs, FX, then each DX7 bank, then the user presets — new with
-this engine, and as useful for the 68 SLOOP sounds as for the 128 voices. The banks are part of a
+(PTCH) steps through the 128 slots directly. **To move faster, hold HOME and turn PRESETS**: each click jumps to the next kind — basses, keys, organs,
+pads, leads, plucks, stabs, FX, then each DX7 bank, then the user presets (the kind flashes in the header;
+that HOME press opens no menu). The PRESETS page (SAVE, from any page but TRACKS) has the same jump on
+KNOB 3 (KIND). New with this engine, and as useful for the 68 SLOOP sounds as for the 128 voices. The banks are part of a
 backup, and they survive a firmware update like everything else on the FM-1.
 
 Where to find voices: the FM-1's **own factory sounds** as four DX7 banks at
@@ -231,7 +232,7 @@ Nothing to download or compile. Your projects, user presets, samples and setting
 | **MASTER** | volume (and the USB audio level, if USB AUDIO is on MASTER) |
 | **SELECT** | tempo, on every page, even inside a layer |
 | **ALGORITHM** | the selected track: 1 · 2 · 3 (synths) · 4 (drums) |
-| **PRESETS** | the selected track's sound, or the drum kit |
+| **PRESETS** | the selected track's sound, or the drum kit · **hold HOME while turning: by kind** (basses, keys, … each DX7 bank, your presets) |
 | **KNOB 1–4** | what the four dials at the bottom of the screen show, each in its colour |
 | **OCT− / OCT+** | octave (both: back to 0) · on the drum track, held: ghost / hard hits |
 | **FX · SCL · ENV · LFO · EDIT · GLO** (top row) | tap: their pages · hold FX, SCL, EDIT, GLO: a layer. **SCL** is the second button of the top row, between FX and ENV |

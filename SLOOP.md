@@ -132,7 +132,7 @@ Other controls:
 | **SAVE** | on TRACKS: the SONG screen · elsewhere: the SAVE pages |
 | **EDIT + OCT− / OCT+** | undo / redo |
 | **ALGORITHM** | select the track (on every page) |
-| **PRESETS** | the selected track's sound, or the drum kit |
+| **PRESETS** | the selected track's sound, or the drum kit · hold HOME while turning: by kind (basses, keys, … each DX7 bank, your presets) |
 | **SELECT** | tempo (always, even inside a layer) |
 | **OCT− / OCT+** | synth tracks: octave (both: back to 0) · drum track, held: ghost / hard hits |
 | **HOME** | the TRACKS screen · hold: menu (colour, low cut, zoom, lights, keys, notes, USB audio, calibration, about) · tapped while a layer is held: lock it open |
