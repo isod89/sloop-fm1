@@ -1,14 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* SLOOP menu (HOME held), in sections as the pages are (2.4): SCREEN (COLOR, ZOOM), LIGHTS (LIGHTS, KEYS, NOTES),
- * AUDIO (LOWCUT, USB AUDIO, USB SERIAL), SYSTEM (HARDWARE CALIBRATION, ABOUT). SELECT goes to the section
+ * AUDIO (LOWCUT, USB AUDIO, USB SERIAL), SYSTEM (HARDWARE CALIBRATION, ABOUT, PADS). SELECT goes to the section
  * before / after (stopping at the ends), KNOB 1..3 set the section's settings in order (the knob's colour marks
  * its row), PRESETS moves the cursor; OCT+ steps the cursor's setting round or opens it (CALIBRATION, ABOUT),
- * OCT- closes (from ABOUT: back to the section). */
+ * OCT- closes (from ABOUT: back to the section). PADS (seq.c): turned right it waits for the first pad of a
+ * 16-pad controller (its bottom left one), which sets the channel and the note; turned left it is OFF. */
 /* ------------------------------------------------------------ menu --- */
-enum { MI_COLOR, MI_ZOOM, MI_LIGHTS, MI_KEYS, MI_NOTES, MI_LOWCUT, MI_USB, MI_SERIAL, MI_PANEL, MI_ABOUT, MI_COUNT };
+enum { MI_COLOR, MI_ZOOM, MI_LIGHTS, MI_KEYS, MI_NOTES, MI_LOWCUT, MI_USB, MI_SERIAL, MI_PANEL, MI_ABOUT, MI_PADS,
+       MI_COUNT };
 static const char *const MI_NAME[MI_COUNT] = {"COLOR", "ZOOM", "LIGHTS", "KEYS", "NOTES", "SPEAKER LOWCUT", "USB AUDIO",
-                                              "USB SERIAL", "HARDWARE CALIBRATION", "ABOUT"};
+                                              "USB SERIAL", "HARDWARE CALIBRATION", "ABOUT", "PADS"};
 enum { MS_SCREEN, MS_LIGHTS, MS_AUDIO, MS_SYSTEM, MS_COUNT };
 static const char *const MS_NAME[MS_COUNT] = {"SCREEN", "LIGHTS", "AUDIO", "SYSTEM"};   /* (AUDIO: and USB) */
 static const uint8_t MS_FIRST[MS_COUNT + 1] = {MI_COLOR, MI_LIGHTS, MI_LOWCUT, MI_PANEL, MI_COUNT};   /* rows of each */
@@ -41,6 +43,18 @@ static const char *mi_value(uint32_t i, uint16_t *c)
     case MI_LOWCUT: return settings.lowcut ? "ON" : "OFF";
     case MI_USB: return usb_full ? "FULL" : "MASTER";
     case MI_SERIAL: return usb_serial ? "ON" : "OFF";
+    case MI_PADS: {                                   /* OFF, waiting for pad 1, or its channel and note: CH10 N36 */
+        static char b[12];
+        if (pads_learn)
+            return "HIT PAD 1";
+        if (!pads_ch)
+            return "OFF";
+        str_cpy(b, "CH", sizeof b);
+        fmt_int(b + str_len(b), pads_ch);
+        str_cpy(b + str_len(b), " N", 3);
+        fmt_int(b + str_len(b), pads_base);
+        return b;
+    }
     default:
         *c = C_DIM;
         return "";                                    /* (an action: OCT+ opens it) */
@@ -52,7 +66,8 @@ static void draw_menu(void)
     uint32_t i, pass, sec = mi_sec(ui.menu_sel % MI_COUNT);
     uint32_t sig = ui.menu * 7u + ui.menu_sel * 131u + settings.palette * 1009u + settings.lowcut * 7919u +
                    settings.zoom * 104729u + lights_lvl * 1299709u + lights_keys * 15485863u +
-                   lights_notes * 32452843u + usb_full * 49979687u + usb_serial * 86028121u;
+                   lights_notes * 32452843u + usb_full * 49979687u + usb_serial * 86028121u +
+                   pads_ch * 122949829u + pads_base * 141650939u + pads_learn * 160481183u;
     if (!ui.force && sig == ui.menu_sig)
         return;
     ui.menu_sig = sig;
@@ -142,6 +157,7 @@ static void enc_drop(void)                             /* knob turns nobody take
 
 static void menu_close(void)
 {
+    pads_learn = 0;                                    /* (PADS still waiting for its pad: OFF, as it was) */
     if (song.playing || transport_req)
         settings_later = 1;                            /* (a flash write stops the audio: once stopped) */
     else
@@ -189,6 +205,14 @@ static void mi_set(uint32_t i, int32_t s)
             lights_lvl = LIGHTS_LOW;                   /* keys lit need a level: the lowest */
         break;
     }
+    case MI_PADS:                                      /* right: waits for pad 1; left: OFF; OCT+ steps round */
+        if (s > 0 ? !pads_ch : !s && !pads_ch && !pads_learn) {
+            pads_learn = 1;
+        } else if (s <= 0) {
+            pads_learn = 0;
+            pads_ch = 0;
+        }
+        break;
     case MI_PANEL:                                     /* actions: OCT+ only */
         if (!s) {
             panel_setup();

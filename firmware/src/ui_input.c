@@ -120,11 +120,11 @@ static uint32_t keys_lit(void)
             if (on)
                 m |= 1u << key_of_white(i);
         }
-        return m | fm1_in.notes;
+        return m | keys_down();
     }
     case LY_SCALE:                                 /* the keys in the scale; the root blinks */
         if (lights_notes)                          /* NOTES: the scale goes dim (keys_notes_dim), what sounds lit */
-            return (blink ? scale_keys(1) : 0u) | keys_sounding(t) | fm1_in.notes;
+            return (blink ? scale_keys(1) : 0u) | keys_sounding(t) | keys_down();
         return scale_keys(0) & ~(blink ? 0u : scale_keys(1));
     case LY_MIX:                                   /* tracks heard: 1..4; soloed: 5..8; a fill: 9, armed / on: 10; tap: the beat */
         for (i = 0; i < 4u; i++) {
@@ -141,7 +141,7 @@ static uint32_t keys_lit(void)
             m |= 1u << key_of_white(15);
         return m;
     case LY_ERASE:                                 /* the sounds the pattern holds (NOTES: dim, the hits lit) */
-        return (lights_notes ? 0u : erase_lanes(t)) | fm1_in.notes | (lights_notes ? keys_sounding(t) : 0u);
+        return (lights_notes ? 0u : erase_lanes(t)) | keys_down() | (lights_notes ? keys_sounding(t) : 0u);
     default:                                       /* playing, ARP roll, SAVE song, every page and the menu */
         break;
     }
@@ -157,9 +157,9 @@ static uint32_t keys_lit(void)
             if (on)
                 m |= 1u << key_of_white(i);
         }
-        return m | fm1_in.notes;
+        return m | keys_down();
     }
-    m = fm1_in.notes;
+    m = keys_down();
     if (is_drum(t) || lights_notes)                /* the drum track: each hit lights its key; NOTES: the synths too */
         m |= keys_sounding(t);
     return m;
@@ -491,7 +491,7 @@ static void seq_entry(uint32_t pressed)
         }
         last_note = (uint8_t)note;
     }
-    if (ui.entry_open && !fm1_in.notes)
+    if (ui.entry_open && !keys_down())
         cursor_set(ui.cursor + 1);
 }
 

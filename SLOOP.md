@@ -440,6 +440,13 @@ SLOOP takes MIDI from two places at once:
 
 **Clock only:** GLO → SYSTEM → **IN** = **CLOCK** makes SLOOP take only the clock and START / CONTINUE / STOP from MIDI, and ignore every incoming note — for a DAW or a sequencer that sends notes to other gear on the same cable. **NOTES** (the default): notes and clock, as before. A note-off still gets through, so nothing held when you switch is left hanging. A setting of the FM-1, as SYNC.
 
+**Pad controllers:** HOME menu → SYSTEM → **PADS** makes a 16-pad controller the FM-1's 16 white keys. Turn **KNOB 3** right: the menu reads *HIT PAD 1*. Hit the controller's first pad — the bottom left one, its lowest note — and SLOOP keeps its channel and its note (*CH10 N54*): the 16 notes from there are the 16 keys. Turn it left for OFF (the default). A setting of the FM-1, as SYNC.
+
+- **Where they lie:** as the 4 × 4 on the screen. The top left pad is key 1, the bottom right one key 16.
+- **What they do:** what the keys do, wherever you are — the 16 sounds on the drum track, the scale or the chords on a synth track, and with a button held the punch-in effects (FX), the steps (SEQ), erase (EDIT), note repeat (ARP), mutes and solos (GLO), the sections (SAVE).
+- **How hard you hit** is the level: ghost, soft, normal or hard on the drum track, recorded so; the note's velocity on a synth track. On the drum track, OCT− / OCT+ held still make every hit a ghost / a hard one.
+- The other notes of the controller's channel play as before. What the pads play is not sent back to MIDI out, and **IN** = **CLOCK** ignores the pads too.
+
 Bluetooth MIDI is not supported: SLOOP, like Felucca, never switches the radio on.
 
 ## USB audio: record on a computer
@@ -479,7 +486,7 @@ It sees the mix as if **MASTER** were all the way up, so the picture does not fo
 
 ## Lights
 
-Hold **HOME** for the menu: **LIGHTS**, **KEYS** and **NOTES** are together there (with **USB AUDIO**, the level of the USB audio input: see [USB audio](#usb-audio-record-on-a-computer), and **USB SERIAL**, a serial console for developers: OFF by default, as macOS 13–15 do not show the USB audio input while it is on; a change takes effect at the next start). The menu is in four sections, as the pages are — **SCREEN** (COLOR, ZOOM), **LIGHTS** (LIGHTS, KEYS, NOTES), **AUDIO** (LOWCUT, USB AUDIO, USB SERIAL), **SYSTEM** (HARDWARE CALIBRATION, ABOUT): **SELECT** goes from one to the next, **KNOB 1, 2, 3** set the section's rows (each row shows its knob's colour), PRESETS moves the cursor, OCT+ steps the cursor's setting round or opens it, OCT− closes. They are saved with the settings of the FM-1, not with a project: loading a project or NEW PROJECT does not change them.
+Hold **HOME** for the menu: **LIGHTS**, **KEYS** and **NOTES** are together there (with **USB AUDIO**, the level of the USB audio input: see [USB audio](#usb-audio-record-on-a-computer), and **USB SERIAL**, a serial console for developers: OFF by default, as macOS 13–15 do not show the USB audio input while it is on; a change takes effect at the next start). The menu is in four sections, as the pages are — **SCREEN** (COLOR, ZOOM), **LIGHTS** (LIGHTS, KEYS, NOTES), **AUDIO** (LOWCUT, USB AUDIO, USB SERIAL), **SYSTEM** (HARDWARE CALIBRATION, ABOUT, and PADS: see [MIDI keyboards](#midi-keyboards)): **SELECT** goes from one to the next, **KNOB 1, 2, 3** set the section's rows (each row shows its knob's colour), PRESETS moves the cursor, OCT+ steps the cursor's setting round or opens it, OCT− closes. They are saved with the settings of the FM-1, not with a project: loading a project or NEW PROJECT does not change them.
 
 - **LIGHTS** — OFF, LOW, MID, HIGH: every button glows at that level, so its label can be read in the dark (on a black FM-1 the labels are unreadable unlit). What is on — the page, PLAY, REC, an octave — stays at full light and still blinks as before.
 - **KEYS** — OFF, C KEYS, WHITE KEYS, ALL KEYS: the Cs, every white key, or every key (2.4), glow at the LIGHTS level too (KEYS turns LIGHTS on at LOW if it was off). Played keys and the layer landmarks keep their own light.
@@ -500,7 +507,7 @@ The glow is a short pulse on every scan of the panel (about 900 times a second):
 | Recording | live, quantised as heard (latency-compensated), overdub; records at once while playing; free take sets loop length and tempo, or the tempo set, from the first note or a one-bar count-in |
 | Memory | undo / redo, 4 projects, 32 user presets, 27 FM6 patches, autosave of the working project, song of 4 sections × 16 steps × 1–64 bars |
 | Audio | 44.1 kHz, fixed-point DSP; USB audio input (the master output, 16-bit stereo, class compliant) |
-| MIDI | USB class-compliant in / out; TRS MIDI IN (3.5 mm jack); channels 1–3 the synths, 10 the drums, 4–16 the selected track; MIDI clock in (USB or TRS), with or without the notes (IN = CLOCK); the sequencer to MIDI out (GLO → SYSTEM → MIDI = SEQ) |
+| MIDI | USB class-compliant in / out; TRS MIDI IN (3.5 mm jack); channels 1–3 the synths, 10 the drums, 4–16 the selected track; MIDI clock in (USB or TRS), with or without the notes (IN = CLOCK); the sequencer to MIDI out (GLO → SYSTEM → MIDI = SEQ); a 16-pad controller as the 16 white keys (HOME menu → PADS) |
 | Update | over USB from the browser (package SHA-256 and CRC checked) |
 
 ## Rescue, going back, credits

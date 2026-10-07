@@ -704,6 +704,41 @@ int main(int argc, char **argv)
         go_home(); ui.force = 1; frame();
     }
 
+    {   /* menu PADS: a 16-pad controller plays the 16 white keys (seq.c pad_event). SYSTEM, row 3 (KNOB 3):
+         * right, it waits for pad 1 (the pad's channel and note are then the setting); left, OFF */
+        uint32_t w;
+        ui.menu = 1; ui.menu_sel = MI_PADS; ui.force = 1; frame(); ppm("menu-pads-off");
+        check(mi_sec(MI_PADS) == MS_SYSTEM && mi_row(MI_PADS) == 2u && !pads_ch && !(lights_word() >> 21),
+              "menu PADS: SYSTEM, row 3; OFF by default (2.4 settings read so)");
+        encs[panel.enc[EN_K3]] = 1; frame();
+        check(pads_learn == 1u && !pads_ch && ui.menu_sel == MI_PADS, "menu PADS: KNOB 3 right: it waits for pad 1");
+        ui.force = 1; frame(); ppm("menu-pads-wait");
+        midi_in_q[mi_w % MQ] = 100u << 24 | 54u << 16 | 0x99u << 8 | 9u; mi_w++;   /* channel 10, note 54 */
+        frame();
+        midi_in_q[mi_w % MQ] = 54u << 16 | 0x89u << 8 | 8u; mi_w++;
+        frame();
+        check(pads_ch == 10u && pads_base == 54u && !pads_learn, "menu PADS: the pad hit sets the channel and the note");
+        ui.force = 1; frame(); ppm("menu-pads");
+        w = lights_word();
+        check(w >> 21 == 1u + 9u * 113u + 54u, "menu PADS: saved with the settings (the word's top 11 bits)");
+        pads_ch = pads_base = 0;
+        lights_from_word(w);
+        check(pads_ch == 10u && pads_base == 54u, "menu PADS: read back");
+        lights_from_word((w & 0x1FFFFFu) | 2047u << 21);
+        check(!pads_ch, "menu PADS: bits that are no channel and note read as OFF");
+        lights_from_word(w);
+        pad_keys = 1u << key_of_white(0);              /* a pad holds key 1: its key is lit, as a finger's */
+        check(keys_lit() >> key_of_white(0) & 1u, "PADS: a key a pad holds is lit");
+        pad_keys = 0;
+        encs[panel.enc[EN_K3]] = -1; frame();
+        check(!pads_ch && !pads_learn, "menu PADS: KNOB 3 left: OFF");
+        tap(B_OCTUP);
+        check(pads_learn == 1u && ui.menu == 1, "menu PADS: OCT+ steps round (it waits again), the menu stays");
+        tap(B_OCTDN);
+        check(ui.menu == 0 && !pads_learn && !pads_ch, "menu PADS: the menu closed while it waits: OFF, as it was");
+        go_home(); ui.force = 1; frame();
+    }
+
     {   /* SELECT (2.4): the pages of the family shown; the tempo on HOME (TRACKS), in a layer, on REC */
         int16_t bpm;
         #define PT() (PAGES[ui.page].title)
