@@ -131,9 +131,11 @@ static const param_desc_t GP[G_COUNT] = {
 };
 
 static const param_desc_t DRUM_KIT_DESC = PE("KIT", DRUM_KIT_NAMES, 0);
+static const param_desc_t DRUM_MUTE_DESC = PD("MUTE", F_INT, -32768, 32767, 0);   /* P_DMUTE: a lane mask */
 static const param_desc_t *track_desc(const track_t *t, uint32_t id)
 {
     if(is_drum(t) && id==P_E0) return &DRUM_KIT_DESC;
+    if(is_drum(t) && id==P_DMUTE) return &DRUM_MUTE_DESC;
     if (id >= P_E0 && id <= P_E7) {                   /* the engine asked for (t->engine follows after a fade) */
         const engine_t *e = ENGINES[t->eng_req % NENGINES];
         const param_desc_t *d = e->desc ? e->desc(t, id - P_E0) : 0;   /* a mode-dependent label / names */

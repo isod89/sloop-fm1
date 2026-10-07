@@ -345,6 +345,7 @@ static void ed_sync(void)                                /* main loop */
 static const param_desc_t *ed_tdesc(const track_t *t, uint32_t id)   /* the static ones: an engine's */
 {                                                                     /* desc hook is the device display only */
     if(is_drum(t) && id==P_E0) return &DRUM_KIT_DESC;
+    if(is_drum(t) && id==P_DMUTE) return &DRUM_MUTE_DESC;
     if (id >= P_E0 && id <= P_E7)
         return &ENGINES[t->eng_req % NENGINES]->edit[id - P_E0];
     return &TP[id];

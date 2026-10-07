@@ -97,10 +97,53 @@ static uint32_t erase_lanes(const track_t *t)   /* EDIT erase, drum track: the s
     return m;
 }
 
+/* the drum track in STEP (seq.c): the white keys the steps of sound pen_lane on the page (the playhead
+ * blinks), black 1..8 the sound picked (when in the section), 9 / 10 lit when there is a page that way,
+ * 11 lit while the sound is left out of the pattern */
+static uint32_t drum_step_keys(void)
+{
+    const track_t *t = TDRUM;
+    uint32_t i, m = 0, len = trk_len(t), pages = (len + 15u) / 16u, page = ui.step_page < pages ? ui.step_page : 0u;
+    uint32_t blink = (fm1_ms / 125u) & 1u;
+    for (i = 0; i < 16u; i++) {
+        uint32_t idx = page * 16u + i, on;
+        if (idx >= len)
+            continue;
+        on = dstep_has(&t->dstep[idx], pen_lane);
+        if (song.playing && idx == t->seq_idx)
+            on = !on || blink;
+        if (on)
+            m |= 1u << key_of_white(i);
+    }
+    if (pen_lane / 8u == drum_section)
+        m |= 1u << BLACK_KEY[pen_lane % 8u];
+    if (page > 0u)
+        m |= 1u << BLACK_KEY[8];
+    if (page + 1u < pages)
+        m |= 1u << BLACK_KEY[9];
+    if ((drum_muted() >> pen_lane) & 1u)
+        m |= 1u << BLACK_KEY[10];
+    return m;
+}
+/* ... and dim: the sounds of the section the pattern holds (black 1..8) */
+static uint32_t drum_section_keys(void)
+{
+    uint32_t i, l, lanes = 0, m = 0;
+    for (i = 0; i < trk_len(TDRUM); i++)
+        lanes |= dstep_mask(&TDRUM->dstep[i]);
+    for (l = 0; l < 8u; l++)
+        if ((lanes >> (drum_section * 8u + l)) & 1u)
+            m |= 1u << BLACK_KEY[l];
+    return m;
+}
+static int drum_stepping(void) { return is_drum(TSEL) && ui.layer == LY_PLAY && !drum_live(layer_now()); }
+
 static uint32_t keys_lit(void)
 {
     uint32_t m = 0, i, blink = (fm1_ms / 125u) & 1u;
     track_t *t = TSEL;
+    if (drum_stepping())
+        return drum_step_keys();
     switch (ui.layer) {
     case LY_FX:
         return punch.req >= 0 ? 1u << key_of_white((uint32_t)punch.req) : 0u;
@@ -170,7 +213,8 @@ static uint32_t keys_guide(void)
 {
     if (ui.layer == LY_PLAY && !is_drum(TSEL))
         return 0u;
-    return 1u << key_of_white(0) | 1u << key_of_white(4) | 1u << key_of_white(8) | 1u << key_of_white(12);
+    return 1u << key_of_white(0) | 1u << key_of_white(4) | 1u << key_of_white(8) | 1u << key_of_white(12) |
+           (drum_stepping() ? drum_section_keys() : 0u);
 }
 
 /* the keys the backlight lights (menu KEYS): the Cs, or every white key; bit k = key k (0 = F3) */
@@ -196,15 +240,21 @@ static void ui_leds(void)
         led_pos_init();
         ready = 1;
     }
-    led_put(nl, panel.btn[ui.layer != LY_PLAY ? LAYER_BTN[ui.layer] : cur_btn()],
-            ly_lock == LY_PLAY || ((fm1_ms / 300u) & 1u) != 0u || (fm1_in.buttons & ly_bit[ly_lock % LY_COUNT]) != 0u);   /* locked: blinks */
+    if (is_drum(TSEL) && ui.layer == LY_PLAY) {    /* the drum track: SEQ lit in LIVE, dim in STEP */
+        led_put(drum_mode == DM_LIVE ? nl : dl, panel.btn[B_SEQ], 1);
+        if (cur_btn() != B_SEQ)
+            led_put(nl, panel.btn[cur_btn()], 1);
+    } else {
+        led_put(nl, panel.btn[ui.layer != LY_PLAY ? LAYER_BTN[ui.layer] : cur_btn()],
+                ly_lock == LY_PLAY || ((fm1_ms / 300u) & 1u) != 0u || (fm1_in.buttons & ly_bit[ly_lock % LY_COUNT]) != 0u);   /* locked: blinks */
+    }
     led_put(nl, panel.btn[B_PLAY], play_led() || (song.playing && !song.rec && ft_on) ||
                                       (ci_on && ci_u % BEAT_U < BEAT_U / 4u));   /* (the count-in's beats) */
     led_put(nl, panel.btn[B_REC], song.rec != 0u || ft_on || (rec_wait && ((fm1_ms / 125u) & 1u)) ||
                                      (ui.hold_kind == 1u && ((fm1_ms / 60u) & 1u)));   /* blinks: armed; fast: clearing */
-    if (is_drum(TSEL)) {                           /* the drum track: OCT- / OCT+ lit while ghost / hard */
-        led_put(nl, panel.btn[B_OCTDN], (fm1_in.buttons & dyn_bit[0]) != 0u);
-        led_put(nl, panel.btn[B_OCTUP], (fm1_in.buttons & dyn_bit[1]) != 0u);
+    if (is_drum(TSEL)) {                           /* the drum track: LIVE, OCT- / OCT+ lit while ghost / hard; STEP dark */
+        led_put(nl, panel.btn[B_OCTDN], !drum_stepping() && (fm1_in.buttons & dyn_bit[0]) != 0u);
+        led_put(nl, panel.btn[B_OCTUP], !drum_stepping() && (fm1_in.buttons & dyn_bit[1]) != 0u);
     } else {
         led_put(nl, panel.btn[B_OCTDN], song.octave < 0);
         led_put(nl, panel.btn[B_OCTUP], song.octave > 0);
@@ -323,6 +373,7 @@ static void project_new(void)
         fm1_irq_on();
     }
     TDRUM->p[P_E0] = DRUM_DEFAULT_KIT;
+    TDRUM->p[P_DMUTE] = 0;
     for (i = 0; i < G_COUNT; i++)
         if (i != G_SLOT && i != G_DRCH && i != G_SYNC)
             song.g[i] = GP[i].def;
@@ -507,8 +558,13 @@ static void layer_tap(uint32_t layer)
         break;
     case LY_ERASE:
     case LY_STEP:
-        if (on_drum_page()) {                             /* DRUMS: GRID <-> KIT */
-            drum_page = (uint8_t)((drum_page + 1u) % 2u);
+        if (layer == LY_STEP && is_drum(TSEL) && !on_drum_page()) {   /* the drum track: its screen */
+            studio_open(SC_DRUM);
+            break;
+        }
+        if (on_drum_page()) {                             /* DRUMS: STEP (the grid) <-> LIVE (the pads) */
+            drum_mode = drum_mode == DM_STEP ? DM_LIVE : DM_STEP;
+            ui_say("DRUMS ", drum_mode == DM_STEP ? "STEP" : "LIVE");
             ui.force = 1;
             break;
         }
@@ -592,13 +648,15 @@ static int layers_input(uint32_t note_edges, uint32_t *pressed, uint32_t home)
         if (d && held == LY_PLAY)
             held = l;
     }
+    if (held == LY_STEP && is_drum(TSEL))                 /* the drum track: SEQ held plays the other mode (seq.c), */
+        held = LY_PLAY;                                   /* no layer (its tap still switches: above) */
     if (held != LY_PLAY && home == BT_TAP && !home_eat) {  /* held + HOME: locked open */
         ly_lock = (uint8_t)held;
         used[held] = 1;
         ui.layer = (uint8_t)held;
         ui.force = 1;
     }
-    if (held == LY_PLAY && ly_lock != LY_PLAY) {
+    if (held == LY_PLAY && ly_lock != LY_PLAY && !(ly_lock == LY_STEP && is_drum(TSEL))) {
         held = ly_lock;
         used[held] = 1;
     }
@@ -606,11 +664,11 @@ static int layers_input(uint32_t note_edges, uint32_t *pressed, uint32_t home)
     if (held != LY_PLAY && held != ui.layer && ui.layer != LY_PLAY)
         ui.layer = (uint8_t)held;                         /* (from one layer straight to another) */
     if (held == LY_PLAY) {
-        while (lk_r != lk_w) {                            /* a key let go after its layer: its release only */
-            uint32_t e = lk_q[lk_r % LKQ];
+        while (lk_r != lk_w) {                            /* a key let go after its layer: its release only; */
+            uint32_t e = lk_q[lk_r % LKQ];                /* the drum track's STEP keys: both (no layer) */
             lk_r++;
-            if (!((e >> 7) & 1u))
-                layer_key(e >> 8, e & 31u, 0);
+            if (!((e >> 7) & 1u) || (e >> 8) == LY_DSTEP)
+                layer_key(e >> 8, e & 31u, (e >> 7) & 1u);
         }
         if (ui.layer != LY_PLAY) {
             ui.layer = LY_PLAY;
@@ -835,8 +893,11 @@ static void ui_input(void)
         case B_OCTDN:
         case B_OCTUP: {
             uint32_t both = (1u << panel.btn[B_OCTDN]) | (1u << panel.btn[B_OCTUP]);
-            if (is_drum(TSEL))
-                break;                                  /* the drum track: ghost / hard while held (seq.c) */
+            if (is_drum(TSEL)) {                        /* the drum track: STEP, the section; LIVE, ghost / hard (seq.c) */
+                if (drum_mode == DM_STEP)
+                    drum_section = (uint8_t)(b == B_OCTUP);
+                break;
+            }
             if ((fm1_in.buttons & both) == both)
                 song.octave = 0;
             else
@@ -877,6 +938,10 @@ static void ui_input(void)
         int16_t *hv;
         if ((s = panel_enc(EN_K1 + k)) == 0)
             continue;
+        if (drum_stepping() && ui.step_held && (k == 1u || k == 2u)) {   /* the drum track, steps held: their */
+            steps_held_edit(k, s);                                         /* level (KNOB 2), ratchet (KNOB 3) */
+            continue;
+        }
         if (ui.home || pg->scope == SC_STEP || pg->scope == SC_TRK || page_desc(pg, k, &hv) ||
             (pg->graph == GR_USER && k == 0u)) {     /* (not an empty column, nor "DRUM TRACK") */
             ui.hot_col = (uint8_t)k;

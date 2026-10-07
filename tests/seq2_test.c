@@ -292,6 +292,7 @@ static void t_levels(void)
     uint32_t i, gh = 0, hd = 0;
     reset(120);
     song.sel = TRK_DRUM;
+    drum_mode = DM_LIVE;                             /* (the pads: SEQ tapped on the drum track) */
     song.rec = 1u << TRK_DRUM;
     transport_req = 1;
     run_block();
@@ -323,6 +324,39 @@ static void t_levels(void)
                 vh = hits[i].vel;
         }
         check(vg == 42u && vh == 127u, "... and played at 42 / 127");
+    }
+    {   /* STEP (the default): the keys are the pattern's, never pads; black keys pick and play; a sound left out */
+        uint32_t n0;
+        reset(120);
+        song.sel = TRK_DRUM;
+        drum_mode = DM_STEP;
+        drum_section = 0;
+        n0 = nhits;
+        fm1_in.notes = 1u << 5;                      /* A#3, black key 3: the snare, heard */
+        run_block();
+        fm1_in.notes = 0;
+        run_block();
+        check(pen_lane == 2 && nhits == n0 + 1u && hits[n0].note == 38, "STEP: black key 3 picks the snare and plays it");
+        fm1_in.notes = 1u << 0;                      /* a white key: a step for the UI (lk_q), no hit */
+        run_block();
+        fm1_in.notes = 0;
+        run_block();
+        check(nhits == n0 + 1u && lk_w - lk_r == 2u && (lk_q[lk_r % LKQ] >> 8) == LY_DSTEP,
+              "STEP: a white key plays nothing, goes to the UI as a step key");
+        lk_r = lk_w;
+        dstep_set(&TDRUM->dstep[0], 2, LV_NORM, 0);
+        dstep_set(&TDRUM->dstep[0], 0, LV_NORM, 0);
+        fm1_in.notes = 1u << 25;                     /* black key 11: the snare out of the pattern */
+        run_block();
+        fm1_in.notes = 0;
+        n0 = nhits;
+        transport_req = 1;
+        run_block();
+        run_block();
+        check(drum_muted() == 1u << 2 && nhits > n0 && hits[n0].note == 36 && (nhits == n0 + 1u || hits[n0 + 1u].note != 38),
+              "STEP: black key 11 leaves the snare out (the kick on the same step plays)");
+        TDRUM->p[P_DMUTE] = 0;
+        drum_mode = DM_LIVE;
     }
 }
 

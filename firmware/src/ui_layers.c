@@ -228,12 +228,27 @@ static void layer_key(uint32_t layer, uint32_t k, uint32_t down)
     if (!down) {
         if (w >= 0) {
             ui.step_held &= (uint16_t)~(1u << w);
-            if (layer == LY_STEP)
+            if (layer == LY_STEP || layer == LY_DSTEP)
                 step_up((uint32_t)w);
         }
         return;
     }
     switch (layer) {
+    case LY_DSTEP: {                                    /* the drum track in STEP (seq.c): steps, black 9 / 10 the page */
+        int32_t b = k < 27u ? BLACK_OF[k] : -1;
+        uint32_t pages = (trk_len(TDRUM) + 15u) / 16u;
+        if (ui.step_page >= pages)
+            ui.step_page = 0;
+        if (w >= 0) {
+            ui.step_held |= (uint16_t)(1u << w);
+            step_down((uint32_t)w);
+        } else if (b == 8 && ui.step_page > 0u) {
+            ui.step_page--;
+        } else if (b == 9 && ui.step_page + 1u < pages) {
+            ui.step_page++;
+        }
+        return;
+    }
     case LY_STEP:
         if (w < 0) {                                    /* the first four black keys: pages 1..4 */
             static const int8_t PG[12] = {-1, 0, -1, 1, -1, 2, -1, -1, 3, -1, -1, -1};

@@ -315,6 +315,7 @@ static void proj_apply(const project_t *p, const project_b_t *b, int all)
         t->user = 0;                                    /* (no user preset slot is saved) */
         for (i = 0; i < P_COUNT; i++) {                 /* every value back inside its range */
             const param_desc_t *d = k == TRK_DRUM && i == P_E0 ? &DRUM_KIT_DESC :   /* the drum kit */
+                                    k == TRK_DRUM && i == P_DMUTE ? &DRUM_MUTE_DESC :   /* its sounds left out */
                                     i >= P_E0 && i <= P_E7 ? &ENGINES[e]->edit[i - P_E0] : &TP[i];
             t->p[i] = (int16_t)clamp(s->p[i], d->min, d->max);
         }

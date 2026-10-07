@@ -60,6 +60,7 @@ enum {                          /* per-track parameters */
     P_E0, P_E1, P_E2, P_E3, P_E4, P_E5, P_E6, P_E7,
     P_COUNT
 };
+#define P_DMUTE P_E1             /* the drum track (no engine there): the sounds its pattern leaves out, bit per lane */
 
 enum {                          /* global parameters */
     G_BPM, G_SWING, G_CLOCK, G_TUNE,
