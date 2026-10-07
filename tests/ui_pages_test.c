@@ -172,11 +172,11 @@ int main(int argc, char **argv)
             memcpy(st->note, c, 4);
         }
         ui.cursor = 4; ui.bank = 0; ui.force = 1; frame(); ppm("page-roll");
-        check(roll_lo <= 57 && roll_lo + 23 >= 64, "roll: the cursor's chord inside the window");
+        check(roll_lo <= 57 && roll_lo + ROLL_ROWS - 1 >= 64, "roll: the cursor's chord inside the window");
         ui.cursor = 9; ui.force = 1; frame();             /* a tie: the F above it, out of 48..71 */
-        check(roll_lo <= 65 && roll_lo + 23 >= 72, "roll: a chord out of the window moves it");
+        check(roll_lo <= 65 && roll_lo + ROLL_ROWS - 1 >= 72, "roll: a chord out of the window moves it");
         ui.cursor = 12; ui.force = 1; frame();
-        check(roll_lo <= 55 && roll_lo + 23 >= 62, "roll: the window keeps the low notes when one is far above");
+        check(roll_lo <= 55 && roll_lo + ROLL_ROWS - 1 >= 62, "roll: the window keeps the low notes when one is far above");
         memcpy(t->step, keep, sizeof keep);
         ui.cursor = 0; ui.force = 1; frame();
     }
