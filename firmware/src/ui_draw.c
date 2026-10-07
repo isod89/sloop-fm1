@@ -238,51 +238,84 @@ static void graph_steps(const track_t *t, uint16_t c)
             cv_rect(x - 1, y + 16, 3, 3, C_WHITE);
     }
 }
-/* STEP page: the cursor's 16-step bank as a little piano roll */
+/* STEP page: the cursor's 16-step bank as a piano roll, chords and all. Two octaves (24 rows of 3 px,
+ * a rule on each C) that follow the cursor's chord: they move only when it leaves them. A note above
+ * or below the window: a triangle over / under its step, a dot for each note. */
+#define ROLL_Y 8                                     /* the top row */
+static int32_t roll_lo = 48;
+static void roll_more(int32_t x, int32_t y, int32_t up, uint32_t k, uint16_t c)
+{
+    uint32_t m;
+    cv_rect(x + 4, up ? y : y + 2, 1, 1, c);
+    cv_rect(x + 3, y + 1, 3, 1, c);
+    cv_rect(x + 2, up ? y + 2 : y, 5, 1, c);
+    for (m = 0; m < k; m++)
+        cv_rect(x + 8 + (int32_t)m * 3, y + 1, 2, 2, c);
+}
 static void graph_roll(const track_t *t, uint16_t c)
 {
-    uint32_t i, j, len = (uint32_t)t->p[P_SLEN], base = ui.bank * 16u;
-    int32_t lo = 127, hi = 0, prev_y = -1;
-    for (i = 0; i < len; i++)
-        for (j = 0; j < t->step[i].n; j++) {
-            if (t->step[i].note[j] < lo)
-                lo = t->step[i].note[j];
-            if (t->step[i].note[j] > hi)
-                hi = t->step[i].note[j];
+    uint32_t i, j, len = (uint32_t)t->p[P_SLEN], base = ui.bank * 16u, s = ui.cursor;
+    const step_t *prev = 0;
+    int32_t hi;
+    while (s && s < len && t->step[s].time == ST_TIE)  /* a tie: the chord it holds */
+        s--;
+    if (s < len && step_on(&t->step[s])) {           /* the cursor's chord out of the window: centre it */
+        int32_t mn = 127, mx = 0;
+        for (j = 0; j < t->step[s].n; j++) {
+            mn = t->step[s].note[j] < mn ? t->step[s].note[j] : mn;
+            mx = t->step[s].note[j] > mx ? t->step[s].note[j] : mx;
         }
-    if (lo > hi) {
-        lo = 48;
-        hi = 72;
+        if (mn < roll_lo || mx > roll_lo + 23)
+            roll_lo = mx - mn > 23 ? mn : (mn + mx) / 2 - 11;
     }
-    if (hi - lo < 12)
-        hi = lo + 12;
+    roll_lo = roll_lo < 0 ? 0 : roll_lo > 104 ? 104 : roll_lo;
+    hi = roll_lo + 23;
+    if (ui.cursor >= base && ui.cursor < base + 16u)
+        cv_rect((int32_t)(ui.cursor - base) * 15, ROLL_Y, 15, 72, C_LINE);
+    for (j = 0; j < 24u; j++)                        /* a rule on each C */
+        if ((roll_lo + (int32_t)j) % 12 == 0)
+            cv_rect(0, ROLL_Y + (23 - (int32_t)j) * 3 + 1, 240, 1, C_LINE);
     for (i = 0; i < 16u; i++) {
-        uint32_t si = base + i;
+        uint32_t si = base + i, up = 0, dn = 0;
         const step_t *st = &t->step[si];
-        int32_t x = (int32_t)i * 15, yb = 86;
+        int32_t x = (int32_t)i * 15;
         if (si >= len)
             break;
         if (si == ui.cursor)
             cv_rect(x + 5, 92, 3, 3, C_WHITE);
         if (song.playing && si == t->seq_idx)
             cv_rect(x + 1, 97, 12, 1, C_WHITE);
-        if (st->time == ST_TIE && prev_y >= 0) {
-            cv_rect(x, prev_y, 14, 1, C_GRAY);
+        if (st->time == ST_TIE && prev) {            /* the held chord goes on */
+            st = prev;
+        } else if (!step_on(st)) {
+            cv_rect(x + 6, ROLL_Y + 72 + 1, 2, 1, C_DIM);
+            prev = 0;
             continue;
-        }
-        if (!step_on(st)) {
-            cv_rect(x + 6, yb, 2, 1, C_DIM);
-            prev_y = -1;
-            continue;
+        } else {
+            prev = st;
         }
         for (j = 0; j < st->n; j++) {
-            int32_t y = 80 - (st->note[j] - lo) * 74 / (hi - lo);
-            cv_rect(x + 2, y, 10, 1, (st->flags & SF_ACCENT) ? C_WHITE : c);
-            if (j == 0)
-                prev_y = y;
+            int32_t nt = st->note[j];
+            if (nt > hi) {
+                up++;
+            } else if (nt < roll_lo) {
+                dn++;
+            } else {
+                int32_t y = ROLL_Y + (hi - nt) * 3;
+                if (st != &t->step[si])
+                    cv_rect(x, y, 15, 2, C_GRAY);    /* tied */
+                else
+                    cv_rect(x + 1, y, 13, 2, (st->flags & SF_ACCENT) ? C_WHITE : c);
+            }
         }
-        if (st->flags & SF_SLIDE)
-            cv_line(x + 11, prev_y, x + 17, prev_y + 2, c);
+        if (up)
+            roll_more(x, 0, 1, up, C_HI);
+        if (dn)
+            roll_more(x, ROLL_Y + 72 + 3, 0, dn, C_HI);
+        if (st == &t->step[si] && (st->flags & SF_SLIDE) && st->note[0] >= roll_lo && st->note[0] <= hi) {
+            int32_t y = ROLL_Y + (hi - st->note[0]) * 3;
+            cv_line(x + 13, y, x + 17, y + 2, c);
+        }
     }
 }
 static void graph_scale(const track_t *t, uint16_t c)
@@ -339,6 +372,7 @@ static uint32_t steps_hash(const track_t *t)
         const step_t *st = &t->step[i];
         h = (h ^ (st->note[0] + st->n * 128u + st->time * 1024u + st->flags * 4096u + st->note[1] * 65536u)) *
             16777619u;
+        h = (h ^ (st->note[2] + st->note[3] * 256u)) * 16777619u;   /* (a chord's upper notes) */
     }
     return h;
 }
@@ -860,12 +894,8 @@ static void draw_columns(void)
         const step_t *st = &TSEL->step[ui.cursor];
         char u[8];
         if (st->n) {
-            note_name(val, st->note[0]);
+            chord_name(val, st->note, st->n);         /* "C4", "Am7", "C4+2" */
             u[0] = 0;
-            if (st->n > 1) {
-                str_cpy(u, "+", 8);
-                fmt_int(u + 1, st->n - 1);
-            }
         } else {
             str_cpy(val, "--", 12);
             u[0] = 0;

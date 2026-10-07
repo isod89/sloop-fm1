@@ -180,6 +180,43 @@ static void note_name(char *b, uint32_t n)
     fmt_int(b + str_len(b), (int32_t)(n / 12u) - 1);
 }
 
+/* a step's notes as a chord: "C", "Am", "F#maj7", "Bm7b5", "G5"... (any inversion, named by its
+ * root, the bass tried first); one note: "C4"; nothing it knows: the lowest note and the rest, "C4+2" */
+static void chord_name(char *b, const uint8_t *note, uint32_t n)
+{
+    static const struct { uint16_t mask; char suf[5]; } CH[] = {
+        {0x091u, ""}, {0x089u, "m"}, {0x049u, "dim"}, {0x111u, "aug"}, {0x085u, "sus2"}, {0x0A1u, "sus4"},
+        {0x081u, "5"}, {0x491u, "7"}, {0x891u, "maj7"}, {0x489u, "m7"}, {0x449u, "m7b5"},
+    };
+    uint32_t i, k, set = 0, bass = 127, r;
+    b[0] = 0;
+    if (!n)
+        return;
+    for (i = 0; i < n; i++) {
+        set |= 1u << (note[i] % 12u);
+        if (note[i] < bass)
+            bass = note[i];
+    }
+    if (n > 1u)
+        for (i = 0; i < 12u; i++) {
+            r = (bass + i) % 12u;                    /* roots from the bass up */
+            if ((set >> r) & 1u) {
+                uint32_t rot = ((set >> r) | (set << (12u - r))) & 0xFFFu;
+                for (k = 0; k < sizeof CH / sizeof CH[0]; k++)
+                    if (rot == CH[k].mask) {
+                        str_cpy(b, N_NOTE[r], 4);
+                        str_cpy(b + str_len(b), CH[k].suf, 5);
+                        return;
+                    }
+            }
+        }
+    note_name(b, bass);
+    if (n > 1u) {
+        str_cpy(b + str_len(b), "+", 2);
+        fmt_int(b + str_len(b), (int32_t)n - 1);
+    }
+}
+
 static void open_family(uint32_t fam)
 {
     if (!ui.home && cur_page()->fam == fam) {          /* same button again: next page */

@@ -123,6 +123,26 @@ int main(int argc, char **argv)
                 }
             }
     }
+    {   /* a step's chord by name (ui.c chord_name): every inversion named by its root */
+        static const struct { uint8_t n, note[4]; const char *name; } CN[] = {
+            {1, {60}, "C4"}, {3, {60, 64, 67}, "C"}, {3, {64, 67, 72}, "C"}, {3, {55, 60, 64}, "C"},
+            {3, {57, 60, 64}, "Am"}, {3, {59, 62, 65}, "Bdim"}, {3, {60, 64, 68}, "Caug"},
+            {3, {62, 64, 69}, "Dsus2"}, {3, {62, 67, 69}, "Dsus4"}, {2, {40, 47}, "E5"},
+            {4, {55, 59, 62, 65}, "G7"}, {4, {65, 69, 72, 76}, "Fmaj7"}, {4, {66, 69, 73, 76}, "F#m7"},
+            {4, {59, 62, 65, 69}, "Bm7b5"}, {4, {64, 67, 71, 72}, "Cmaj7"}, {4, {60, 72, 64, 67}, "C"},
+            {3, {60, 61, 62}, "C4+2"}, {2, {48, 60}, "C3+1"},
+        };
+        char b[8];
+        int ok = 1;
+        for (i = 0; i < sizeof CN / sizeof CN[0]; i++) {
+            chord_name(b, CN[i].note, CN[i].n);
+            if (strcmp(b, CN[i].name)) {
+                printf("ui: chord %u: %s, not %s\n", i, b, CN[i].name);
+                ok = 0;
+            }
+        }
+        check(ok, "chord names: triads, sus, 5, sevenths, inversions, unknown");
+    }
     panel = PANEL_DEFAULT;
     layers_init();
     settings.palette = 4;
@@ -138,6 +158,28 @@ int main(int argc, char **argv)
     open_family(FAM_EDIT); ui.force = 1; frame(); ppm("page-edit");
     open_family(FAM_FX); ui.force = 1; frame(); ppm("page-fx");
     open_family(FAM_SEQ); ui.force = 1; frame(); ppm("page-step");
+    {   /* the roll: chords, a tie, a note above the window; the cursor's chord named */
+        static const uint8_t CHD[4][4] = {{60, 64, 67, 71}, {57, 60, 64, 0}, {65, 69, 72, 0}, {55, 59, 62, 96}};
+        track_t *t = TSEL;
+        step_t keep[16];
+        uint32_t s;
+        memcpy(keep, t->step, sizeof keep);
+        for (s = 0; s < 16u; s++) {
+            const uint8_t *c = CHD[s / 4u];
+            step_t *st = &t->step[s];
+            st->time = (s & 1u) ? ST_TIE : ST_NOTE;
+            st->n = c[3] ? 4 : 3;
+            memcpy(st->note, c, 4);
+        }
+        ui.cursor = 4; ui.bank = 0; ui.force = 1; frame(); ppm("page-roll");
+        check(roll_lo <= 57 && roll_lo + 23 >= 64, "roll: the cursor's chord inside the window");
+        ui.cursor = 9; ui.force = 1; frame();             /* a tie: the F above it, out of 48..71 */
+        check(roll_lo <= 65 && roll_lo + 23 >= 72, "roll: a chord out of the window moves it");
+        ui.cursor = 12; ui.force = 1; frame();
+        check(roll_lo <= 55 && roll_lo + 23 >= 62, "roll: the window keeps the low notes when one is far above");
+        memcpy(t->step, keep, sizeof keep);
+        ui.cursor = 0; ui.force = 1; frame();
+    }
     open_family(FAM_GLO); ui.force = 1; frame(); ppm("page-global");
     open_family(FAM_GLO); ui.force = 1; frame(); ppm("page-master");
     open_family(FAM_SCL); ui.force = 1; frame(); ppm("page-scale");

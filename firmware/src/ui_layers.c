@@ -584,7 +584,7 @@ static void layer_screen_draw(void)
                 if (on) {
                     lv = st->lvl & 3u;
                     rt = st->rat & 3u;
-                    note_name(tl[i].lab, st->note[0]);
+                    chord_name(tl[i].lab, st->note, st->n);   /* a chord by its name */
                 } else if (st->time == ST_TIE) {
                     str_cpy(tl[i].lab, "--", 8);
                 }
