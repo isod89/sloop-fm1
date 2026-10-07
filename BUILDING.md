@@ -16,6 +16,19 @@ distribution with the JieLi toolchain, and the three SDK files (below) in `build
 Set `SLOOP_WSL_DISTRO` (default `Ubuntu`) and `SLOOP_TOOLCHAIN` (a Linux path, default
 `/root/.jieli/toolchain`) if yours differ.
 
+## Windows (Docker Desktop, no WSL distribution)
+
+`py -3 tools/docker_build.py fw` builds `build/felucca.fwsc` in a Linux container (the tree is
+mounted, the toolchain runs natively inside); `py -3 tools/docker_build.py test` runs
+`tests/run_tests.sh` the same way. The first run fetches the JieLi toolchain into `build/deps/jieli`
+and the three SDK files into `build/deps/ac79` (checked against their SHA-256).
+
+To see the firmware's audio load on a connected FM-1 (its serial console, read-only):
+`py -3 tools/fm1_cpu.py 60` while it plays (needs `pip install pyserial`).
+
+The desktop emulator (`LAUNCH-EMULATOR.bat`, `tools/emulator/`) runs `firmware/src/felucca.c`
+unchanged over an emulated HAL (MSVC).
+
 ## Prerequisites (macOS)
 
 - Python 3 with Pillow: `pip3 install Pillow`

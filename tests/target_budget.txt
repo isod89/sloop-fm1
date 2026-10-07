@@ -4,6 +4,9 @@
 # SLOOP 2.0 (reviewed): analog +9 % (drive crossfade, phase reset), lofi +4 % (input clamp), slicer on
 # the sample-accurate clock (its divides are per step / per block, not per sample: the per-sample
 # loop has none), the mix out of the ISR into its own function (fm1_alnk0_irq calls it).
+# SLOOP 2.3 as released (the budget was not updated with it): fm1_alnk0_irq +47 % (the USB audio
+# input is fed from the audio ISR), drums_mix +8 %. Measured on an FM-1 running 2.3: a dense
+# 4-track pattern at 150 BPM peaks at 71 % of an audio half (tools/fm1_cpu.py).
 analog_render 638
 digital_render 333
 phase_render 79
@@ -17,5 +20,5 @@ drawbar_block 102
 grain_render 1734
 grain_block 138
 slicer_track 825
-drums_mix 6153
-fm1_alnk0_irq 174
+drums_mix 6634
+fm1_alnk0_irq 255
