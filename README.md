@@ -5,7 +5,8 @@ Free and open source (GPL-3.0), based on <a href="https://github.com/hugelton/Fe
 
 <p align="center">
 <a href="https://isod89.github.io/sloop-fm1/"><b>Install from the browser</b></a> ·
-<a href="SLOOP.md">Manual</a> ·
+<a href="docs/manual/README.md"><b>User Guide & Manual</b></a> ·
+<a href="SLOOP.md">Full Reference</a> ·
 <a href="DEMARRAGE-RAPIDE-FR.md">Guide en français</a> ·
 <a href="https://isod89.github.io/sloop-fm1/webapp/editor/">Web editor</a> ·
 <a href="../../releases">Releases</a> ·
