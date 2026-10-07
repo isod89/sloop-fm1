@@ -246,6 +246,10 @@ static int up_load(uint32_t k)
     if (!up_used(k) || is_drum(t))
         return 1;
     r = up_rec(k);
+    if (!grain_room(t, r->engine)) {
+        ui_say("GRAIN ", "3 TRACKS MAX");
+        return 1;
+    }
     up_values(r, v);
     for (i = 0; i < P_COUNT; i++)                       /* (LEN etc. of a kept pattern changed too, and */
         if (param_kept(i))                              /* a preset pattern then counted as edited) */

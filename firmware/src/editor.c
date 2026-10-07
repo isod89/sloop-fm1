@@ -4,7 +4,11 @@
  * v3 = four tracks: the v1 / v2 commands act on the selected track, cmds 27-30 reach any track;
  * v4 = TRACK_PARAM (31) and the TRACK_CHANGED push (32), enabled by WATCH bit 1;
  * v5 = SLOOP 2.0: INFO ends with the protocol version (5), steps carry level / ratchet bytes,
- * DRUM_STEP (33) reads / writes the drum track's 16 lanes, TRACK ends with the solo mask).
+ * DRUM_STEP (33) reads / writes the drum track's 16 lanes, TRACK ends with the solo mask;
+ * v6 = backup / restore (BK_LIST, BK_GET, BK_PUT);
+ * v7 = eight tracks: INFO ends with the version (7) and the drum track's index (3), TRACK's solo mask is
+ * two bytes (tracks 1..7, track 8), the backup has the projects' tracks 5..8 (objects 8..12), two user
+ * sample slots).
  *   F0 7D 46 4C cmd args.. F7     (7D = non-commercial ID, "FL")
  * Values are 14 bit, two 7-bit bytes LSB first, offset by 8192 (so -8192..8191).
  * Every request gets a reply with the same cmd; 23/24/26 are also pushed
@@ -359,16 +363,17 @@ static const param_desc_t *ed_desc(uint32_t scope, uint32_t id, int16_t **vp)
     return 0;
 }
 
-/* ---- v6: backup / restore (web/EDITOR_PROTOCOL.md). Objects: 0 the working project, 1 the settings
- * (colours, calibration, the song order, the lights, SYNC), 2..5 the projects A..D, 6..7 the user preset
- * banks, 32..34 the user sample slots USR1..3 (read only here: restored with SMP_BEGIN / WRITE / END).
+/* ---- v6: backup / restore (web/EDITOR_PROTOCOL.md). Objects: 0 the working project (tracks 1..4), 1 the
+ * settings (colours, calibration, the song order, the lights, SYNC), 2..5 the projects A..D (tracks 1..4),
+ * 6..7 the user preset banks, 8 the working project's tracks 5..8, 9..12 those of A..D (v7), 32, 33 the
+ * user sample slots USR1, USR2 (read only here: restored with SMP_BEGIN / WRITE / END).
  * LIST takes a snapshot of the working project and the settings; GET reads 1..256 bytes of an object.
  * PUT stages one object in RAM (begin: id, length, CRC-32; data; commit), checks it as a load would,
  * then writes it through the usual A/B commit: a cut-off restore never leaves half an object. */
 #if FELUCCA_FLASH
 #define ED_BK_RAW ((uint8_t *)&proj_tmp)                  /* the staging RAM (main loop, as the project loads) */
-_Static_assert(sizeof proj_tmp >= sizeof(project_t) && sizeof proj_tmp >= sizeof(up_bank_t) &&
-               sizeof proj_tmp >= sizeof(persist_t), "backup staging");
+_Static_assert(sizeof proj_tmp >= sizeof(project_t) && sizeof proj_tmp >= sizeof(project_b_t) &&
+               sizeof proj_tmp >= sizeof(up_bank_t) && sizeof proj_tmp >= sizeof(persist_t), "backup staging");
 static persist_t ed_bk_set;                             /* LIST's snapshot of the settings */
 static uint8_t ed_bk_valid, ed_bk_put, ed_bk_id;
 static uint32_t ed_bk_len, ed_bk_crc, ed_bk_pos, ed_bk_ms;
@@ -395,7 +400,16 @@ static const uint8_t *ed_bk_obj(uint32_t id, uint32_t *len)   /* 0 = no such obj
     *len = 0;
     if (id == 0u) {
         *len = sizeof(project_t);
-        return ED_BK_RAW;
+        return (const uint8_t *)&proj_tmp.ab.a;
+    }
+    if (id == 8u) {                                       /* the working project's tracks 5..8 */
+        *len = sizeof(project_b_t);
+        return (const uint8_t *)&proj_tmp.ab.b;
+    }
+    if (id >= 9u && id <= 12u) {                          /* the slots' tracks 5..8 */
+        if (project_used(id - 9u))
+            *len = sizeof(project_b_t);
+        return (const uint8_t *)(*len ? proj_b_of(id - 9u) : &proj_slot_b[id - 9u]);
     }
     if (id == 1u) {
         *len = sizeof ed_bk_set;
@@ -420,7 +434,8 @@ static const uint8_t *ed_bk_obj(uint32_t id, uint32_t *len)   /* 0 = no such obj
     }
     return 0;
 }
-static const uint8_t ED_BK_IDS[] = {0, 1, 2, 3, 4, 5, 6, 7, 32, 33, 34};
+static const uint8_t ED_BK_IDS[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 32, 33};   /* (32, 33: SMP_USER_SLOTS) */
+_Static_assert(SMP_USER_SLOTS == 2, "ED_BK_IDS: one id per user sample slot");
 
 static uint32_t ed_bk_commit(void)
 {
@@ -432,6 +447,10 @@ static uint32_t ed_bk_commit(void)
         return settings_restore(raw, n);
     if (id <= 5u)
         return project_restore(id == 0u ? 4u : id - 2u, raw, n);
+    if (id == 8u)
+        return project_restore_b(4u, raw, n);
+    if (id >= 9u && id <= 12u)                            /* (n 0: an empty slot, its first half erased it) */
+        return n ? project_restore_b(id - 9u, raw, n) : 0u;
     if (id == 6u || id == 7u) {                           /* a user preset bank (n 0: empty) */
         const up_bank_t *b = (const up_bank_t *)raw;
         if (n && (n != sizeof *b || b->magic != UP_BANK_MAGIC || b->rsize != sizeof(up_rec_t) || b->nslot != UP_PER_BANK))
@@ -455,7 +474,7 @@ static int ed_backup(uint32_t cmd, const uint8_t *a, uint32_t na)   /* 1: a back
     if (cmd == ED_BK_LIST) {
         rc = !flash_ok ? 4u : 0u;
         if (!rc) {
-            proj_capture((project_t *)ED_BK_RAW);           /* the working project, as it is now */
+            proj_capture(&proj_tmp.ab.a, &proj_tmp.ab.b);   /* the working project, as it is now */
             persist_fill(&ed_bk_set);
             ed_bk_valid = 1;
             ed_bk_put = 0;
@@ -490,9 +509,9 @@ static int ed_backup(uint32_t cmd, const uint8_t *a, uint32_t na)   /* 1: a back
         rc = 1;
         if (!flash_ok) {
             rc = 4;
-        } else if (op == 0u && na == 12u && (id <= 7u)) {  /* begin: id, length (5), CRC-32 (5) */
+        } else if (op == 0u && na == 12u && (id <= 12u)) { /* begin: id, length (5), CRC-32 (5) */
             len = ed_bk_r32(a + 2);
-            if (id >= 2u || len) {                        /* (the working project and the settings are never empty) */
+            if ((id >= 2u && id != 8u) || len) {          /* (the working project and the settings are never empty) */
                 if (len <= sizeof proj_tmp) {
                     ed_bk_put = 1;
                     ed_bk_valid = 0;                      /* (the staging RAM is the snapshot's) */
@@ -567,7 +586,8 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         for (i = 0; i < NENGINES; i++)
             ed_str(ENGINES[i]->name, 8);
         ed_b(NTRK);                                       /* v3 */
-        ed_b(6);                                          /* v6: the protocol version (backup) */
+        ed_b(7);                                          /* v6: the protocol version (7: eight tracks) */
+        ed_b(TRK_DRUM);                                   /* v7: the drum track (not the last one) */
         break;
     case ED_GET:
     case ED_SET:
@@ -840,7 +860,8 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
             ed_b(trk[i].p[P_MUTE] != 0);
             ed_b((song.rec >> i) & 1u);
         }
-        ed_b(song.solo & 15u);                            /* v5: the tracks soloed */
+        ed_b(song.solo & 127u);                           /* v5: the tracks soloed (v7: tracks 1..7, */
+        ed_b(song.solo >> 7);                             /* then track 8) */
         break;
     case ED_TRACK_MIX: {                                   /* track [, level v14, mute] -> track, level, mute */
         track_t *t;

@@ -113,10 +113,10 @@ typedef struct {                 /* per voice */
     uint8_t gate, init;
 } drw_vc_t;
 
-static drw_trk_t drw_t[NPART];
-static drw_vc_t drw_v[NPART][NVOICE];
+static drw_trk_t drw_t[NTRK];
+static drw_vc_t drw_v[NTRK][NVOICE];
 
-static uint32_t drw_part(const track_t *t) { return (uint32_t)(t - trk) % NPART; }
+static uint32_t drw_part(const track_t *t) { return (uint32_t)(t - trk) % NTRK; }
 
 /* the bar level 0..8 of partial k: the registration plus SUB / BODY / TOP */
 static int32_t drw_level(const int16_t *p, uint32_t k)

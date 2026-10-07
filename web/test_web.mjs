@@ -289,8 +289,9 @@ async function editorTracks() {
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
   const tr = E.parse[C.TRACK](await rq(E.req.track()));
-  ok(info.ntrk === 4 && tr.sel === 0 && tr.ntrk === 4 && tr.tracks[0].engine === 0 && tr.tracks[1].engine === 1
-    && tr.tracks[3].engine === info.nengines, "tracks: INFO NTRK, TRACK lists 4 (track 4 = drums, engine NENGINES)");
+  ok(info.ntrk === 8 && info.drum === 3 && tr.sel === 0 && tr.ntrk === 8 && tr.tracks[0].engine === 0 && tr.tracks[1].engine === 1
+    && tr.tracks[3].engine === info.nengines && tr.tracks[7].engine < info.nengines,
+    "tracks: INFO NTRK 8 and the drum track (4), TRACK lists 8 (track 4 = drums, engine NENGINES)");
   /* the v1 commands follow the selected track */
   const d0 = E.parse[C.DUMP](await rq(E.req.dump()), info);
   const t1 = E.parse[C.TRACK](await rq(E.req.track(1)));
@@ -350,7 +351,7 @@ async function editorMixer() {
   const info = E.parse[C.INFO](await rq(E.req.info()));
   const PAN = 39, MUTE = 40;
   const m0 = await E.mixer.read(rq, info, { pan: PAN });
-  ok(m0.ntrk === 4 && m0.tracks.length === 4 && m0.tracks[1].pan === -24 && m0.tracks[2].pan === 20 && m0.tracks[3].engine === info.nengines
+  ok(m0.ntrk === 8 && m0.tracks.length === 8 && m0.tracks[1].pan === -24 && m0.tracks[2].pan === 20 && m0.tracks[3].engine === info.nengines
     && m0.tracks.every((x) => Number.isInteger(x.level) && (x.mute === 0 || x.mute === 1)), "mixer: read = TRACK + pan of every track (TRACK_DUMP)");
   /* level / mute of a track that is not selected, and of the drum track (G_DRLVL) */
   const a = await E.mixer.setMix(rq, 2, 70, 1);
@@ -416,8 +417,8 @@ async function editorTrackParam() {
   ok(g.track === 1 && g.id === PAN && g.value === -24 && p2 === -40 && p1 === 63 && alg.value === 7 && lv.value === 0 && td2.p[PAN] === -40
     && sel.sel === 0 && (sent[C.TRACK] || 0) === tracks0 + 1 && ev.pushes.length === pushes,
     "v4: TRACK_PARAM get / set on other tracks (clamped as SET, selection kept, no push)");
-  const bad = await rq(E.req.trackParam(4, PAN), { timeout: 60, retries: 0, quiet: true }).then(() => "reply", () => "none");
-  ok(bad === "none", "v4: TRACK_PARAM of track 5: no reply");
+  const bad = await rq(E.req.trackParam(8, PAN), { timeout: 60, retries: 0, quiet: true }).then(() => "reply", () => "none");
+  ok(bad === "none", "v4: TRACK_PARAM of track 9 (of 8): no reply");
   /* device-side changes: CHANGED for the selected track, TRACK_CHANGED for the others */
   m.sim.param(2, PAN, 30);
   m.sim.param(3, MUTE, 1);
@@ -443,9 +444,9 @@ async function editorBackup() {
   const C = E.CMD;
   const { rq, done } = attachMock({});
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 6, "backup: INFO protocol v6");
+  ok(info.proto === 7, "backup: INFO protocol v7");
   const ec = readFileSync(join(HERE, "../firmware/src/editor.c"), "utf8");
-  ok(/ED_BK_IDS\[\] = \{0, 1, 2, 3, 4, 5, 6, 7, 32, 33, 34\}/.test(ec), "backup: the object ids == editor.c ED_BK_IDS");
+  ok(/ED_BK_IDS\[\] = \{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 32, 33\}/.test(ec), "backup: the object ids == editor.c ED_BK_IDS");
   await rq(E.req.upStore(3, "BACKUP ME"));
   await rq(E.req.project(1, 2), { timeout: 4000, retries: 0 });
   const s = Int16Array.from({ length: 3000 }, (_, i) => Math.round(8000 * Math.sin(i / 7)));
@@ -455,8 +456,9 @@ async function editorBackup() {
   await rq(E.req.smpEnd(1, hdr), { timeout: 2000, retries: 0 });
   const A = await E.backupCapture(rq, info);
   const obj = (id) => A.objects.find((o) => o.id === id);
-  ok(A.format === "sloop-backup" && A.objects.map((o) => o.id).join() === "0,1,2,3,4,5,6,7,32,33,34" && obj(33).len > 512
-    && obj(4).len > 0 && obj(3).len === 0 && obj(32).len === 0, "backup: LIST + GET: 11 objects (project in C, sample in USR2, B empty)");
+  ok(A.format === "sloop-backup" && A.objects.map((o) => o.id).join() === "0,1,2,3,4,5,6,7,8,9,10,11,12,32,33" && obj(33).len > 512
+    && obj(4).len > 0 && obj(11).len > 0 && obj(3).len === 0 && obj(10).len === 0 && obj(8).len > 0 && obj(32).len === 0,
+    "backup: LIST + GET: 15 objects (project in C with its tracks 5..8, sample in USR2, B empty)");
   await rq(E.req.upErase(3));
   await rq(E.req.smpErase(1), { timeout: 2500, retries: 0 });
   await rq(E.req.set(0, 3, 5));
@@ -470,6 +472,20 @@ async function editorBackup() {
   try { E.backupObjects(bad); } catch (e) { caught = e.code; }
   ok(caught === "bkBad", "backup: a damaged file is refused before anything is written");
   done();
+  {   /* a 2.3 device (v6, four tracks, three sample slots): its backup restores, tracks 5..8 / USR3 left out where none */
+    const v6 = attachMock({ v6: true });
+    const i6 = E.parse[C.INFO](await v6.rq(E.req.info()));
+    const A6 = await E.backupCapture(v6.rq, i6);
+    ok(i6.proto === 6 && i6.ntrk === 4 && i6.drum === 3 && A6.objects.map((o) => o.id).join() === "0,1,2,3,4,5,6,7,32,33,34",
+      "backup: a v6 device: four tracks (drums the last), 11 objects");
+    await E.backupRestore(v6.rq, JSON.parse(JSON.stringify(A6)));
+    v6.done();
+    const v7 = attachMock({});
+    await E.backupRestore(v7.rq, JSON.parse(JSON.stringify(A6)));   /* a 2.3 backup onto eight tracks */
+    const tr7 = E.parse[C.TRACK](await v7.rq(E.req.track()));
+    ok(tr7.ntrk === 8, "backup: a v6 backup restores onto a v7 device (USR3 left out)");
+    v7.done();
+  }
   const old = attachMock({ noBackup: true });
   const oi = E.parse[C.INFO](await old.rq(E.req.info()));
   ok(oi.proto === 5, "backup: firmware without it says protocol 5 (the editor hides backup)");
@@ -481,14 +497,16 @@ async function editorV5() {
   const C = E.CMD;
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 6 && /SLOOP/.test(info.version) && info.pcount === 58 && info.gcount === 32 && info.pe0 === 50, "v5/v6: INFO ends with the protocol version (6: backup)");
+  ok(info.proto === 7 && info.drum === 3 && /SLOOP/.test(info.version) && info.pcount === 58 && info.gcount === 32 && info.pe0 === 50,
+    "v5..v7: INFO ends with the protocol version (7: eight tracks) and the drum track");
   /* the firmware says the same: ED_DRUM_STEP is command 33, INFO sends 5, P_CHORD / the master globals as the mock has them */
   const ec = readFileSync(join(HERE, "../firmware/src/editor.c"), "utf8"), pc = readFileSync(join(HERE, "../firmware/src/params.c"), "utf8");
   const en = (/enum \{ ED_INFO = 1,([^}]*)\}/.exec(ec) || [])[1] || "";
   const names = ["ED_INFO", ...en.replace(/\/\*[^*]*\*\//g, "").split(",").map((x) => x.trim()).filter(Boolean)];
   ok(names.indexOf("ED_DRUM_STEP") + 1 === C.DRUM_STEP && names.indexOf("ED_TRACK_CHANGED") + 1 === C.TRACK_CHANGED
     && names.indexOf("ED_BK_LIST") + 1 === C.BK_LIST && names.indexOf("ED_BK_PUT") + 1 === C.BK_PUT
-    && /ed_b\(6\);\s*\/\* v6: the protocol version/.test(ec), "v5/v6: command numbers and INFO == editor.c");
+    && /ed_b\(7\);\s*\/\* v6: the protocol version/.test(ec) && /ed_b\(TRK_DRUM\);\s*\/\* v7/.test(ec),
+    "v5..v7: command numbers and INFO == editor.c");
   const enumNames = (id) => (new RegExp(`${id}\\[\\] = \\{([^}]*)\\}`).exec(pc) || [])[1].split(",").map((x) => x.trim().replace(/"/g, ""));
   const chord = E.parse[C.DESC](await rq(E.req.desc(0, 49)));
   const gd = [];
@@ -537,9 +555,9 @@ async function editorV5() {
   ok(kit.label === "KIT" && kit.names[5] === "808" && kit.names.length === kit.max + 1 && (!fwKits || fwKits.join() === kit.names.join()),
     `v5: the drum track's KIT (${kit.names.length} kits${fwKits ? ", == drums.c" : ""})`);
   /* TRACK ends with the solo mask */
-  m.state.solo = 0b0101;
+  m.state.solo = 0b10000101;
   const tr = E.parse[C.TRACK](await rq(E.req.track()));
-  ok(tr.solo === 5 && tr.sel === 3 && tr.tracks.length === 4, "v5: TRACK reports the soloed tracks");
+  ok(tr.solo === 0x85 && tr.sel === 3 && tr.tracks.length === 8, "v5/v7: TRACK reports the soloed tracks (track 8 too)");
   ok(!ev.unknown.length, "v5: no unmatched replies");
   done();
   /* firmware 0.8 (v3): no DRUM_STEP, no protocol byte, steps without the extra bytes */

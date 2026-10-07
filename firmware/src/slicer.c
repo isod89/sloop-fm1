@@ -9,7 +9,8 @@
  *   P_SLDEPTH GATE: how far a '.' step closes (100 % = silent); STUT: the level of the repeat
  * GATE: the gain moves at most 1 / SL_RAMP per sample (2.9 ms from open to closed): a closing
  *   ramp ends on the step boundary, an opening one starts on it.
- * STUT: an 'x' step plays live and is recorded (22.05 kHz, 16 bit, SL_LEN samples a track); a '.'
+ * STUT: an 'x' step plays live and is recorded (22.05 kHz, 16 bit, SL_LEN samples, in one of SL_NBUF
+ *   recordings shared by the tracks: at most SL_NBUF tracks repeat at once, stut_room); a '.'
  *   step plays that recording from its start, looped at the step length (halved until it fits the
  *   recording), cross-faded with the live sound by DEPTH. Every pass of the loop is windowed
  *   (SL_RAMP at both ends and at the step end), the cross-fade moves as the gate does.
@@ -46,7 +47,9 @@ static const uint16_t SL_PAT[SL_NPAT] = {
 };
 static const uint8_t SL_DEN[6] = {2, 4, 8, 3, 6, 12};   /* P_SLRATE (N_SLDIV): a step = 1 / DEN beats */
 
-static int16_t sl_buf[NTRK][SL_LEN] __attribute__((section(".pool")));
+#define SL_NBUF 4u                      /* STUT recordings (8 KB each): tracks with STUT at once */
+static int16_t sl_buf[SL_NBUF][SL_LEN] __attribute__((section(".pool")));
+static uint8_t sl_own[SL_NBUF];         /* track + 1 recording into each, 0 = free */
 typedef struct {
     uint32_t pos, len;           /* clock units into the step, its length */
     uint32_t base;               /* the step without swing (units) */
@@ -149,20 +152,53 @@ static void sl_seg(const track_t *t, sl_t *s, int16_t *buf, int32_t *b, uint32_t
     }
 }
 
+/* the recording of track k for STUT: its own, else a free one (or one whose track has left STUT and
+ * no longer repeats); 0: all SL_NBUF in use, the track plays live */
+static int16_t *sl_rec_buf(uint32_t k)
+{
+    uint32_t i, f = SL_NBUF;
+    for (i = 0; i < SL_NBUF; i++) {
+        uint32_t o = sl_own[i];
+        if (o == k + 1u)
+            return sl_buf[i];
+        if (f == SL_NBUF && (!o || (trk[(o - 1u) % NTRK].p[P_SLCR] != SL_STUT && !sl[(o - 1u) % NTRK].w)))
+            f = i;
+    }
+    if (f == SL_NBUF)
+        return 0;
+    sl_own[f] = (uint8_t)(k + 1u);
+    return sl_buf[f];
+}
+
+/* may track t switch STUT on: fewer than SL_NBUF other tracks have it (the UI asks) */
+static int stut_room(const track_t *t)
+{
+    uint32_t i, n = 0;
+    for (i = 0; i < NTRK; i++)
+        n += &trk[i] != t && trk[i].p[P_SLCR] == SL_STUT;
+    return n < SL_NBUF;
+}
+
 /* the step clock over n samples and the SLICER on b (0: the clock only, the track is silent) */
 static void slicer_track(const track_t *t, int32_t *b, uint32_t n)
 {
     uint32_t k = (uint32_t)(t - trk), i = 0, bpm = (uint32_t)song.g[G_BPM];
     sl_t *s = &sl[k];
     int act = b && (t->p[P_SLCR] != SL_OFF || s->gc || s->w);
+    int16_t *buf = t->p[P_SLCR] == SL_STUT || s->w ? sl_rec_buf(k) : 0;   /* (kept while silent too) */
     while (i < n) {
         uint32_t m, left;
         while (s->pos >= s->len)
             sl_enter(t, s);
         left = (s->len - s->pos + bpm - 1u) / bpm;  /* samples to the boundary */
         m = left < n - i ? left : n - i;
+        if (!buf) {                                 /* no recording: nothing recorded, nothing repeated */
+            s->rec_on = 0;
+            s->rec = 0;
+            s->loop = 0;
+        }
         if (act)
-            sl_seg(t, s, sl_buf[k], b + i, m, left);
+            sl_seg(t, s, buf, b + i, m, left);
         s->pos += m * bpm;
         i += m;
     }

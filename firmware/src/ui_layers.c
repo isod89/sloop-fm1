@@ -246,8 +246,9 @@ static void layer_key(uint32_t layer, uint32_t k, uint32_t down)
         return;
     case LY_SCALE: {                                    /* the key of the song: every synth part */
         uint32_t i, root = (53u + k) % 12u;
-        for (i = 0; i < NPART; i++)
-            trk[i].p[P_ROOT] = (int16_t)root;
+        for (i = 0; i < NTRK; i++)
+            if (trk_is_part(i))
+                trk[i].p[P_ROOT] = (int16_t)root;
         ui_say("KEY ", N_NOTE[root]);
         return;
     }
@@ -303,12 +304,12 @@ static void layer_key(uint32_t layer, uint32_t k, uint32_t down)
         }
         return;
     }
-    case LY_MIX:
-        if (w >= 0 && w < 4) {
+    case LY_MIX:                                        /* white 1..8 mute, 9..16 solo; the first black key: tap */
+        if (w >= 0 && w < (int32_t)NTRK) {
             trk[w].p[P_MUTE] = (int16_t)!trk[w].p[P_MUTE];
-        } else if (w >= 4 && w < 8) {
-            song.solo ^= (uint8_t)(1u << (w - 4));
-        } else if (w == 15) {
+        } else if (w >= (int32_t)NTRK && w < 2 * (int32_t)NTRK) {
+            song.solo ^= (uint8_t)(1u << (w - (int32_t)NTRK));
+        } else if (k == 1u) {
             tap_tempo();
         }
         return;
@@ -380,8 +381,9 @@ static void layer_knobs(uint32_t layer)
             } else if (k == 1u) {
                 uint32_t i;
                 int16_t v = (int16_t)clamp(trk[0].p[P_SCALE] + s, 0, NSCALES - 1);
-                for (i = 0; i < NPART; i++)
-                    trk[i].p[P_SCALE] = v;
+                for (i = 0; i < NTRK; i++)
+                    if (trk_is_part(i))
+                        trk[i].p[P_SCALE] = v;
             } else if (k == 2u) {
                 if (!is_drum(t))
                     t->p[P_QUANT] = (int16_t)clamp(t->p[P_QUANT] + s, 0, 2);
@@ -389,8 +391,9 @@ static void layer_knobs(uint32_t layer)
                 t->p[P_TRANS] = (int16_t)clamp(t->p[P_TRANS] + s, -24, 24);
             }
             break;
-        case LY_MIX: {
-            int16_t *lv = k == TRK_DRUM ? &song.g[G_DRLVL] : &trk[k].p[P_LEVEL];
+        case LY_MIX: {                                  /* the levels of the four tracks shown (the bank) */
+            uint32_t i = (song.sel & ~3u) + k;
+            int16_t *lv = i == TRK_DRUM ? &song.g[G_DRLVL] : &trk[i].p[P_LEVEL];
             *lv = (int16_t)clamp(*lv + accel(EN_K1 + k, s, 127), 0, 127);
             break;
         }
@@ -462,7 +465,7 @@ static void layer_screen_draw(void)
     int32_t ratio[4] = {-1, -1, -1, -1};
     uint32_t i, layer = ui.layer, sel = song.sel;
     track_t *t = TSEL;
-    uint16_t col = TE_COL[sel & 3u];
+    uint16_t col = TE_COL[sel % NTRK];
     if (!layer_shown) {
         lcd_fill(0, 0, 240, 240, C_BLACK);
         ui.force = 1;
@@ -651,30 +654,29 @@ static void layer_screen_draw(void)
         ratio[3] = (t->p[P_TRANS] + 24) * 1000 / 48;
         break;
     }
-    case LY_MIX: {                                      /* mute 1..4, solo 1..4, tap */
+    case LY_MIX: {                                      /* mute 1..8, solo 1..8; tap on the first black key */
+        char b[8];
+        uint32_t first = song.sel & ~3u;
         col = C_WHITE;
-        str_cpy(sub, "mute  solo  tap", sizeof sub);
-        for (i = 0; i < 4u; i++) {
+        str_cpy(sub, "tap: black 1  bpm ", sizeof sub);
+        fmt_int(b, song.g[G_BPM]);
+        str_cpy(sub + str_len(sub), b, sizeof sub - str_len(sub));
+        for (i = 0; i < NTRK; i++) {
             int m = trk[i].p[P_MUTE] != 0, so = (song.solo >> i) & 1u;
             str_cpy(tl[i].lab, "mute 1", 8);
             tl[i].lab[5] = (char)('1' + i);
             tl[i].bg = m ? TE_G2 : TE_COL[i];
             tl[i].fg = m ? TE_G3 : C_BLACK;
-            str_cpy(tl[4 + i].lab, "solo 1", 8);
-            tl[4 + i].lab[5] = (char)('1' + i);
-            tl[4 + i].bg = so ? C_WHITE : TE_G1;
-            tl[4 + i].fg = so ? C_BLACK : TE_G3;
-            tl[4 + i].top = TE_DIM[i];
+            str_cpy(tl[NTRK + i].lab, "solo 1", 8);
+            tl[NTRK + i].lab[5] = (char)('1' + i);
+            tl[NTRK + i].bg = so ? C_WHITE : TE_G1;
+            tl[NTRK + i].fg = so ? C_BLACK : TE_G3;
+            tl[NTRK + i].top = TE_DIM[i];
         }
-        fmt_int(tl[15].lab, song.g[G_BPM]);
-        tl[15].bg = song.playing && clk_pos < BEAT_U / 4u ? C_WHITE : TE_G2;
-        tl[15].fg = tl[15].bg == C_WHITE ? C_BLACK : C_WHITE;
-        str_cpy(tl[14].lab, "tap>", 8);
-        tl[14].bg = C_BLACK;
-        for (i = 0; i < 4u; i++) {
-            uint32_t lv = trk_level(i);
-            static const char *const L[4] = {"1", "2", "3", "4"};
-            lab[i] = L[i];
+        for (i = 0; i < 4u; i++) {                      /* KNOB 1..4: the levels of the bank shown on TRACKS */
+            uint32_t lv = trk_level(first + i);
+            static const char *const L[NTRK] = {"1", "2", "3", "4", "5", "6", "7", "8"};
+            lab[i] = L[first + i];
             fmt_int(v[i], (int32_t)lv * 100 / 127);
             ratio[i] = (int32_t)lv * 1000 / 127;
         }

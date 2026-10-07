@@ -3,7 +3,7 @@
 /* SLICE: a sample slicer, played from the keys and the sequencer. Felucca's own design.
  *
  * Material (SRC): the built-in BREAK (tools/gen_samples.py: one bar of 16ths at 120 BPM arranged
- * from Felucca's generated drums, stored after the SAMPLE sets) or a user slot USR1..3 (the same
+ * from Felucca's generated drums, stored after the SAMPLE sets) or a user slot USR1, USR2 (the same
  * slots as SAMPLE's, eng_sample.c), whose zones are played one after the other as one recording
  * (a zone that shares its data with an earlier one is skipped). An empty slot plays BREAK.
  *
@@ -55,15 +55,15 @@ typedef struct {
 
 static const slc_src_t SLC_BREAK = SLC_BREAK_INIT;
 static slc_src_t slc_usr[SMP_USER_SLOTS];
-static int16_t slc_rbuf[NPART][NVOICE][SLC_RB];       /* reverse windows, one per part voice */
-static const char *const N_SLC_SRC[] = {"BREAK", "USR1", "USR2", "USR3"};
+static int16_t slc_rbuf[NTRK][NVOICE][SLC_RB];       /* reverse windows, one per part voice */
+static const char *const N_SLC_SRC[] = {"BREAK", "USR1", "USR2"};
 static const char *const N_SLC_DIV[] = {"4", "8", "16", "32", "AUTO"};
 static const char *const N_SLC_MODE[] = {"ONE", "GATE", "LOOP"};
 static const char *const N_SLC_REV[] = {"OFF", "ON"};
 enum { SLC_ONE, SLC_GATE, SLC_LOOP };
 #define SLC_DIV_AUTO 4u
 
-/* source 0 = BREAK, 1..3 = USR1..3; 0 = no material (an empty or erased slot) */
+/* source 0 = BREAK, 1..2 = USR1, USR2; 0 = no material (an empty or erased slot) */
 static const slc_src_t *slc_get(uint32_t src)
 {
     if (!src)
@@ -227,7 +227,7 @@ static void slc_user_scan(uint32_t k, int valid)
 static int16_t *slc_rb(track_t *t, voice_t *v)
 {
     uint32_t p = (uint32_t)(t - trk), i = (uint32_t)(v - t->v);
-    return p < NPART && i < NVOICE ? slc_rbuf[p][i] : 0;
+    return p < NTRK && i < NVOICE ? slc_rbuf[p][i] : 0;
 }
 
 static void slice_note_on(track_t *t, voice_t *v)
@@ -403,7 +403,7 @@ static const preset_t SLICE_PRESETS[] = {
 static const engine_t ENG_SLICE = {
     "SLICE", {"SLCE", "PLAY"},
     {
-        {"SRC", F_ENUM, 0, 3, 0, N_SLC_SRC, 0},
+        {"SRC", F_ENUM, 0, SMP_USER_SLOTS, 0, N_SLC_SRC, 0},
         {"DIV", F_ENUM, 0, 4, 2, N_SLC_DIV, 0},
         {"START", F_INT, 0, 31, 0, 0, 0},
         {"PTCH", F_SEMI, -24, 24, 0, 0, 0},

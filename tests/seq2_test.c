@@ -471,7 +471,7 @@ static void t_recmode(void)
     run_block();
     check(ft_on && !song.playing, "REC mode FREE, empty project: the first note starts a free take");
     transport_req = 2; run_block(); ft_bars = 0;
-    for (k = 0; k < 4u; k++) trk_note_off(&trk[k % NPART], 60);
+    for (k = 0; k < 4u; k++) trk_note_off(&trk[k % NP3], 60);
 
     reset(100);
     song.sel = 0;

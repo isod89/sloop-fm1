@@ -72,6 +72,10 @@ static uint64_t now_ns(void)
     return (uint64_t)ts.tv_sec * 1000000000u + (uint64_t)ts.tv_nsec;
 }
 
+/* the tests' scenarios play the first three parts (tracks 1..3), as the four-track SLOOP had them; the
+ * parts after the drum track (5..8) stay idle unless a test says otherwise */
+#define NP3 3u
+
 static void host_tracks_init(void)                /* as felucca_init: defaults, empty patterns */
 {
     uint32_t i, k;
@@ -147,8 +151,8 @@ static void put_step(track_t *t, uint32_t i, uint32_t n, const uint8_t *notes, u
 static uint32_t busy_now(void)                   /* sounding voices of the parts (not the ones fading out: given up) */
 {
     uint32_t p, i, n = 0;
-    for (p = 0; p < NPART; p++)
-        for (i = 0; i < NVOICE; i++)
+    for (p = 0; p < NTRK; p++)
+        for (i = 0; trk_is_part(p) && i < NVOICE; i++)
             n += trk[p].v[i].active && trk[p].v[i].stage != 4u;
     return n;
 }
@@ -205,7 +209,7 @@ static int tracks_demo(const char *dir, const char *name, uint32_t solo)
         put_step(td, i, k, n, k ? ST_NOTE : ST_REST, i % 4u == 0u ? SF_ACCENT : 0u);
     }
     if (solo) {                                    /* the other tracks silent */
-        for (i = 0; i < NPART; i++)
+        for (i = 0; i < NP3; i++)
             if (i + 1u != solo)
                 trk[i].p[P_LEVEL] = 0;
         if (solo != 4u)
@@ -288,7 +292,7 @@ static int tracks_demo(const char *dir, const char *name, uint32_t solo)
  * held: parts[k] = {engine, preset, notes} for part k, 0 notes = idle. 2 s to settle, then the
  * fastest of four 2 s stretches (the host's other load only ever adds). Runs in a child process
  * (a clean state each time); the result comes back through a pipe. */
-static double tracks_cost(const uint8_t parts[NPART][3], uint32_t *busy_max)
+static double tracks_cost(const uint8_t parts[NP3][3], uint32_t *busy_max)
 {
     int fd[2];
     pid_t pid;
@@ -302,13 +306,13 @@ static double tracks_cost(const uint8_t parts[NPART][3], uint32_t *busy_max)
         uint32_t p, i, bm = 0;
         int32_t o[2 * CTL];
         host_tracks_init();
-        for (p = 0; p < NPART; p++) {
+        for (p = 0; p < NP3; p++) {
             host_preset(&trk[p], parts[p][0], parts[p][1]);
             trk[p].p[P_VOICE] = V_POLY;
             trk[p].p[P_SUS] = 127;                  /* held notes keep sounding */
             trk[p].p[P_AMODE] = 0;
         }
-        for (p = 0; p < NPART; p++)
+        for (p = 0; p < NP3; p++)
             for (i = 0; i < parts[p][2]; i++)
                 trk_note_on(&trk[p], NOTES[i] + 12u * p, 100);
         for (k = 0; k < 2u * FS / CTL + nblk; k++) {   /* 2 s to settle (attacks), then measure */
@@ -361,7 +365,7 @@ static int steal_test(const char *dir)
     if (!L || !(w = fopen(path, "wb")))
         return 1;
     host_tracks_init();
-    for (p = 0; p < NPART; p++) {
+    for (p = 0; p < NP3; p++) {
         track_t *t = &trk[p];
         host_preset(t, 0, 5);                      /* ANALOG SINE KEY, as a plain held sine: */
         t->p[P_E4] = 127;                          /* filter open, no resonance, no drive */
@@ -642,23 +646,29 @@ static void trs_bytes(const uint8_t *b, uint32_t n)
 static int trs_test(void)
 {
     uint32_t d0, i;
-    int ok_parts, ok_drum, ok_sel, ok_off, ok_hang, ok_rec;
+    int ok_parts, ok_drum, ok_sel, ok_off, ok_hang, ok_rec, ok_p5;
     host_tracks_init();
-    for (i = 0; i < NPART; i++) {
+    for (i = 0; i < NTRK; i++) {
+        if (!trk_is_part(i))
+            continue;
         host_preset(&trk[i], 0, 1);
         trk[i].p[P_VOICE] = V_POLY;
         trk[i].p[P_SUS] = 127;
     }
     song.sel = 1;
     d0 = drums.age;
-    trs_bytes((const uint8_t[]){0x90, 60, 100, 65, 0xF8, 100, 0x91, 62, 100, 0x92, 64, 100, 0x99, 36, 110, 0x94, 67, 90}, 18);
+    trs_bytes((const uint8_t[]){0x90, 60, 100, 65, 0xF8, 100, 0x91, 62, 100, 0x92, 64, 100, 0x99, 36, 110, 0x93, 67, 90}, 18);
     ok_parts = trs_held(&trk[0], 60) && trs_held(&trk[0], 65) && trs_held(&trk[1], 62) && trs_held(&trk[2], 64) && !trs_held(&trk[0], 62);
     ok_drum = drums.age == d0 + 1u;
-    ok_sel = trs_held(&trk[1], 67) && !trs_held(&trk[0], 67);
+    ok_sel = trs_held(&trk[1], 67) && !trs_held(&trk[0], 67) && !trs_held(TDRUM, 67);   /* ch 4: the drum track's number */
+    trs_bytes((const uint8_t[]){0x94, 69, 100}, 3);
+    ok_p5 = trs_held(&trk[4], 69) && !trs_held(&trk[1], 69);   /* ch 5: track 5 */
+    trs_bytes((const uint8_t[]){0x94, 69, 0}, 3);
+    ok_p5 = ok_p5 && !trs_held(&trk[4], 69);
     trs_bytes((const uint8_t[]){0x90, 60, 0, 65, 0, 0x81, 62, 0, 0x82, 64, 64}, 11);   /* vel 0 = off, 0x8n */
     ok_off = !trs_held(&trk[0], 60) && !trs_held(&trk[0], 65) && !trs_held(&trk[1], 62) && !trs_held(&trk[2], 64);
-    song.sel = 2;                                   /* another track selected while ch 5's note is down */
-    trs_bytes((const uint8_t[]){0x84, 67, 0}, 3);
+    song.sel = 2;                                   /* another track selected while ch 4's note is down */
+    trs_bytes((const uint8_t[]){0x83, 67, 0}, 3);
     ok_hang = !trs_held(&trk[1], 67);
     song.rec = 1u << 2;                             /* track 3 armed, transport on: ch 3 records */
     transport_req = 1;
@@ -666,12 +676,12 @@ static int trs_test(void)
     trs_bytes((const uint8_t[]){0x92, 72, 100}, 3);
     trs_bytes((const uint8_t[]){0x92, 72, 0}, 3);
     ok_rec = trk[2].step[0].n == 1u && trk[2].step[0].note[0] == 72u && trk[2].step[0].time == ST_NOTE && trk[1].step[0].n == 0u;
-    printf("tracks: TRS MIDI IN: ch 1..3 -> parts %s, ch 10 -> drums %s, ch 5 -> the selected track %s; note-offs "
-           "(running status, vel 0) %s\n", ok_parts ? "ok" : "FAIL", ok_drum ? "ok" : "FAIL", ok_sel ? "ok" : "FAIL",
-           ok_off ? "ok" : "FAIL");
+    printf("tracks: TRS MIDI IN: ch 1..3 -> parts %s, ch 5 -> part 5 %s, ch 10 -> drums %s, ch 4 -> the selected track "
+           "%s; note-offs (running status, vel 0) %s\n", ok_parts ? "ok" : "FAIL", ok_p5 ? "ok" : "FAIL",
+           ok_drum ? "ok" : "FAIL", ok_sel ? "ok" : "FAIL", ok_off ? "ok" : "FAIL");
     printf("tracks: TRS MIDI IN: note-off after another track was selected reaches the note's track %s; ch 3 records "
            "into armed track 3 %s\n", ok_hang ? "ok" : "FAIL", ok_rec ? "ok" : "FAIL");
-    return !ok_parts + !ok_drum + !ok_sel + !ok_off + !ok_hang + !ok_rec;
+    return !ok_parts + !ok_p5 + !ok_drum + !ok_sel + !ok_off + !ok_hang + !ok_rec;
 }
 
 static int tracks_test(const char *dir)
@@ -739,7 +749,7 @@ static int tracks_test(const char *dir)
     /* one part: every preset with 8 held notes (the engine's cap: VOICE 4) + drums; the worst one */
     for (e = 0; e < NENGINES; e++)
         for (pi = 0; pi < ENGINES[e]->npresets; pi++) {
-            uint8_t parts[NPART][3] = {{(uint8_t)e, (uint8_t)pi, 8}, {0, 0, 0}, {0, 0, 0}};
+            uint8_t parts[NP3][3] = {{(uint8_t)e, (uint8_t)pi, 8}, {0, 0, 0}, {0, 0, 0}};
             double c = tracks_cost(parts, 0);
             if (c > best_e[e]) {
                 best_e[e] = c;
@@ -755,10 +765,10 @@ static int tracks_test(const char *dir)
     for (e = 0; e < NENGINES; e++)
         printf(" %s %s %.1f%s", ENGINES[e]->name, ENGINES[e]->presets[heavy[e]].name, best_e[e], e + 1u < NENGINES ? "," : "\n");
     {   /* DIGITAL, PHASE, VOICE (their heaviest presets) at once: 3 + 3 + 2 notes = the budget of 8 */
-        uint8_t parts[NPART][3] = {{1, (uint8_t)heavy[1], 3}, {2, (uint8_t)heavy[2], 3}, {5, (uint8_t)heavy[5], 2}};
-        uint8_t full[NPART][3] = {{1, (uint8_t)heavy[1], 8}, {2, (uint8_t)heavy[2], 8}, {5, (uint8_t)heavy[5], 4}};
-        uint8_t vv[NPART][3] = {{5, (uint8_t)heavy[5], 4}, {5, (uint8_t)heavy[5], 4}, {0, 0, 0}};
-        uint8_t idle[NPART][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
+        uint8_t parts[NP3][3] = {{1, (uint8_t)heavy[1], 3}, {2, (uint8_t)heavy[2], 3}, {5, (uint8_t)heavy[5], 2}};
+        uint8_t full[NP3][3] = {{1, (uint8_t)heavy[1], 8}, {2, (uint8_t)heavy[2], 8}, {5, (uint8_t)heavy[5], 4}};
+        uint8_t vv[NP3][3] = {{5, (uint8_t)heavy[5], 4}, {5, (uint8_t)heavy[5], 4}, {0, 0, 0}};
+        uint8_t idle[NP3][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
         uint32_t bm2 = 0, bm3 = 0;
         double two_voice, none;
         four = tracks_cost(parts, &bm);

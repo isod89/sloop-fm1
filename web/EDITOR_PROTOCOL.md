@@ -3,7 +3,8 @@
 The firmware side is `firmware/src/editor.c` (SLOOP is based on Felucca: the frames keep its "FL"
 header). Commands 16-26 (user presets and live sync) form protocol v2; commands 27-30 (tracks) form
 protocol v3; commands 31-32 (any track's parameters) form protocol v4; command 33 and the extra step,
-`INFO` and `TRACK` bytes form protocol v5 (SLOOP 2.0).
+`INFO` and `TRACK` bytes form protocol v5 (SLOOP 2.0); backup / restore (34-36) form v6 (SLOOP 2.3);
+eight tracks form v7 (below).
 
 **v3 (four tracks):** the device has four tracks: 1..3 are synth parts, 4 is the drum track. One
 of them is *selected* (the TRACKS page on the device, or `TRACK`). Every v1 / v2 command acts on the
@@ -18,6 +19,12 @@ selected. The v1-v3 commands are byte for byte as before; v4 is asked for with b
 hit; `DRUM_STEP` reads and writes them. Synth steps carry a level and a ratchet per note. `INFO` ends with
 the protocol version (5) and `TRACK` with the solo mask. Every addition is a byte appended at the end of
 a reply or a request, so v1-v4 editors keep working (they see the drum lanes as GM notes, below).
+
+**v7 (eight tracks):** the device has eight tracks: 4 is the drum track (where it was), 1..3 and 5..8 are
+synth parts. `INFO` ends with the protocol version (7) and then the drum track's index (3): an editor finds
+the drum track there, not at the last index (before v7 it was the last). `TRACK` lists eight tracks and its
+solo mask is two bytes (tracks 1..7, then track 8). MIDI channels 1..3 and 5..8 play their parts. There are
+two user sample slots (USR1, USR2: `SMP_INFO` says how many). Backup objects 8..12 (below).
 
 ## Framing
 
@@ -243,17 +250,20 @@ editor takes them from `INFO`; older records load with the SLICER off and CHORD 
 
 ## v6: backup / restore (SLOOP 2.3)
 
-`INFO` ends with 6. Objects: **0** the working project (a `project_t`, as the autosave), **1** the settings
+`INFO` ends with 6 (7: eight tracks). Objects: **0** the working project (a `project_t`, as the autosave; v7: its
+tracks 1..4, format 4 exactly), **1** the settings
 (`persist_t`: colours, low cut, zoom, the panel calibration, the song order, the lights and SYNC word),
-**2..5** the projects 1..4 (song sections A..D; length 0 = empty), **6..7** the user preset banks (`up_bank_t`,
-16 records each; 0 = empty), **32..34** the user sample slots USR1..3 (header + ADPCM data, as in flash; 0 =
-empty). Numbers are 5 × 7 bit (u35, LSB first); data is pack7.
+**2..5** the projects 1..4 (song sections A..D; length 0 = empty; v7: tracks 1..4), **6..7** the user preset
+banks (`up_bank_t`, 16 records each; 0 = empty), v7: **8** the working project's tracks 5..8 and **9..12** those of
+the projects 1..4 (a `project_b_t`, "FUN5", carrying the sum of its tracks 1..4; restored after them), **32..**
+the user sample slots USR1.. (three before v7, two since; header + ADPCM data, as in flash; 0 = empty). A backup
+of four tracks restores onto eight (tracks 5..8 as at power-on, USR3 left out). Numbers are 5 × 7 bit (u35, LSB first); data is pack7.
 
 | cmd | Request args | Reply args |
 | --- | --- | --- |
 | 34 BK_LIST | — | rc (0 ok, 4 no flash), count, then per object: id, length u35, CRC-32 u35 (zlib). Takes a snapshot of the working project and the settings for GET |
 | 35 BK_GET | id, offset u35, count (2 × 7 bit, 1..256) | id, rc (0 ok, 1 arguments, 5 the snapshot is gone: LIST again), offset u35, count, pack7 data |
-| 36 BK_PUT | op 0 begin: id 0..7, length u35, CRC-32 u35 · op 1 data: id, offset u35, pack7 (≤ 256 bytes, in order) · op 2 commit: id · op 3 abort: id | op, id, rc: 0 ok, 1 arguments, 2 not a valid object (CRC, magic, sizes, ranges), 3 stop the song first (projects), 4 flash, 5 no begin for this object (or more than 15 s ago) |
+| 36 BK_PUT | op 0 begin: id 0..7 (v7: 0..12), length u35, CRC-32 u35 · op 1 data: id, offset u35, pack7 (≤ 256 bytes, in order) · op 2 commit: id · op 3 abort: id | op, id, rc: 0 ok, 1 arguments, 2 not a valid object (CRC, magic, sizes, ranges), 3 stop the song first (projects), 4 flash, 5 no begin for this object (or more than 15 s ago) |
 
 A restore stages one object in RAM (the project load buffer), checks it at the commit as a load checks it
 (projects: magic, size and sum, older formats converted; banks: magic, record size, slot count; settings:

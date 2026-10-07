@@ -128,7 +128,8 @@ int main(int argc, char **argv)
     settings.palette = 4;
     palette_set(4);
     host_tracks_init();
-    for (i = 0; i < NPART; i++) { set_engine_of(&trk[i], TRK_DEF[i][0]); apply_preset_to(&trk[i], TRK_DEF[i][1]); trk[i].engine = trk[i].eng_req; }
+    for (i = 0; i < NTRK; i++)
+        if (trk_is_part(i)) { set_engine_of(&trk[i], TRK_DEF[i][0]); apply_preset_to(&trk[i], TRK_DEF[i][1]); trk[i].engine = trk[i].eng_req; }
     TDRUM->p[P_E0] = DRUM_DEFAULT_KIT;
     sloop_splash(); ppm("page-splash");
     ui.menu = 2; ui.force = 1; frame(); ppm("page-about"); ui.menu = 0;
@@ -246,11 +247,15 @@ int main(int argc, char **argv)
     release(B_SCL);
     press(B_GLO); frames(10);
     key(0); check(trk[0].p[P_MUTE] == 1, "GLO + key 1: track 1 muted");
-    key(9); check(song.solo == 2u, "GLO + key 6: track 2 soloed");
+    key(16); check(song.solo == 2u, "GLO + white key 10: track 2 soloed");
+    key(7); check(trk[4].p[P_MUTE] == 1, "GLO + white key 5: track 5 muted");
+    key(7); check(trk[4].p[P_MUTE] == 0, "... and back");
+    check((keys_lit() >> key_of_white(NTRK + 1u) & 1u) && (keys_lit() >> key_of_white(1u) & 1u) &&
+          !(keys_lit() >> key_of_white(4u) & 1u), "GLO LEDs: track 2 soloed (white 10) and heard (white 2), track 5 not");
     ppm("layer-mix");
-    for (i = 0; i < 4u; i++) { fm1_in.notes = 1u << 26; frame(); fm1_in.notes = 0; frames(36); }   /* ~0.6 s apart */
-    check(song.g[G_BPM] >= 95 && song.g[G_BPM] <= 105, "GLO + the last key, tapped at ~0.6 s: ~100 BPM");
-    key(0); key(9);
+    for (i = 0; i < 4u; i++) { fm1_in.notes = 1u << 1; frame(); fm1_in.notes = 0; frames(36); }   /* ~0.6 s apart */
+    check(song.g[G_BPM] >= 95 && song.g[G_BPM] <= 105, "GLO + the first black key, tapped at ~0.6 s: ~100 BPM");
+    key(0); key(16);
     check(!trk[0].p[P_MUTE] && !song.solo, "again: unmuted, no solo");
     release(B_GLO);
     trk[0].p[P_CHORD] = 0;
@@ -390,12 +395,14 @@ int main(int argc, char **argv)
             char what[96];
             for (k = 0; k < sizeof L / sizeof L[0]; k++) {
                 ui.layer = (uint8_t)L[k].ly;
+                trk[4].p[P_MUTE] = L[k].ly == LY_MIX;    /* (GLO: white 5 = track 5, lit while heard) */
                 if (L[k].lit)
                     ok = (keys_lit() >> 7 & 1u) != 0;
                 else
                     ok = (keys_notes_dim() >> 7 & 1u) != 0 && (keys_lit() >> 7 & 1u) == 0;
                 snprintf(what, sizeof what, "NOTES on, %s layer: the sounding C4 %s", L[k].name, L[k].lit ? "lit" : "glows under the tiles");
                 check(ok, what);
+                trk[4].p[P_MUTE] = 0;
             }
             ui.layer = LY_SCALE;
             check((keys_notes_dim() & scale_keys(0)) == scale_keys(0), "NOTES on, SCL: the scale glows");

@@ -3,7 +3,7 @@
 /* Felucca user interface. Four columns map to KNOB 1..4. Rendering is lazy:
  * every element remembers what it last drew and is redrawn only on change. */
 #ifndef FELUCCA_VERSION
-#define FELUCCA_VERSION "SLOOP 2.3"  /* the beat machine firmware for the FM-1 (based on Felucca) */
+#define FELUCCA_VERSION "SLOOP 2.4"  /* the beat machine firmware for the FM-1 (based on Felucca) */
 #endif
 static void project_save(uint32_t slot);
 static void arrangement_save(void);
@@ -214,9 +214,13 @@ static void go_home(void)
 /* LIVE: no factory sequence patterns. Loading a sound (factory or user preset) never
  * writes the sequencer: every pattern is the one the player records or enters. */
 
-/* the parts' sounds at power-on (engine, preset): bass, pad, lead */
-static const uint8_t TRK_DEF[NPART][2] = {{0, 0}, {1, 0}, {4, 5}};   /* ANALOG 808 BOOM, DIGITAL RHODES, SAMPLE LOFI FLUTE */
-static uint32_t trk_def_engine(uint32_t i) { return i < NPART ? TRK_DEF[i][0] : 0u; }
+/* the parts' sounds at power-on (engine, preset); the drum track's row is not used */
+static const uint8_t TRK_DEF[NTRK][2] = {
+    {0, 0}, {1, 0}, {4, 5},                 /* ANALOG 808 BOOM, DIGITAL RHODES, SAMPLE LOFI FLUTE */
+    {0, 0},                                 /* (the drum track) */
+    {2, 2}, {6, 2}, {7, 0}, {5, 0},         /* PHASE CZ STRING, TRIO MIN7 STAB, WHEEL SOUL ORGAN, VOICE CHOIR AAH */
+};
+static uint32_t trk_def_engine(uint32_t i) { return trk_is_part(i) ? TRK_DEF[i][0] : 0u; }
 
 static int seq_is_empty(const track_t *t) { return track_empty(t); }
 
@@ -270,24 +274,41 @@ static void apply_preset_to(track_t *t, uint32_t pi)
     }
 }
 
+/* GRAIN keeps a context per track that plays it (eng_grain.c GRAIN_CTX): may track t take engine ei */
+static int grain_room(const track_t *t, uint32_t ei)
+{
+    uint32_t i, n = 0;
+    if (ENGINES[ei % NENGINES] != &ENG_GRAIN)
+        return 1;
+    for (i = 0; i < NTRK; i++)
+        n += trk_is_part(i) && &trk[i] != t && ENGINES[trk[i].eng_req % NENGINES] == &ENG_GRAIN;
+    return n < GRAIN_CTX;
+}
+
 /* the engine's defaults and its first preset. With the audio IRQ off: the ISR sees the old engine with
- * its values or the new one with its own (voice.c engine_block), never one with the other's */
-static void set_engine_of(track_t *t, uint32_t ei)
+ * its values or the new one with its own (voice.c engine_block), never one with the other's.
+ * 0: not switched (the drum track, or GRAIN on GR_SLOTS other tracks already) */
+static int set_engine_of(track_t *t, uint32_t ei)
 {
     const engine_t *e = ENGINES[ei % NENGINES];
     uint32_t i;
     if (is_drum(t))
-        return;
+        return 0;
+    if (!grain_room(t, ei)) {
+        ui_say("GRAIN ", "3 TRACKS MAX");
+        return 0;
+    }
     fm1_irq_off();
     t->eng_req = (uint8_t)(ei % NENGINES);
     for (i = 0; i < 8u; i++)
         t->p[P_E0 + i] = e->edit[i].def;
     apply_preset_to(t, 0);
     fm1_irq_on();
+    return 1;
 }
 
 static void apply_preset(uint32_t pi) { apply_preset_to(TSEL, pi); }
-static void set_engine(uint32_t ei) { set_engine_of(TSEL, ei); }
+static int set_engine(uint32_t ei) { return set_engine_of(TSEL, ei); }
 
 static void track_defaults(track_t *t)
 {
@@ -298,13 +319,13 @@ static void track_defaults(track_t *t)
 }
 
 /* switch engine (its defaults + first preset) and say so */
-static void select_engine(uint32_t e)
+static int select_engine(uint32_t e)
 {
-    if (is_drum(TSEL))
-        return;
-    set_engine(e);
+    if (is_drum(TSEL) || !set_engine(e))
+        return 0;
     ui_say("ENGINE ", ENGINES[TSEL->eng_req]->name);
     ui.force = 1;
+    return 1;
 }
 
 /* the factory presets as one list by kind (basses, keys, organs, pads, leads, plucks and bells, stabs,
@@ -386,8 +407,8 @@ static void preset_go(uint32_t n)                    /* load list index n into t
         up_load(k);
         return;
     }
-    if (e != TSEL->eng_req)
-        select_engine(e);
+    if (e != TSEL->eng_req && !select_engine(e))
+        return;                                      /* (GRAIN on three other tracks) */
     apply_preset(k);
     ui.force = 1;
 }

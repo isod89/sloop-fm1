@@ -105,7 +105,7 @@ static void felucca_init(void)
     for (i = 0; i < NTRK; i++) {
         track_t *t = &trk[i];
         track_defaults(t);
-        if (i < NPART) {
+        if (trk_is_part(i)) {
             set_engine_of(t, TRK_DEF[i][0]);
             apply_preset_to(t, TRK_DEF[i][1]);   /* with its sends */
             t->engine = t->eng_req;

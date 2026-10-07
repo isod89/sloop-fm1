@@ -6,15 +6,17 @@
  * byte for byte as the firmware stored them, convert: every old value at its parameter, the parameters
  * added since at their defaults, the swings onto the MPC scale (x 0.8), synth steps as they were, the
  * drum track's notes onto its lanes (accent: hard), globals, selection, the engine bytes (kept; the
- * drum track's 0); damaged ones are refused. Run by tests/run_tests.sh (needs build/gen). */
+ * drum track's 0); damaged ones are refused. Eight tracks: format 4 is the first half (tracks 1..4), the
+ * second ("FUN5", tracks 5..8) goes with the first it was saved with (its sum), else tracks 5..8 load as
+ * at power-on. Run by tests/run_tests.sh (needs build/gen). */
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
 #define PROJ_HOST 1
-static uint32_t trk_def_engine(uint32_t i)       /* ui.c TRK_DEF: ANALOG, DIGITAL, LOFI */
+static uint32_t trk_def_engine(uint32_t i)       /* ui.c TRK_DEF: ANALOG, DIGITAL, SAMPLE; PHASE, TRIO, WHEEL, VOICE */
 {
-    static const uint8_t E[NPART] = {0, 1, 3};
-    return i < NPART ? E[i] : 0u;
+    static const uint8_t E[NTRK] = {0, 1, 4, 0, 2, 6, 7, 5};
+    return trk_is_part(i) ? E[i] : 0u;
 }
 #include "../firmware/src/project.c"
 
@@ -27,7 +29,7 @@ static int check(const char *what, int ok)
 /* the value parameter k (old id) of track t had in the old project */
 static int16_t oldv(uint32_t t, uint32_t k) { return (int16_t)(t * 100u + k * 3u + 1u); }
 
-static const uint8_t OLD_ENG[NTRK] = {7, 0, 6, 8};   /* WHEEL, ANALOG, TRIO; the drum track: 8 (none) */
+static const uint8_t OLD_ENG[NTRK_V4] = {7, 0, 6, 8};   /* WHEEL, ANALOG, TRIO; the drum track: 8 (none) */
 static void fill_old_steps(step8_t *st, uint32_t t)
 {
     uint32_t k;
@@ -110,6 +112,7 @@ int main(void)
     static project_v2_t v2;
     static project_v1_t v1;
     static project_t q, q2;
+    static project_b_t qb, qb2;
     static union {
         project_t v4;
         project_v3_t v3;
@@ -123,6 +126,8 @@ int main(void)
                  P_CHORD + 1 == P_E0 && P_E0 == 50 && P_COUNT == PROJ_NP_V3 + 1u && P_SLDEPTH + 1 == P_CHORD);
     bad += check("format 4 fits one flash object; 4 slots fit .noinit", sizeof(project_t) <= 4096u - 256u &&
                  4u * sizeof(project_t) < 0x3D50u - 1024u);
+    bad += check("the second half (tracks 5..8) fits one flash object", sizeof(project_b_t) <= 4096u - 256u &&
+                 NTRK_V4 + NTRK_B == NTRK && TRK_DRUM < NTRK_V4);
 
     /* format 3 (SLOOP 1.x) */
     memset(&v3, 0, sizeof v3);
@@ -132,7 +137,7 @@ int main(void)
         v3.g[i] = (int16_t)(300 + i);
     v3.g[G_SWING] = 50;
     v3.sel = 3;
-    for (t = 0; t < NTRK; t++)
+    for (t = 0; t < NTRK_V4; t++)
         fill_v3_track(&v3.t[t], t);
     v3.sum = proj_hash(&v3, sizeof v3 - 4u);
     memcpy(&buf, &v3, sizeof v3);
@@ -145,7 +150,7 @@ int main(void)
         ok &= q.g[i] == GP[i].def;
     bad += check("FUN3 -> FUN4: globals (swing 50 -> 40: the MPC scale), the new ones default", ok);
     ok = 1;
-    for (t = 0; t < NTRK; t++) {
+    for (t = 0; t < NTRK_V4; t++) {
         const proj_trk_t *n = &q.t[t];
         uint32_t k;
         ok &= (t == TRK_DRUM ? n->engine == 0 : n->engine == OLD_ENG[t]) && steps_ok(n, v3.t[t].step, t == TRK_DRUM);
@@ -165,7 +170,7 @@ int main(void)
     for (i = 0; i < PROJ_NG_V2; i++)
         v2.g[i] = (int16_t)(500 + i);
     v2.sel = 2;
-    for (t = 0; t < NTRK; t++)
+    for (t = 0; t < NTRK_V4; t++)
         fill_v2_track(&v2.t[t], t);
     v2.sum = proj_hash(&v2, sizeof v2 - 4u);
     bad += check("FUN2 image is 2552 bytes (as stored)", sizeof v2 == 2552u);
@@ -177,7 +182,7 @@ int main(void)
         ok &= i == G_SWING || q.g[i] == (int16_t)(500 + i);
     bad += check("FUN2 -> FUN4: globals and selected track", ok);
     ok = 1;
-    for (t = 0; t < NTRK; t++)
+    for (t = 0; t < NTRK_V4; t++)
         ok &= track_ok_v2(&q.t[t], &v2.t[t], t);
     bad += check("FUN2 -> FUN4: every parameter mapped, SLICER OFF, CHORD OFF (4 tracks)", ok);
     bad += check("FUN2 -> FUN4: engine bytes kept (WHEEL 7, ANALOG 0, TRIO 6), drum 0",
@@ -218,26 +223,53 @@ int main(void)
     v1.sum = proj_hash(&v1, sizeof v1 - 4u);
     memcpy(&buf, &v1, sizeof v1);
     ok = proj_import(&q, &buf, (int)sizeof v1) && proj_ok(&q) && track_ok_v2(&q.t[0], &v1.t, 0) && q.g[5] == 705;
-    for (t = 1; t < NTRK; t++)
+    for (t = 1; t < NTRK_V4; t++)
         ok &= q.t[t].preset == 0xFF && q.t[t].p[P_SLCR] == 0 && q.t[t].p[P_LEVEL] == TP[P_LEVEL].def &&
               q.t[t].p[P_E0] == ENGINES[trk_def_engine(t)]->edit[0].def &&
               (t == TRK_DRUM ? dstep_mask(&q.t[t].dstep[0]) == 0u : q.t[t].step[0].time == ST_REST);
     bad += check("FUN1 -> FUN4: track 1 mapped, tracks 2..4 defaults", ok);
 
-    /* capture / apply: the working project round trip */
+    /* a four-track project (format 4 alone): tracks 5..8 as at power-on */
+    proj_b_default(&qb, &q);
+    ok = projb_ok(&qb, &q);
+    for (t = 0; t < NTRK_B; t++)
+        ok &= qb.t[t].preset == 0xFF && qb.t[t].engine == trk_def_engine(NTRK_V4 + t) &&
+              qb.t[t].p[P_E0] == ENGINES[trk_def_engine(NTRK_V4 + t)]->edit[0].def && qb.t[t].step[0].time == ST_REST;
+    bad += check("FUN4 alone: tracks 5..8 their power-on sounds, no steps", ok);
+
+    /* capture / apply: the working project round trip, eight tracks */
     host_tracks_init();
     for (t = 0; t < NTRK; t++)
         trk[t].p[P_SLEN] = (int16_t)(5 + t);
     trk[1].step[2].n = 2, trk[1].step[2].note[0] = 60, trk[1].step[2].note[1] = 64, trk[1].step[2].time = ST_NOTE;
     trk[1].step[2].lvl = 0x0D;
+    trk[6].step[9].n = 3, trk[6].step[9].note[0] = 48, trk[6].step[9].note[2] = 55, trk[6].step[9].time = ST_NOTE;
+    trk[6].eng_req = 7;
+    trk[7].p[P_PAN] = -20;
     dstep_set(&TDRUM->dstep[9], 4, LV_SOFT, 1);
     song.g[G_DUST] = 33;
-    proj_capture(&q);
+    song.sel = 6;
+    proj_capture(&q, &qb);
+    bad += check("capture: the halves go together (the second carries the first's sum)",
+                 proj_ok(&q) && projb_ok(&qb, &q) && q.sel == 6);
     host_tracks_init();
-    proj_apply(&q, 1);
+    song.sel = 0;
+    proj_apply(&q, &qb, 1);
     ok = trk[2].p[P_SLEN] == 7 && trk[1].step[2].n == 2 && trk[1].step[2].lvl == 0x0D && song.g[G_DUST] == 33 &&
          dstep_has(&TDRUM->dstep[9], 4) && dstep_lvl(&TDRUM->dstep[9], 4) == LV_SOFT && dstep_rat(&TDRUM->dstep[9], 4) == 1u;
     bad += check("the working project: capture -> apply round trip (levels, lanes, DUST)", ok);
+    ok = trk[5].p[P_SLEN] == 10 && trk[7].p[P_SLEN] == 12 && trk[7].p[P_PAN] == -20 && trk[6].eng_req == 7 &&
+         trk[6].step[9].n == 3 && trk[6].step[9].note[2] == 55;
+    bad += check("... tracks 5..8 (steps, chords, engine, pan)", ok);
+
+    /* the halves of different saves do not go together */
+    qb2 = qb;
+    trk[0].p[P_SLEN] = 33;
+    proj_capture(&q2, &qb);
+    bad += check("an older second half with a newer first one: refused", !projb_ok(&qb2, &q2) && projb_ok(&qb, &q2));
+    qb2 = qb;
+    qb2.t[1].p[P_PAN]++;
+    bad += check("a second half with a bad checksum: refused", !projb_ok(&qb2, &q2));
 
     printf("%s\n", bad ? "PROJECT FORMAT TEST FAILED" : "project format test passed");
     return bad != 0;

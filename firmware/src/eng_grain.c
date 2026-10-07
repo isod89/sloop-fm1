@@ -2,7 +2,7 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* GRAIN: a granular engine over the SAMPLE material. Felucca's own design.
  *
- * Source: the SAMPLE sets (built in, IMA ADPCM in flash) and the user slots USR1..3 (XIP), the
+ * Source: the SAMPLE sets (built in, IMA ADPCM in flash) and the user slots USR1, USR2 (XIP), the
  * same zones across the keyboard as SAMPLE: a note picks its zone, its pitch sets the grain
  * playback rate against the zone's root. Needs eng_sample.c (zones, ADPCM tables, pow2_q16).
  *
@@ -97,9 +97,36 @@ typedef struct {
     uint8_t src;                 /* SRC + 1 the index holds, 0 = none */
     uint8_t nz;
 } gr_part_t;
-static gr_part_t gr_p[NPART] __attribute__((section(".pool")));
+/* GRAIN_CTX contexts (7 KB each) for the tracks that play GRAIN: a track takes one at its first block
+ * and keeps it while it plays GRAIN (grain_block runs every block, sounding or not); one not used for
+ * GRAIN_FREE_MS is free again. At most GRAIN_CTX tracks may choose GRAIN (ui.c grain_room); a track
+ * without a context (a project from elsewhere) plays GRAIN silent */
+#define GRAIN_CTX 3u
+#define GRAIN_FREE_MS 100u
+static gr_part_t gr_p[GRAIN_CTX] __attribute__((section(".pool")));
+static uint8_t gr_own[GRAIN_CTX];                   /* track + 1 holding each context, 0 = free */
+static uint32_t gr_seen[GRAIN_CTX];                 /* fm1_ms of its last use */
 
-static uint32_t gr_part(const track_t *t) { return (uint32_t)(t - trk) % NPART; }
+static gr_part_t *gr_part(const track_t *t)
+{
+    uint32_t me = (uint32_t)(t - trk) + 1u, i, k = GRAIN_CTX;
+    for (i = 0; i < GRAIN_CTX; i++) {
+        if (gr_own[i] == me) {
+            gr_seen[i] = fm1_ms;
+            return &gr_p[i];
+        }
+        if (k == GRAIN_CTX && (!gr_own[i] || fm1_ms - gr_seen[i] > GRAIN_FREE_MS))
+            k = i;                                      /* free, or its track has left GRAIN */
+    }
+    if (k == GRAIN_CTX)
+        return 0;
+    gr_own[k] = (uint8_t)me;
+    gr_seen[k] = fm1_ms;
+    gr_p[k].src = 0;                                  /* (grain_block rebuilds the index for this track) */
+    for (i = 0; i < GR_NG; i++)
+        gr_p[k].g[i].owner = 0;
+    return &gr_p[k];
+}
 static uint32_t gr_nz(uint32_t src) { return src < SMP_NSETS ? SMP_SETS[src].nz : usr_nz[(src - SMP_NSETS) % SMP_USER_SLOTS]; }
 static const smp_zone_t *gr_zone(uint32_t src, uint32_t zl)
 {
@@ -348,9 +375,11 @@ static int gr_run(gr_part_t *P, gr_grain_t *g, int32_t *acc, uint32_t n)
 
 static void grain_note_on(track_t *t, voice_t *v)
 {
-    gr_part_t *P = &gr_p[gr_part(t)];
+    gr_part_t *P = gr_part(t);
     uint32_t vi = (uint32_t)(v - t->v) % NVOICE, i;
-    v->s[0] = gr_find((uint32_t)t->p[P_E0] % SMP_NALL, v->note);
+    v->s[0] = P ? gr_find((uint32_t)t->p[P_E0] % SMP_NALL, v->note) : -1;   /* no context: silent */
+    if (!P)
+        return;
     v->s[1] = 0;                                    /* the first grain at once */
     if (!v->env) {                                  /* a fresh voice: no grains left from before */
         for (i = 0; i < GR_NG; i++)
@@ -364,8 +393,10 @@ static void grain_note_on(track_t *t, voice_t *v)
  * one index entry is built */
 static void grain_block(track_t *t)
 {
-    gr_part_t *P = &gr_p[gr_part(t)];
+    gr_part_t *P = gr_part(t);
     uint32_t src = (uint32_t)t->p[P_E0] % SMP_NALL, st = gr_stamp(src), i;
+    if (!P)
+        return;
     if (!P->rng)
         P->rng = 0x2545F491;
     if (P->src != src + 1u || P->stamp != st) {
@@ -382,13 +413,13 @@ static void grain_block(track_t *t)
 
 static void grain_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
 {
-    gr_part_t *P = &gr_p[gr_part(t)];
+    gr_part_t *P = gr_part(t);
     const int16_t *p = t->p;
     uint32_t vi = (uint32_t)(v - t->v) % NVOICE, i, mine = 0, nact = 0, iv;
     int32_t zl = v->s[0], acc[CTL], lp, y = v->s[2];
     if (n > CTL)
         n = CTL;
-    if (zl < 0 || zl >= P->nz || P->src != (uint32_t)p[P_E0] % SMP_NALL + 1u) {
+    if (!P || zl < 0 || zl >= P->nz || P->src != (uint32_t)p[P_E0] % SMP_NALL + 1u) {
         if (zl < 0)
             v->active = 0;                          /* a user slot key with no zone: silent */
         return;

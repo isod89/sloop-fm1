@@ -58,8 +58,8 @@ static uint32_t trk_nvoice(const track_t *t)
 static uint32_t voices_busy(void)                       /* sounding voices of all parts (not the fading ones) */
 {
     uint32_t p, i, n = 0;
-    for (p = 0; p < NPART; p++)
-        for (i = 0; i < NVOICE; i++)
+    for (p = 0; p < NTRK; p++)
+        for (i = 0; trk_is_part(p) && i < NVOICE; i++)
             n += trk[p].v[i].active && trk[p].v[i].stage != 4u;
     return n;
 }
@@ -78,11 +78,11 @@ static uint32_t lowest_held(const track_t *t)           /* index of the lowest h
 static uint32_t voice_victim(const track_t *self, int soft, track_t **pp)
 {
     uint32_t p, i, best = NVOICE, cat = 4;
-    for (p = 0; p < NPART; p++) {
+    for (p = 0; p < NTRK; p++) {
         track_t *t = &trk[p];
         uint32_t mode = (uint32_t)t->p[P_VOICE], nu = mode == V_UNISON ? trk_nvoice(t) : 1u;
         uint32_t low = mode == V_POLY ? lowest_held(t) : NVOICE;
-        if (soft && t == self)
+        if (!trk_is_part(p) || (soft && t == self))
             continue;
         for (i = 0; i < NVOICE; i++) {
             const voice_t *v = &t->v[i];
@@ -129,8 +129,8 @@ static void shed_voice(void)
 {
     uint32_t p, i;
     voice_t *best = 0;
-    for (p = 0; p < NPART; p++)
-        for (i = 0; i < NVOICE; i++) {
+    for (p = 0; p < NTRK; p++)
+        for (i = 0; trk_is_part(p) && i < NVOICE; i++) {
             voice_t *v = &trk[p].v[i];
             if (v->active && !v->gate && v->stage != 4u && (!best || v->env < best->env))
                 best = v;
@@ -140,9 +140,11 @@ static void shed_voice(void)
         shed_count++;
         return;
     }
-    for (p = 0; p < NPART; p++) {
+    for (p = 0; p < NTRK; p++) {
         const track_t *t = &trk[p];
         uint32_t mode = (uint32_t)t->p[P_VOICE], low = mode == V_POLY ? lowest_held(t) : 0u;
+        if (!trk_is_part(p))
+            continue;
         for (i = 0; i < NVOICE; i++) {
             voice_t *v = &trk[p].v[i];
             if (v->active && v->gate && v->stage != 4u &&

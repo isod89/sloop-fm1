@@ -17,10 +17,13 @@
 #define ST_PAYLOAD_MAX (ST_SECTOR - ST_PAYLOAD_OFF)
 
 /* flash map (FL_DATA 0x97000..0xDFFFF, FL_GLOB 0xFC000..): settings 0xFC000 / 0xFD000, projects
- * 0x97000..0x9EFFF, user sample slots 0xA0000..0xDBFFF (eng_sample.c), user preset banks 0xDC000..0xDFFFF
- * (upreset.c); the working project (autosave, project.c): copy A 0x9F000, copy B 0xFE000 (the two sectors
- * left: A/B needs no two neighbours) */
-enum { OBJ_SETTINGS, OBJ_PROJECT0, OBJ_UPRESET0 = OBJ_PROJECT0 + 4, OBJ_AUTOSAVE = OBJ_UPRESET0 + 2, OBJ_COUNT };
+ * 0x97000..0x9EFFF, user sample slots 0xA0000..0xC7FFF (eng_sample.c: two since the eight tracks; the
+ * third one was 0xC8000..0xDBFFF), the second halves of the projects and of the working one (tracks 5..8,
+ * project.c) 0xC8000..0xD1FFF, free 0xD2000..0xDBFFF, user preset banks 0xDC000..0xDFFFF (upreset.c);
+ * the working project (autosave, project.c): copy A 0x9F000, copy B 0xFE000 (the two sectors left: A/B
+ * needs no two neighbours). Object numbers are kept: the second halves come after the others */
+enum { OBJ_SETTINGS, OBJ_PROJECT0, OBJ_UPRESET0 = OBJ_PROJECT0 + 4, OBJ_AUTOSAVE = OBJ_UPRESET0 + 2,
+       OBJ_PROJB0, OBJ_AUTOSAVE_B = OBJ_PROJB0 + 4, OBJ_COUNT };
 
 typedef struct {
     uint32_t magic;
@@ -56,6 +59,8 @@ static uint32_t st_sector(uint32_t obj, uint32_t copy)  /* flash offset of copy 
         return copy ? 0xFE000u : 0x9F000u;
     if (obj >= OBJ_UPRESET0 && obj < OBJ_AUTOSAVE)
         return 0xDC000u + (obj - OBJ_UPRESET0) * 2u * ST_SECTOR + copy * ST_SECTOR;
+    if (obj >= OBJ_PROJB0)
+        return 0xC8000u + (obj - OBJ_PROJB0) * 2u * ST_SECTOR + copy * ST_SECTOR;
     return 0x97000u + (obj - OBJ_PROJECT0) * 2u * ST_SECTOR + copy * ST_SECTOR;
 }
 
@@ -112,6 +117,21 @@ static int st_load(uint32_t obj, void *dst, uint32_t max)
     uint32_t i;
     st_hdr_t h;
     if (st_current(obj, &h) < 0)
+        return -1;
+    if (h.len > max)
+        h.len = max;
+    for (i = 0; i < h.len; i++)
+        ((uint8_t *)dst)[i] = st_buf[i];
+    return (int)h.len;
+}
+
+/* the other copy (the older one: what the object held before its last save) into dst; length or -1 */
+static int st_load_other(uint32_t obj, void *dst, uint32_t max)
+{
+    uint32_t i;
+    st_hdr_t h;
+    int cur = st_current(obj, &h);
+    if (cur < 0 || st_head(obj, (uint32_t)cur ^ 1u, &h) || st_body(obj, (uint32_t)cur ^ 1u, &h))
         return -1;
     if (h.len > max)
         h.len = max;

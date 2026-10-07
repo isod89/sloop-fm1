@@ -392,6 +392,7 @@ const parse = {
     for (let i = 0; i < o.nengines; i++) o.engines.push(r.s());
     o.ntrk = r.i < a.length ? r.b() : 0;             /* v3: tracks (0 = older firmware, one instrument) */
     o.proto = r.i < a.length ? r.b() : 0;            /* v5: the protocol version (0 = older firmware) */
+    o.drum = r.i < a.length ? r.b() : o.ntrk ? o.ntrk - 1 : 0;   /* v7: the drum track (before: the last one) */
     return o;
   },
   [CMD.GET](a) { const r = new Reader(a); return { scope: r.b(), id: r.b(), value: r.v() }; },
@@ -466,6 +467,7 @@ const parse = {
     const o = { sel: r.b(), ntrk: r.b(), tracks: [] };
     for (let i = 0; i < o.ntrk; i++) o.tracks.push({ engine: r.b(), preset: r.b(), level: r.v(), mute: r.b(), armed: r.b() });
     o.solo = r.i < a.length ? r.b() : 0;             /* v5: the tracks soloed (bit per track) */
+    if (r.i < a.length) o.solo |= r.b() << 7;        /* v7: track 8 */
     return o;
   },
   [CMD.TRACK_MIX](a) { const r = new Reader(a); return { track: r.b(), level: r.v(), mute: r.b() }; },
@@ -1237,9 +1239,10 @@ function b64dec(s) {
   }
   return out.subarray(0, o);
 }
-/* object ids (firmware editor.c ED_BK_IDS): 0 the working project, 1 the settings, 2..5 projects A..D,
-   6..7 the user preset banks, 32..34 the sample slots USR1..3 */
-const BK = { FORMAT: "sloop-backup", VERSION: 1, SAMPLES: [32, 33, 34], RESTORE: [6, 7, 2, 3, 4, 5, 0, 1] };
+/* object ids (firmware editor.c ED_BK_IDS): 0 the working project (tracks 1..4), 1 the settings, 2..5 projects
+   A..D (tracks 1..4), 6..7 the user preset banks, 8 the working project's tracks 5..8, 9..12 those of A..D (v7),
+   32.. the sample slots USR1.. (three before v7, two since). A project's tracks 5..8 are restored after its 1..4 */
+const BK = { FORMAT: "sloop-backup", VERSION: 1, SAMPLES: [32, 33, 34], RESTORE: [6, 7, 2, 9, 3, 10, 4, 11, 5, 12, 0, 8, 1], TRK58: [8, 9, 10, 11, 12] };
 class BackupError extends Error { constructor(code, msg) { super(msg); this.code = code; } }
 /* read everything; progress(done, total bytes) */
 async function backupCapture(rq, info, progress = () => {}) {
@@ -1279,12 +1282,14 @@ function backupObjects(file) {
 /* write it back: banks, projects, the working project, the settings, then the samples */
 async function backupRestore(rq, file, progress = () => {}) {
   const m = backupObjects(file);
+  const nslots = parse[CMD.SMP_INFO](await rq(req.smpInfo())).nslots;   /* (a backup of three slots onto two: USR3 is left out) */
   const total = [...m.values()].reduce((s, d) => s + d.length, 0) || 1;
   let done = 0;
   for (const id of BK.RESTORE) {
     if (!m.has(id)) continue;
     const d = m.get(id);
     let r = parse[CMD.BK_PUT](await rq(req.bkBegin(id, d.length, crc32(d)), { timeout: 1500, retries: 1 }));
+    if (r.rc === 1 && BK.TRK58.includes(id)) continue;   /* firmware of four tracks: no tracks 5..8 to restore */
     if (r.rc) throw new BackupError("bkWrite", `begin ${id} rc ${r.rc}`);
     for (let off = 0; off < d.length; off += 256) {
       r = parse[CMD.BK_PUT](await rq(req.bkData(id, off, d.subarray(off, off + 256)), { timeout: 1500, retries: 1 }));
@@ -1297,7 +1302,7 @@ async function backupRestore(rq, file, progress = () => {}) {
     if (r.rc) throw new BackupError("bkWrite", `commit ${id} rc ${r.rc}`);
   }
   for (const id of BK.SAMPLES) {
-    if (!m.has(id)) continue;
+    if (!m.has(id) || id - 32 >= nslots) continue;
     const d = m.get(id), k = id - 32;
     if (!d.length) {
       const e = parse[CMD.SMP_ERASE](await rq(req.smpErase(k), { timeout: 2500, retries: 0 }));
@@ -1426,6 +1431,8 @@ function makeMockDevice(opt = {}) {
     14, 14, 15, 15, 13, 13, 15, 15, 13, 13, 7, 7, 7, 14, 14, 15, 15];
   const laneOf = (n) => (n < 35 ? 0 : n > 81 ? 13 : LANE_OF_GM[n - 35]);
   const v5 = !opt.legacy && !opt.v3;              /* SLOOP 2.0: steps with level / ratchet, DRUM_STEP, TRACK solo */
+  const v7 = v5 && !opt.v6 && !opt.noBackup;      /* eight tracks (the drum track: 4), two user sample slots */
+  const USR = v7 ? ["USR1", "USR2"] : ["USR1", "USR2", "USR3"];
   /* the drum step as an old (v1..v4) step: its first 4 lanes as GM notes, ACC when one is hard (editor.c ed_dstep_old) */
   const dOld = (d) => {
     const notes = [];
@@ -1479,7 +1486,7 @@ function makeMockDevice(opt = {}) {
         D("CRSH", F.PCT, 0, 127, 0), D("SWP", F.PCT, 0, 127, 0), D("VIB", F.PCT, 0, 127, 0), E("ARP", ["OFF", "OCT", "MAJ", "MIN"], 0), D("TONE", F.PCT, 0, 127, 127)],
       presets: [P("GAME LEAD", [0, 0, 32, 0, 0, 20, 0, 127], [0, 60, 90, 30], 1), P("GB BASS", [1, 1, 0, 0, 0, 0, 0, 90], [0, 50, 70, 20], 1),
         P("8BIT ARP", [2, 0, 96, 0, 0, 0, 2, 110], [0, 60, 80, 40], 0)] },
-    { name: "SAMPLE", titles: ["SET", "TONE"], edit: [E("SET", ["PIANO", "BASS", "VIBES", "HORNS", "STRGS", "FLUTE", "SCRCH", "PERC", "USR1", "USR2", "USR3"], 0), D("TUNE", F.SEMI, -24, 24, 0), D("BITS", F.INT, 0, 127, 0),
+    { name: "SAMPLE", titles: ["SET", "TONE"], edit: [E("SET", ["PIANO", "BASS", "VIBES", "HORNS", "STRGS", "FLUTE", "SCRCH", "PERC", ...USR], 0), D("TUNE", F.SEMI, -24, 24, 0), D("BITS", F.INT, 0, 127, 0),
         E("LOOP", NONOFF, 1), D("CUT", F.INT, 0, 127, 127), NONE, D("DRV", F.PCT, 0, 127, 0), NONE],
       presets: [P("DUSTY PNO", [0, 0, 20, 1, 104, 0, 14, 0], [0, 127, 127, 52], 0), P("UP BASS", [1, 0, 0, 1, 118, 0, 12, 0], [0, 127, 127, 26], 1),
         P("VIBES", [2, 0, 0, 1, 127, 0, 0, 0], [0, 127, 127, 72], 0), P("HORN STAB", [3, 0, 0, 1, 120, 0, 20, 0], [0, 127, 127, 22], 0),
@@ -1501,7 +1508,7 @@ function makeMockDevice(opt = {}) {
         E("PERC", ["OFF", "2ND", "3RD", "2SOFT", "3SOFT", "2SLOW", "3SLOW"], 0), D("CLICK", F.PCT, 0, 127, 40), D("DRV", F.PCT, 0, 127, 0), E("ROTR", ["OFF", "SLOW", "FAST"], 1)],
       presets: [P("SOUL ORGAN", [3, 0, 0, 0, 0, 25, 10, 1], [0, 64, 127, 40], 0), P("GOSPEL", [6, 0, 0, 0, 1, 60, 40, 2], [0, 64, 127, 45], 0),
         P("JAZZ ORGAN", [4, 0, 0, 0, 2, 50, 8, 1], [0, 64, 127, 40], 0), P("DIRTY B3", [5, 0, 0, 0, 0, 60, 90, 2], [0, 64, 127, 40], 0)] },
-    { name: "GRAIN", titles: ["GRAN", "SPRY"], edit: [E("SRC", ["PIANO", "BASS", "VIBES", "HORNS", "STRGS", "FLUTE", "SCRCH", "PERC", "USR1", "USR2", "USR3"], 0),
+    { name: "GRAIN", titles: ["GRAN", "SPRY"], edit: [E("SRC", ["PIANO", "BASS", "VIBES", "HORNS", "STRGS", "FLUTE", "SCRCH", "PERC", ...USR], 0),
         D("POS", F.PCT, 0, 127, 32), D("SIZE", F.PCT, 0, 127, 80), D("DENS", F.PCT, 0, 127, 80),
         D("PTCH", F.SEMI, -24, 24, 0), D("SPRD", F.PCT, 0, 127, 30), D("RAND", F.PCT, 0, 127, 10), D("TONE", F.PCT, 0, 127, 127)],
       presets: [P("LOFI CLOUD", [0, 45, 95, 85, 0, 35, 12, 80], [70, 90, 120, 90], 0), P("VIBE HAZE", [2, 30, 100, 90, 0, 25, 10, 90], [50, 100, 120, 95], 0),
@@ -1525,17 +1532,17 @@ function makeMockDevice(opt = {}) {
   ];
   const P_COUNT = 58, G_COUNT = 32, NSTEP = 64, P_E0 = 50, G_ENGSEL = 20, P_SLCR = 45, P_CHORD = 49;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  /* four tracks (firmware v3); engine / preset / p / step below are the selected track's */
-  const NTRK = 4, TRK_DRUM = 3;
+  /* four tracks (firmware v3), eight (v7); engine / preset / p / step below are the selected track's */
+  const NTRK = v7 ? 8 : 4, TRK_DRUM = 3;
   const newTrack = (i) => ({ engine: 0, preset: 0, drum: i === TRK_DRUM,
     p: TP.map((d) => d.def).concat(i === TRK_DRUM ? [5, 0, 0, 0, 0, 0, 0, 0] : new Array(8).fill(0)),
     step: Array.from({ length: NSTEP }, () => ({ n: 0, notes: [0, 0, 0, 0], time: 2, flags: 0, vel: 0, lvl: 0, rat: 0 })),
     dstep: i === TRK_DRUM ? Array.from({ length: NSTEP }, emptyDrum) : null });
   const st = {
-    tracks: [0, 1, 2, 3].map(newTrack), sel: 0, rec: 0, solo: 0,
+    tracks: Array.from({ length: NTRK }, (_, i) => newTrack(i)), sel: 0, rec: 0, solo: 0,
     g: GP.map((d) => d.def),
     slots: [null, null, null, null],
-    smp: [0, 1, 2].map(() => ({ flash: new Uint8Array(SMP.SLOT_SIZE).fill(0xFF), zones: 0, name: "", len: 0, next: SMP.DATA_OFF })),
+    smp: USR.map(() => ({ flash: new Uint8Array(SMP.SLOT_SIZE).fill(0xFF), zones: 0, name: "", len: 0, next: SMP.DATA_OFF })),
     bank: new Array(opt.slots || 32).fill(null),     /* user presets: {engine, name, p, pattern} */
     settings: Uint8Array.from({ length: 88 }, (_, i) => (i * 37 + 5) & 0xFF),   /* v6: the settings object (opaque here) */
     bkSnap: null, bkPut: null,
@@ -1681,7 +1688,8 @@ function makeMockDevice(opt = {}) {
         s(opt.legacy ? "FELUCCA 0.4 BETA (MOCK)" : opt.v3 ? "FELUCCA 0.8 (MOCK)" : "FELUCCA SLOOP 2.0 (MOCK)"); b(ENG.length); b(P_COUNT); b(G_COUNT); b(NSTEP); b(P_E0);
         ENG.forEach((e) => s(e.name));
         if (!opt.legacy) b(NTRK);
-        if (v5) b(opt.noBackup ? 5 : 6);                 /* v6: backup / restore */
+        if (v5) b(opt.noBackup ? 5 : v7 ? 7 : 6);        /* v6: backup / restore; v7: eight tracks */
+        if (v7) b(TRK_DRUM);
         break;
       case CMD.GET: case CMD.SET: {
         if (a.length < 2) return null;
@@ -1702,7 +1710,8 @@ function makeMockDevice(opt = {}) {
         if (a.length >= 1 && a[0] < NTRK) st.sel = a[0];
         b(st.sel); b(NTRK);
         st.tracks.forEach((t, i) => { b(engOf(t)); b(t.preset); v(i === TRK_DRUM ? st.g[25] : t.p[0]); b(t.p[40] ? 1 : 0); b((st.rec >> i) & 1); });
-        if (v5) b(st.solo & 15);
+        if (v5) b(st.solo & 127);
+        if (v7) b(st.solo >> 7);
         break;
       case CMD.TRACK_MIX: {
         if (a.length < 1 || a[0] >= NTRK) return null;
@@ -1841,8 +1850,13 @@ function makeMockDevice(opt = {}) {
         if (opt.noBackup) return null;
         const enc = (o) => Uint8Array.from(Array.from(JSON.stringify(o), (c) => c.charCodeAt(0) & 0x7F));
         const bankOf = (h) => { const x = st.bank.slice(h * 16, h * 16 + 16); return x.some(Boolean) ? enc(x) : new Uint8Array(0); };
-        st.bkSnap = new Map([[0, enc(project())], [1, st.settings.slice()], ...[0, 1, 2, 3].map((k) => [2 + k, st.slots[k] ? enc(st.slots[k]) : new Uint8Array(0)]),
-          [6, bankOf(0)], [7, bankOf(1)], ...[0, 1, 2].map((k) => [32 + k, st.smp[k].zones ? st.smp[k].flash.slice(0, SMP.DATA_OFF + st.smp[k].len) : new Uint8Array(0)])]);
+        /* v7: a project as two objects, tracks 1..4 with the globals and tracks 5..8 */
+        const half = (o, h) => !v7 ? o : h ? { tracks: o.tracks.slice(4) } : { tracks: o.tracks.slice(0, 4), sel: o.sel, g: o.g };
+        const none = new Uint8Array(0);
+        st.bkSnap = new Map([[0, enc(half(project(), 0))], [1, st.settings.slice()], ...[0, 1, 2, 3].map((k) => [2 + k, st.slots[k] ? enc(half(st.slots[k], 0)) : none]),
+          [6, bankOf(0)], [7, bankOf(1)],
+          ...(v7 ? [[8, enc(half(project(), 1))], ...[0, 1, 2, 3].map((k) => [9 + k, st.slots[k] ? enc(half(st.slots[k], 1)) : none])] : []),
+          ...st.smp.map((u, k) => [32 + k, u.zones ? u.flash.slice(0, SMP.DATA_OFF + u.len) : none])]);
         st.bkPut = null;
         b(0); b(st.bkSnap.size);
         for (const [id, d] of st.bkSnap) { b(id); out.push(...u35enc(d.length), ...u35enc(crc32(d))); }
@@ -1861,9 +1875,9 @@ function makeMockDevice(opt = {}) {
         if (opt.noBackup || a.length < 2) return null;
         const op = a[0], id = a[1], r = new Reader(a.slice(2));
         let rc = 1;
-        if (op === 0 && a.length === 12 && [0, 1, 2, 3, 4, 5, 6, 7].includes(id)) {
+        if (op === 0 && a.length === 12 && (id <= 7 || (v7 && id <= 12))) {
           const len = u35dec(r), crc = u35dec(r);
-          if ((id >= 2 || len) && len <= 1 << 20) { st.bkPut = { id, len, crc, pos: 0, buf: new Uint8Array(len) }; st.bkSnap = null; rc = 0; }
+          if (((id >= 2 && id !== 8) || len) && len <= 1 << 20) { st.bkPut = { id, len, crc, pos: 0, buf: new Uint8Array(len) }; st.bkSnap = null; rc = 0; }
         } else if (!st.bkPut || st.bkPut.id !== id) rc = 5;
         else if (op === 1 && a.length >= 9) {
           const off = u35dec(r), d = unpack7(a.slice(7));
@@ -1875,8 +1889,12 @@ function makeMockDevice(opt = {}) {
           if (!rc) try {
             const js = () => JSON.parse(Array.from(P.buf, (c) => String.fromCharCode(c)).join(""));
             if (id === 1) { if (P.len !== st.settings.length) throw 0; st.settings = P.buf.slice(); }
-            else if (id === 0) { const o = js(); st.tracks = o.tracks; st.sel = o.sel; st.g = o.g; }
-            else if (id <= 5) st.slots[id - 2] = P.len ? js() : null;
+            const fresh = () => Array.from({ length: NTRK - 4 }, (_, i) => newTrack(4 + i));   /* tracks 5..8 until theirs come */
+            if (id === 1) { /* (above) */ }
+            else if (id === 0) { const o = js(); st.tracks = v7 ? o.tracks.concat(fresh()) : o.tracks; st.sel = o.sel; st.g = o.g; }
+            else if (id <= 5) { const o = P.len ? js() : null; st.slots[id - 2] = o && v7 ? { ...o, tracks: o.tracks.concat(fresh()) } : o; }
+            else if (id === 8) st.tracks = st.tracks.slice(0, 4).concat(js().tracks);
+            else if (id >= 9) { const q = st.slots[id - 9]; if (P.len && q) q.tracks = q.tracks.slice(0, 4).concat(js().tracks); }
             else { const x = P.len ? js() : new Array(16).fill(null); for (let i = 0; i < 16; i++) st.bank[(id - 6) * 16 + i] = x[i] || null; }
           } catch (e) { rc = 2; }
         } else if (op === 3) { st.bkPut = null; rc = 0; }
@@ -1884,7 +1902,7 @@ function makeMockDevice(opt = {}) {
         break;
       }
       case CMD.SMP_INFO:
-        b(3); b(SMP.SLOT_SIZE / 1024);
+        b(st.smp.length); b(SMP.SLOT_SIZE / 1024);
         st.smp.forEach((u) => { b(u.zones); s(u.zones ? u.name : ""); b(u.zones ? Math.ceil(u.len / 1024) : 0); });
         break;
       default:
@@ -2063,7 +2081,7 @@ const TEXT = {
     savedSlot: "保存しました: スロット ", loadedSlot: "読み込みました: スロット ", emptySlot: "空のスロットです: ",
     confirmSave: "スロット {n} に上書き保存しますか？", confirmLoad: "スロット {n} を読み込みますか？ 今の音色とパターンは置き換わります。",
     confirmClear: "シーケンスを全部消しますか？", confirmInit: "音色を初期化しますか？",
-    samples: "サンプル", smpHelp: "WAV をドロップするか選んでください。1 スロットに 16 ファイルまで、モノ 22050 Hz の ADPCM で合計約 7 秒。SAMPLE エンジンの SET（または SLICE エンジンの SRC）で USR1〜USR3 を選ぶと鳴ります。",
+    samples: "サンプル", smpHelp: "WAV をドロップするか選んでください。1 スロットに 16 ファイルまで、モノ 22050 Hz の ADPCM で合計約 7 秒。SAMPLE エンジンの SET（または SLICE エンジンの SRC）で USR1、USR2… を選ぶと鳴ります。",
     zones: "ゾーン", smpName: "名前", chooseFiles: "ファイルを選ぶ", upload: "書き込む", erase: "消去", clearList: "リストを消す",
     file: "ファイル", root: "ルート", keys: "鍵盤", length: "長さ", remove: "外す",
     chopOpen: "音を開く", chopHelp: "録音（WAV、MP3、AIFF…）を開くかドロップし、チョップを決めてスロットへ。1 キーに 1 チョップ。長い録音（7 秒以上）でも、使うチョップを選び長さを調整できます。",
@@ -2115,7 +2133,7 @@ const TEXT = {
     mixer: "ミキサー", mixHelp: "本体の TRACKS ページと同じ 4 トラック。フェーダーはレベル（ドラムは GLO > DRUMS LEVEL）。パンはどのトラックも選択を変えずに書き込みます（0.8 のファームウェアでは一瞬そのトラックを選びます）。REC は本体での録音待機の表示です。",
     level: "レベル", pan: "パン", mute: "ミュート", rec: "REC", selectTrack: "選択", selectedTrack: "選択中",
     projHelp: "プロジェクトは本体の状態をまとめて保存します: 4 トラックの音色とパターン、選択中のトラック、グローバル設定。",
-    bkTitle: "バックアップ", bkHelp: "FM-1 の中身をすべて 1 つのファイルに保存します: 今の曲、プロジェクト 1〜4（ソングのセクション A〜D）、ユーザープリセット、サンプル USR1〜3、設定（色、キャリブレーション、ソング、ライト）。復元すると、本体はファイルの状態に戻ります（今の内容は上書きされます）。",
+    bkTitle: "バックアップ", bkHelp: "FM-1 の中身をすべて 1 つのファイルに保存します: 今の曲、プロジェクト 1〜4（ソングのセクション A〜D）、ユーザープリセット、ユーザーサンプル、設定（色、キャリブレーション、ソング、ライト）。復元すると、本体はファイルの状態に戻ります（今の内容は上書きされます）。",
     bkSave: "バックアップを保存", bkLoad: "ファイルから復元", bkSaving: "バックアップ中 ", bkSaved: "バックアップを保存しました",
     bkRestoring: "復元中 ", bkRestored: "復元しました", bkConfirm: "FM-1 の今の内容をすべてこのバックアップで置き換えます。続けますか？",
     bkBad: "SLOOP のバックアップファイルではないか、壊れています: ", bkStop: "FM-1 の再生を止めてから、もう一度復元してください。",
@@ -2143,7 +2161,7 @@ const TEXT = {
     savedSlot: "Saved to slot ", loadedSlot: "Loaded slot ", emptySlot: "Empty slot: ",
     confirmSave: "Overwrite slot {n}?", confirmLoad: "Load slot {n}? The current sound and pattern will be replaced.",
     confirmClear: "Clear the whole sequence?", confirmInit: "Reset the sound to the engine defaults?",
-    samples: "Samples", smpHelp: "Drop or choose WAV files. Up to 16 files per slot, stored as mono 22050 Hz ADPCM (about 7 s in all). Select USR1–USR3 with SET on the SAMPLE engine (or SRC on the SLICE engine).",
+    samples: "Samples", smpHelp: "Drop or choose WAV files. Up to 16 files per slot, stored as mono 22050 Hz ADPCM (about 7 s in all). Select USR1, USR2… with SET on the SAMPLE engine (or SRC on the SLICE engine).",
     zones: "zones", smpName: "Name", chooseFiles: "Choose files", upload: "Upload", erase: "Erase", clearList: "Clear list",
     file: "File", root: "Root", keys: "Keys", length: "Length", remove: "Remove",
     chopOpen: "Open a sound", chopHelp: "Open or drop a recording (WAV, MP3, AIFF…), mark the chops, send them to a slot: one chop per key. Any length: a recording longer than a slot (7 s) works, keep the chops you want and adjust them.",
@@ -2195,7 +2213,7 @@ const TEXT = {
     mixer: "Mixer", mixHelp: "The four tracks of the device's TRACKS page. The fader is the level (drums: GLO > DRUMS LEVEL). Pan is written to any track without changing the selection (firmware 0.8: by selecting it for a moment). REC shows a track armed for live recording on the device.",
     level: "Level", pan: "Pan", mute: "Mute", rec: "REC", selectTrack: "Select", selectedTrack: "Selected",
     projHelp: "A project keeps the whole device state: the sound and pattern of all four tracks, the selected track and the global settings.",
-    bkTitle: "Backup", bkHelp: "Everything on the FM-1 in one file: the music you are working on, the projects 1–4 (the song sections A–D), the user presets, the samples USR1–3 and the settings (colours, calibration, the song, the lights). Restoring puts the FM-1 back as it was in the file (what is on it now is replaced).",
+    bkTitle: "Backup", bkHelp: "Everything on the FM-1 in one file: the music you are working on, the projects 1–4 (the song sections A–D), the user presets, the user samples and the settings (colours, calibration, the song, the lights). Restoring puts the FM-1 back as it was in the file (what is on it now is replaced).",
     bkSave: "Save a backup", bkLoad: "Restore from a file", bkSaving: "Backing up ", bkSaved: "Backup saved",
     bkRestoring: "Restoring ", bkRestored: "Restored", bkConfirm: "Replace everything on the FM-1 with this backup?",
     bkBad: "Not a SLOOP backup, or damaged: ", bkStop: "Stop the FM-1 (PLAY), then restore again.",
@@ -2514,7 +2532,7 @@ function renderTrackbar() {
   if (box.children.length !== ntrk || box.dataset.lang !== lang) {
     box.dataset.lang = lang;
     box.replaceChildren(...Array.from({ length: ntrk }, (_, i) => el("button", { type: "button", "data-i": i,
-      onclick: () => selectTrack(i) }, `${i + 1}${i === ntrk - 1 ? " " + t("drum") : ""}`)));
+      onclick: () => selectTrack(i) }, `${i + 1}${i === dev.info.drum ? " " + t("drum") : ""}`)));
   }
   for (const b of box.children) b.setAttribute("aria-pressed", +b.dataset.i === (dev.sel || 0) ? "true" : "false");
 }
@@ -3513,7 +3531,7 @@ function chopRender() {
     (CH.mode === 0 && kept > CHOP.MAX ? " " + t("chopTooMany") : "");
   u.room.className = over ? "bad" : "dim";
   u.fit.disabled = !over;
-  u.send.forEach((b) => { b.disabled = !use.length || over || smpBusy || !dev || !dev.smp; });
+  u.send.forEach((b, k) => { b.disabled = !use.length || over || smpBusy || !dev || !dev.smp; b.hidden = !!(dev && dev.smp) && k >= dev.smp.nslots; });
   u.list.replaceChildren(...all.map((c, i) => {      /* a chip per chop: the box keeps it, the rest listens */
     const box = el("input", { type: "checkbox", title: t("chopKeep"), onclick: (e) => { e.stopPropagation(); chopKeep(i, box.checked); } });
     box.checked = !c.off;
@@ -3572,7 +3590,7 @@ let panning = false;                /* v3 firmware: another track is selected fo
 const mixTouched = (kind, i) => mixDrag === `${kind}:${i}` || performance.now() - (mixEdit.get(`${kind}:${i}`) || 0) < 600
   || (!!dev && kind === "lv" && dev.link.hasQueued("mix:" + i))
   || (kind === "pan" && (panWant.has(i) || (!!dev && dev.link.hasQueued("pan:" + i))));
-const drumTrack = (i) => !!dev && !!dev.mix && i === dev.mix.ntrk - 1;
+const drumTrack = (i) => !!dev && !!dev.mix && i === dev.info.drum;
 function trackName(x) {
   if (x.engine >= dev.info.nengines) return ["DRUMS", (dev.kitNames || [])[x.e0]].filter(Boolean).join(" ");
   return [dev.info.engines[x.engine], (dev.names[x.engine] || [])[x.preset]].filter(Boolean).join(" ");
@@ -3597,7 +3615,7 @@ async function readMixer() {
 /* the Sound view's values of the selected track (and the drum level, a global) -> the strips */
 function mixFromDump() {
   if (!dev || !dev.mix || !dev.dump || panning) return;
-  const m = dev.mix, ds = m.ntrk - 1, x = m.tracks[dev.sel];
+  const m = dev.mix, ds = dev.info.drum, x = m.tracks[dev.sel];
   if (!mixTouched("lv", ds)) m.tracks[ds].level = dev.dump.g[gDrLvl()];
   if (x) {
     if (!mixTouched("lv", dev.sel)) {

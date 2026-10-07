@@ -9,10 +9,11 @@
  * its LEN. So the tracks, the click, the arp, the rolls and the song arranger never drift apart, a
  * tempo or DIV change plays at most one step a block, and a polymeter (any LEN) stays in phase.
  *
- * Four tracks: tracks 1..3 are synth parts (steps of up to 4 notes), track 4 the drum track (steps
- * of 16 lanes, one per white key). Each step note / lane has a level (ghost .. hard) and a ratchet
- * (x1..x4 hits in its step). The keys play the selected track; MIDI channels 1..3 play parts 1..3,
- * the DRUMS channel (GLO > DRUMS, default 10) the drum track, any other channel the selected track.
+ * Eight tracks: track 4 is the drum track (steps of 16 lanes, one per white key), the others synth
+ * parts (steps of up to 4 notes). Each step note / lane has a level (ghost .. hard) and a ratchet
+ * (x1..x4 hits in its step). The keys play the selected track; MIDI channels 1..3 and 5..8 play
+ * their parts, the DRUMS channel (GLO > DRUMS, default 10) the drum track, any other channel
+ * (4 too) the selected track.
  *
  * Layers: a function button held turns the keys into something else (TE style: hold + touch):
  *   FX   punch-in effects (punch.c)       EDIT  erase that note / sound (while held, as it plays)
@@ -55,7 +56,7 @@ static uint32_t trk_index(const track_t *t) { return (uint32_t)(t - trk); }
 
 static uint32_t trk_midi_ch(uint32_t i)    /* MIDI channel 0..15 of track i (keys -> MIDI out) */
 {
-    if (i < NPART)
+    if (trk_is_part(i))
         return i;
     return song.g[G_DRCH] ? (uint32_t)song.g[G_DRCH] - 1u : 9u;
 }
@@ -1464,7 +1465,7 @@ static track_t *midi_track(uint32_t ch)
 {
     if (song.g[G_DRCH] && ch + 1u == (uint32_t)song.g[G_DRCH])
         return TDRUM;
-    return ch < NPART ? &trk[ch] : TSEL;
+    return trk_is_part(ch) ? &trk[ch] : TSEL;     /* channels 1..8: their part (4: the selected track) */
 }
 
 /* a channel that plays the selected track: its note-off goes to the track its note-on went to,
@@ -1473,7 +1474,7 @@ static uint8_t midi_sel_on[16][128];                  /* per channel and note: t
 static track_t *midi_route(uint32_t ch, uint32_t note, int on)
 {
     track_t *t = midi_track(ch);
-    if (ch < NPART || (song.g[G_DRCH] && ch + 1u == (uint32_t)song.g[G_DRCH]))
+    if (trk_is_part(ch) || (song.g[G_DRCH] && ch + 1u == (uint32_t)song.g[G_DRCH]))
         return t;                                     /* a part's own channel, or the drum channel */
     if (on)
         midi_sel_on[ch & 15u][note & 127u] = (uint8_t)(song.sel + 1u);
@@ -1647,7 +1648,7 @@ static void events_block(uint32_t n)
             t->arp_phys = 0;
             t->arp_note = 0;
         }
-        if (i < NPART)
+        if (trk_is_part(i))
             engine_block(t);                          /* engine switch: fade, then switch (voice.c) */
         /* ARP turned off, or HOLD released with no key down: drop the latched chord */
         if ((t->armp && !t->p[P_AMODE]) || (t->aholdp && !t->p[P_AHOLD] && !t->arp_phys)) {
@@ -1688,8 +1689,9 @@ static void events_block(uint32_t n)
         seq_tick(&trk[i], adv);
     click_tick();
     roll_block(adv);
-    for (i = 0; i < NPART; i++)
-        arp_tick(&trk[i], adv);
+    for (i = 0; i < NTRK; i++)
+        if (trk_is_part(i))
+            arp_tick(&trk[i], adv);
     if (song.playing) {
         song.tick++;
         clk_pos += adv;

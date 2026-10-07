@@ -6,27 +6,13 @@
 #undef main
 #include <assert.h>
 #define PROJ_HOST 1
-static uint32_t trk_def_engine(uint32_t i) { return i < NPART ? i : 0; }
+static uint32_t trk_def_engine(uint32_t i) { return trk_is_part(i) ? i % NENGINES : 0; }
 #include "../firmware/src/project.c"
 static struct { uint8_t force; } ui;
 static uint8_t sync_reload;
 #include "../firmware/src/arranger_scene.c"
 
-static void capture(uint32_t slot)
-{
-    project_t *p = &proj_slot[slot];
-    uint32_t i;
-    memset(p, 0, sizeof *p);
-    p->magic = PROJ_MAGIC; p->size = sizeof *p;
-    memcpy(p->g, song.g, sizeof song.g);
-    for (i = 0; i < NTRK; i++) {
-        memcpy(p->t[i].p, trk[i].p, sizeof trk[i].p);
-        memcpy(p->t[i].step, trk[i].step, sizeof trk[i].step);
-        p->t[i].engine = trk[i].eng_req;
-        p->t[i].preset = trk[i].preset;
-    }
-    p->sum = proj_sum(p);
-}
+static void capture(uint32_t slot) { proj_capture(&proj_slot[slot], &proj_slot_b[slot]); }
 
 int main(int argc, char **argv)
 {
@@ -56,7 +42,7 @@ int main(int argc, char **argv)
         put_step(TDRUM, k, k % 4u ? 1 : 2, drum, ST_NOTE, 0);
     }
     capture(0);
-    for (i = 0; i < NPART; i++)
+    for (i = 0; i < NP3; i++)
         for (k = 0; k < 16; k++) {
             uint32_t j;
             for (j = 0; j < trk[i].step[k].n; j++) trk[i].step[k].note[j] += 5;
@@ -77,7 +63,7 @@ int main(int argc, char **argv)
         if (song.playing && arrangement_clock.index == 1u && !at_change) at_change = frame;
         if (!song.playing && frame && !at_stop) at_stop = frame;
         uint32_t sounding = 0;
-        for (i = 0; i < NPART; i++)
+        for (i = 0; i < NP3; i++)
             for (k = 0; k < NVOICE; k++)
                 if (trk[i].v[k].active) sounding |= 1u << i;
         for (k = 0; k < NDRUM; k++) if (drums.v[k].active) sounding |= 8;
@@ -95,7 +81,8 @@ int main(int argc, char **argv)
     assert(trk[0].step[0].note[0] == 41);
     assert(trk[2].engine == 0 && song.g[G_DRLVL] == 80);
     assert(drum_kit() == 4);
-    for (i = 0; i < NPART; i++) {
+    for (i = 0; i < NTRK; i++) {
+        if (!trk_is_part(i)) continue;
         assert(trk[i].seq_n == 0);
         for (k = 0; k < NVOICE; k++) assert(!trk[i].v[k].gate);
     }
@@ -107,7 +94,7 @@ int main(int argc, char **argv)
         uint32_t bar = 4u * 60u * FS / (uint32_t)song.g[G_BPM], t, jumped = 0;
         arrangement.entry[1].scene = 1;
         arrangement_enabled = 0;
-        proj_apply(&proj_slot[0], 1);
+        proj_apply(&proj_slot[0], &proj_slot_b[0], 1);
         live_sec = 0;
         srec = 1;
         transport_req = 1;

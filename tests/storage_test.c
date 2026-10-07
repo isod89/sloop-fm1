@@ -84,16 +84,31 @@ int main(void)
     bad += check("save over the rotten copy", st_save(OBJ_PROJECT0 + 2, b, sizeof b) == 0);
     n = st_load(OBJ_PROJECT0 + 2, got, sizeof got);
     bad += check("... loads the new data", n == (int)sizeof b && !memcmp(got, b, sizeof b));
+    {   /* the other (older) copy: what a cut-off save of a project's two halves falls back to */
+        uint8_t c1[64], c2[64];
+        memset(c1, 0x11, sizeof c1);
+        memset(c2, 0x22, sizeof c2);
+        n = st_save(OBJ_PROJB0 + 1, c1, sizeof c1) || st_save(OBJ_PROJB0 + 1, c2, sizeof c2);
+        bad += check("two saves of a second half", !n);
+        n = st_load_other(OBJ_PROJB0 + 1, got, sizeof got);
+        bad += check("st_load_other: the copy before the last save", n == (int)sizeof c1 && !memcmp(got, c1, sizeof c1));
+        n = st_load(OBJ_PROJB0 + 1, got, sizeof got);
+        bad += check("st_load: still the last save", n == (int)sizeof c2 && !memcmp(got, c2, sizeof c2));
+        bad += check("st_load_other of an object saved once: nothing",
+                     st_save(OBJ_AUTOSAVE_B, c1, sizeof c1) == 0 && st_load_other(OBJ_AUTOSAVE_B, got, sizeof got) < 0);
+    }
     nor[st_sector(OBJ_PROJECT0 + 2, 0) + 8] ^= 0x01;    /* both headers broken */
     nor[st_sector(OBJ_PROJECT0 + 2, 1) + 8] ^= 0x01;
     bad += check("both headers broken -> nothing", st_load(OBJ_PROJECT0 + 2, got, sizeof got) < 0);
-    {   /* every copy of every object in the Felucca regions, off the sample slots (0xA0000..0xDBFFF) and
-         * the update staging (0xE0000..), and no two sectors shared */
+    {   /* every copy of every object in the Felucca regions, off the sample slots (0xA0000..0xC7FFF) and
+         * the update staging (0xE0000..), and no two sectors shared; the second halves of the eight-track
+         * projects where the third sample slot was (0xC8000..0xD1FFF) */
         uint32_t o, c, o2, c2, inside = 1, apart = 1;
         for (o = 0; o < OBJ_COUNT; o++)
             for (c = 0; c < 2u; c++) {
                 uint32_t a = st_sector(o, c);
-                int data = a >= 0x97000u && a + 4096u <= 0xA0000u, ups = a >= 0xDC000u && a + 4096u <= 0xE0000u;
+                int data = (a >= 0x97000u && a + 4096u <= 0xA0000u) || (a >= 0xC8000u && a + 4096u <= 0xD2000u);
+                int ups = a >= 0xDC000u && a + 4096u <= 0xE0000u;
                 int glob = a >= 0xFC000u && a + 4096u <= 0xFF000u;
                 inside &= (data || ups || glob) && !(a & 0xFFFu);
                 for (o2 = 0; o2 < OBJ_COUNT; o2++)

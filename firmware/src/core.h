@@ -1,16 +1,18 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Felucca core types: tracks, voices, engines, parameters.
- * Four tracks: tracks 1..3 are synth parts (each its own engine, preset, parameters,
- * voices and 64-step pattern), track 4 is the GM drum part (drums.c; its own voices,
- * pattern and the pattern parameters of its track_t). The parts share one budget of
- * NVOICE sounding voices (voice.c). */
+ * Eight tracks: track 4 (TRK_DRUM) is the GM drum part (drums.c; its own voices, pattern and the
+ * pattern parameters of its track_t), the seven others are synth parts (each its own engine,
+ * preset, parameters, voices and 64-step pattern): tracks 1..3 as in the four-track SLOOP, 5..8
+ * after the drum track. A part is any track but TRK_DRUM (trk_is_part). The parts share one
+ * budget of NVOICE sounding voices (voice.c). */
 #include <stdint.h>
 #define NVOICE 8                 /* voices per part, and the budget shared by all parts */
 #define NPOLY 8
-#define NPART 3                  /* synth parts: tracks 1..3 */
-#define NTRK 4                   /* + the drum track */
-#define TRK_DRUM 3
+#define NTRK 8                   /* tracks: seven synth parts and the drum track */
+#define TRK_DRUM 3               /* track 4, where the four-track SLOOP had it: its projects load as they were */
+#define NPART (NTRK - 1)         /* synth parts: a count, not an index bound (TRK_DRUM sits among them) */
+#define NTRK_V4 4                /* tracks of the four-track SLOOP (project formats 1..4, the first half of 5) */
 enum { V_POLY, V_MONO, V_LEGATO, V_UNISON };   /* P_VOICE */
 #define NSTEP 64
 #define HALF_FRAMES 256          /* I2S half buffer: 5.8 ms at 44.1 kHz */
@@ -244,7 +246,7 @@ typedef struct {
     int32_t batt_raw;            /* smoothed ADC ch3 (battery divider), 0 = not read yet */
 } song_t;
 
-static track_t trk[NTRK];        /* the instrument: three parts and the drum track */
+static track_t trk[NTRK];        /* the instrument: seven parts and the drum track */
 static song_t song;
 
 /* The transport clock (seq.c runs it). One unit = one sample at 1 BPM: a beat is BEAT_U units at any
@@ -268,6 +270,7 @@ static uint32_t div_samples(uint32_t div)
 #define TSEL (&trk[song.sel])    /* the selected track */
 #define TDRUM (&trk[TRK_DRUM])
 static int is_drum(const track_t *t) { return t == TDRUM; }
+static int trk_is_part(uint32_t i) { return i < NTRK && i != TRK_DRUM; }   /* track i is a synth part */
 /* silent: MUTE, or another track is soloed */
 static int trk_silent(const track_t *t)
 {

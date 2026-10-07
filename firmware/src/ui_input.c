@@ -122,15 +122,15 @@ static uint32_t keys_lit(void)
         if (lights_notes)                          /* NOTES: the scale goes dim (keys_notes_dim), what sounds lit */
             return (blink ? scale_keys(1) : 0u) | keys_sounding(t) | fm1_in.notes;
         return scale_keys(0) & ~(blink ? 0u : scale_keys(1));
-    case LY_MIX:                                   /* tracks heard: 1..4; soloed: 5..8; tap: the beat */
-        for (i = 0; i < 4u; i++) {
+    case LY_MIX:                                   /* tracks heard: 1..8; soloed: 9..16; tap (black 1): the beat */
+        for (i = 0; i < NTRK; i++) {
             if (!trk_silent(&trk[i]))
                 m |= 1u << key_of_white(i);
             if ((song.solo >> i) & 1u)
-                m |= 1u << key_of_white(4u + i);
+                m |= 1u << key_of_white(NTRK + i);
         }
         if (play_led())
-            m |= 1u << key_of_white(15);
+            m |= 1u << 1;
         return m;
     case LY_ERASE:                                 /* the sounds the pattern holds (NOTES: dim, the hits lit) */
         return (lights_notes ? 0u : erase_lanes(t)) | fm1_in.notes | (lights_notes ? keys_sounding(t) : 0u);
@@ -316,7 +316,7 @@ static void project_new(void)
         undo_mark(t, (undo_sess += 4u) | 3u);
         fm1_irq_off();
         track_defaults(t);
-        if (i < NPART) {
+        if (trk_is_part(i)) {
             set_engine_of(t, TRK_DEF[i][0]);
             apply_preset_to(t, TRK_DEF[i][1]);
         }
@@ -355,7 +355,10 @@ static void edit_param(uint32_t slot, int32_t steps)
             if (total)
                 preset_go((uint32_t)(((int32_t)cur + steps % (int32_t)total + (int32_t)total) % (int32_t)total));
         } else if (slot == 1u && !is_drum(TSEL)) {
-            select_engine((TSEL->eng_req + (steps > 0 ? 1u : NENGINES - 1u)) % NENGINES);
+            uint32_t e = (TSEL->eng_req + (steps > 0 ? 1u : NENGINES - 1u)) % NENGINES;
+            if (!grain_room(TSEL, e))                     /* GRAIN taken by three other tracks: past it */
+                e = (e + (steps > 0 ? 1u : NENGINES - 1u)) % NENGINES;
+            select_engine(e);
         }
         return;
     }
@@ -382,6 +385,10 @@ static void edit_param(uint32_t slot, int32_t steps)
     if (!d || !vp || d->max == d->min)
         return;
     v = clamp(*vp + accel(EN_K1 + slot, steps, d->max - d->min), d->min, d->max);
+    if (pg->scope == SC_TRACK && id == P_SLCR && v == SL_STUT && *vp != SL_STUT && !stut_room(TSEL)) {
+        ui_say("STUT ", "4 TRACKS MAX");                 /* (slicer.c: four recordings) */
+        return;
+    }
     *vp = (int16_t)v;
     if (!v)
         return;
