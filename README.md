@@ -162,6 +162,7 @@ Save up to four sections **A–D** (SAVE + keys 5–8), play them live on the ne
 
 - **USB MIDI** in and out, class compliant.
 - **TRS MIDI IN** (the 3.5 mm jack, 2.3) for a keyboard or a pad controller.
+- **Pad controllers:** a 16-pad controller plays the 16 white keys, in every layer, with its velocity; its transport buttons and knobs work too (HOME menu → PADS).
 - **MIDI clock in** (USB or TRS): tempo, START, CONTINUE, STOP.
 - **MIDI out:** the keys always; the sequencer, the arp and the rolls too with GLO → SYSTEM → MIDI = SEQ (2.4).
 - Details: [MIDI and USB audio](#midi-and-usb-audio).
@@ -241,7 +242,7 @@ Colours: **blue** track 1 and KNOB 1, **green** 2, **yellow** 3, **orange** 4 (d
 
 ## The menu: settings of the FM-1
 
-Hold **HOME**. The menu is in four sections, as the pages are: **SCREEN** (COLOR, ZOOM), **LIGHTS** (LIGHTS, KEYS, NOTES), **AUDIO** (LOWCUT, USB AUDIO, USB SERIAL), **SYSTEM** (HARDWARE CALIBRATION, ABOUT). **SELECT** goes from one section to the next, **KNOB 1, 2, 3** set the section's rows (each row shows its knob's colour), **PRESETS** moves the cursor, **OCT+** steps the cursor's setting round or opens it (CALIBRATION, ABOUT), **OCT−** closes. These are settings of the FM-1, not of a project: loading a project or NEW PROJECT does not change them, and the backup keeps them.
+Hold **HOME**. The menu is in four sections, as the pages are: **SCREEN** (COLOR, ZOOM), **LIGHTS** (LIGHTS, KEYS, NOTES), **AUDIO** (LOWCUT, USB AUDIO, USB SERIAL), **SYSTEM** (HARDWARE CALIBRATION, ABOUT, PADS). **SELECT** goes from one section to the next, **KNOB 1, 2, 3** set the section's rows (each row shows its knob's colour), **PRESETS** moves the cursor, **OCT+** steps the cursor's setting round or opens it (CALIBRATION, ABOUT), **OCT−** closes. These are settings of the FM-1, not of a project: loading a project or NEW PROJECT does not change them, and the backup keeps them.
 
 | Item | Choices | What it does |
 | --- | --- | --- |
@@ -255,6 +256,7 @@ Hold **HOME**. The menu is in four sections, as the pages are: **SCREEN** (COLOR
 | **USB SERIAL** | OFF / ON | a serial console for developers; OFF (default) so macOS 13–15 show the USB audio input; at the next start |
 | **HARDWARE CALIBRATION** (SYSTEM) | | the panel table, if a key or a knob answers wrongly |
 | **ABOUT** | | the version (*SLOOP 2.4*) and its build date, the credits |
+| **PADS** | OFF / a pad controller | a 16-pad controller plays the 16 white keys: right, then hit its first pad (see [Pad controllers](#pad-controllers)); left, OFF |
 
 Two more settings of the FM-1 live elsewhere: **SYNC** (GLO → SYSTEM: INT, USB or TRS) and the REC screen's **mode** and **start**.
 
@@ -274,6 +276,26 @@ SLOOP takes MIDI from two places at once:
 | 4–16 | the selected track: set your keyboard to channel 4 and it follows ALGORITHM |
 
 A USB keyboard plugged **straight into the FM-1** cannot work: both are USB devices, and a USB link needs a host (a computer, a phone, or a USB MIDI host box). Bluetooth MIDI is not supported: SLOOP, like Felucca, never switches the radio on.
+
+### Pad controllers
+
+HOME menu → SYSTEM → **PADS** makes a 16-pad controller the FM-1's 16 white keys. Turn **KNOB 3** right: the menu reads *HIT PAD 1*. Hit the controller's first pad — the bottom left one, its lowest note — and SLOOP keeps its channel and its note (*CH10 N54*): the 16 notes from there are the 16 keys. Turn it left for OFF (the default). It is a setting of the FM-1, as the lights are.
+
+- **Where they lie:** as the 4 × 4 on the screen. The top left pad is key 1, the bottom right one key 16.
+- **What they do:** what the keys do, wherever you are — the 16 sounds on the drum track, the scale or the chords on a synth track, and with a button held the punch-in effects (FX), the steps (SEQ), erase (EDIT), note repeat (ARP), mutes and solos (GLO), the sections (SAVE).
+- **How hard you hit** is the level: ghost, soft, normal or hard on the drum track, recorded so; the note's velocity on a synth track. On the drum track, OCT− / OCT+ held still make every hit a ghost / a hard one.
+- The other notes of the controller's channel play as before. What the pads play is not sent back to MIDI out, and **IN** = **CLOCK** ignores the pads too.
+
+**Its buttons and knobs.** While PADS is set, SLOOP also takes these controllers, on any channel — the numbers an M-VAVE SMC-PAD sends as it comes:
+
+| Controller | Does |
+| --- | --- |
+| CC 27 / 28 / 29 | PLAY / STOP / REC, as the FM-1's own (127: pressed, 0: let go). REC closes a free take; PLAY or STOP drops it |
+| CC 25 / 26 | the track before / after |
+| CC 30–33 | the levels of tracks 1–4 (as GLO + KNOB 1–4) |
+| CC 34–37 | FILT, DUST, DUCK and the selected track's filter (as FX + KNOB 1–4) |
+
+A knob sends a position, so it takes its setting over only once it has reached it: nothing jumps, and until then the screen shows the setting and which way to turn (`>>` or `<<`). IN = CLOCK ignores these too.
 
 ### MIDI out
 
@@ -330,6 +352,8 @@ The protocol is documented in [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md).
 
 **Nothing plays from the MIDI IN jack.** Try the other adapter type (A / B); check the keyboard's channel (1–3 synths, 10 drums, 4–16 the selected track).
 
+**PADS stays on *HIT PAD 1*.** No note arrives: check the cable or the adapter type (A / B), and that GLO → SYSTEM → IN is NOTES.
+
 **The USB audio input does not show.** Unplug the FM-1 and plug it back in (after an install the computer must find it again). On a Mac (macOS 13–15), check that HOME menu → **USB SERIAL** is OFF (the default), then restart the FM-1. In Audacity: Transport → Rescan Audio Devices. On Windows: Sound settings → Recording → show disabled devices.
 
 **The USB recording is too quiet, or follows the volume knob.** Set HOME menu → **USB AUDIO** to **FULL**, or turn MASTER up.
@@ -357,7 +381,7 @@ Something else? [Open an issue](../../issues): what you did, what you expected, 
 | Effects | 16 punch-in effects; master DUST, DUCK, DJ filter, limiter; per track drive, slicer, sends to a stereo chorus, a tempo delay (dotted 1/8 and 1/16 too) and a stereo reverb |
 | Memory | autosave, undo / redo, 4 projects, 32 user presets, 27 FM6 patches, song of 4 sections × 16 steps × 1–64 bars, full backup / restore (editor) |
 | Audio | 44.1 kHz, fixed-point DSP; USB audio input (the master output, 16-bit stereo, class compliant) |
-| MIDI | USB class-compliant in / out (the keys, or the sequencer too); TRS MIDI IN (3.5 mm); MIDI clock in (USB or TRS), clock only if you like (IN = CLOCK) |
+| MIDI | USB class-compliant in / out (the keys, or the sequencer too); TRS MIDI IN (3.5 mm); MIDI clock in (USB or TRS), clock only if you like (IN = CLOCK); a 16-pad controller as the 16 white keys (PADS) |
 | Lights | button backlight (3 levels), C keys / white keys, played notes |
 | Update | over USB from the browser (SHA-256 and CRC checked), USB rescue, return to the official V15 |
 

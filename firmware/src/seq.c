@@ -140,6 +140,23 @@ static void lk_push(uint32_t layer, uint32_t k, uint32_t down)
     }
 }
 
+/* PADS (HOME menu > SYSTEM > PADS, a setting of the FM-1): a 16-pad controller plays the 16 white keys.
+ * Its notes pads_base .. pads_base + 15 on channel pads_ch are keys, whatever the keys are doing: the 16
+ * sounds of the drum track, the scale or the chords of a synth track and, with a layer held, the punch-in
+ * effects, the steps, the mutes, the sections. The velocity is the level (ghost .. hard on the drum track,
+ * the note's own on a synth track). Pads count from the bottom left, as pad controllers do; the rows are
+ * turned over so that the pads lie as the 4 x 4 of the screen (the top left pad is key 1). As every note
+ * that comes in, what the pads play is not sent back to MIDI out. */
+#define PADS_BASE_MAX 112u
+static uint8_t pads_ch;                  /* 0 off, 1..16: the channel of the pads */
+static uint8_t pads_base;                /* the note of pad 1 (bottom left), 0..PADS_BASE_MAX */
+static volatile uint8_t pads_learn;      /* the menu waits for pad 1: the next note-on sets the channel and the note */
+static volatile uint32_t pad_keys;       /* the keys the pads hold (bit per key, as fm1_in.notes) */
+static uint16_t pad_cfg;                 /* pads_ch, pads_base as pads_block last saw them */
+static uint32_t kb_ext;                  /* bit per key: a pad pressed it (its notes do not go to MIDI out) */
+static uint8_t kb_pad;                   /* key_down from a pad: its velocity (0: a key of the panel) */
+static uint32_t keys_down(void) { return fm1_in.notes | pad_keys; }   /* the keys held, by a finger or a pad */
+
 /* ------------------------------------------------------------- keys --- */
 /* key k -> note on a synth part (KB_SILENT: none). WHITE (and chord mode): the white keys walk the
  * scale from C4 = the root, the black keys are silent; SNAP: every key, rounded down into the scale */
@@ -880,20 +897,52 @@ static int ft_owns_press(void)
     return ft_on || (ft_closed && (uint32_t)(fm1_ms - ft_close_ms) < 300u);
 }
 
+/* The buttons and knobs of the PADS controller (HOME menu > SYSTEM > PADS; an M-VAVE SMC-PAD sends these as
+ * it comes), taken on any channel while PADS is set:
+ *   CC 25 / 26        the track before / after        (127: pressed, 0: let go)
+ *   CC 27 / 28 / 29   PLAY / STOP / REC
+ *   CC 30 .. 37       its eight knobs, a position 0..127: the four levels, then FILT, DUST, DUCK and the
+ *                     selected track's filter
+ * The UI acts on them, once a pass (ui_input.c remote_input); a free take is closed (REC) or dropped
+ * (PLAY, STOP) here, on time, as by the panel's own buttons (ft_block). */
+enum { RM_PREV, RM_NEXT, RM_PLAY, RM_STOP, RM_REC, RM_NBTN };
+#define RM_CC0 25u                            /* RM_PREV; the knobs follow the buttons */
+#define RM_NKNOB 8u
+static volatile uint8_t rm_btn;               /* presses the UI has not taken yet: bit per RM_* */
+static volatile uint8_t rm_ft;                /* presses during a free take, for ft_block: bit per RM_* */
+static volatile uint8_t rm_knob[RM_NKNOB];    /* the knobs' positions */
+static volatile uint8_t rm_turn;              /* bit per knob: moved since the UI took it */
+static void remote_cc(uint32_t cc, uint32_t v)
+{
+    uint32_t i = cc - RM_CC0;
+    if (cc < RM_CC0 || i >= RM_NBTN + RM_NKNOB)
+        return;
+    if (i >= RM_NBTN) {
+        rm_knob[i - RM_NBTN] = (uint8_t)v;
+        rm_turn |= (uint8_t)(1u << (i - RM_NBTN));
+    } else if (v >= 64u) {
+        if (ft_on)
+            rm_ft |= (uint8_t)(1u << i);
+        else
+            rm_btn |= (uint8_t)(1u << i);
+    }
+}
+
 /* a free take, once per block: REC closes it, PLAY drops it (their press, timed here, not by the UI) */
 static void ft_block(void)
 {
-    uint32_t b = fm1_in.buttons & (ft_btn_mask | ft_drop_mask), press = b & ~ft_btn_prev;
+    uint32_t b = fm1_in.buttons & (ft_btn_mask | ft_drop_mask), press = b & ~ft_btn_prev, rm = rm_ft;
     ft_btn_prev = b;
+    rm_ft = 0;
     if (!ft_on)
         return;
     ft_t++;
-    if (press & ft_drop_mask) {
+    if ((press & ft_drop_mask) || (rm & (1u << RM_PLAY | 1u << RM_STOP))) {
         ft_on = 0;                                    /* PLAY: dropped, nothing changes */
         ft_bars = 0xFF;
         ft_close_ms = fm1_ms;
         ft_closed = 1;
-    } else if ((press & ft_btn_mask) || ft_t >= FT_BLOCKS) {
+    } else if ((press & ft_btn_mask) || (rm & 1u << RM_REC) || ft_t >= FT_BLOCKS) {
         ft_close();
     }
 }
@@ -1292,11 +1341,17 @@ static void roll_block(uint32_t adv)
 }
 
 /* ---------------------------------------------------------- keyboard --- */
-/* the level of a key on the drum track: OCT- held ghost, OCT+ held hard */
+/* the level of a key on the drum track: OCT- held ghost, OCT+ held hard; a pad (PADS): its velocity */
 static uint32_t key_lvl(void)
 {
     uint32_t b = fm1_in.buttons;
-    return (b & dyn_bit[0]) ? LV_GHOST : (b & dyn_bit[1]) ? LV_HARD : LV_NORM;
+    return (b & dyn_bit[0]) ? LV_GHOST : (b & dyn_bit[1]) ? LV_HARD : kb_pad ? vel_lvl(kb_pad) : LV_NORM;
+}
+/* what key k plays, to MIDI out: not when a pad pressed it (PADS) */
+static void key_out(uint32_t k, uint32_t pkt)
+{
+    if (!((kb_ext >> k) & 1u))
+        midi_out_event(pkt);
 }
 
 /* CHORD+: the modifiers held (the black keys down in chord mode) */
@@ -1325,7 +1380,7 @@ static void chord_revoice(uint32_t sel)
                 ;
             if (j == nn) {
                 input_off(t, kb_nt[k][i]);
-                midi_out_event(0x08u | (0x80u | mc) << 8 | (uint32_t)kb_nt[k][i] << 16);
+                key_out(k, 0x08u | (0x80u | mc) << 8 | (uint32_t)kb_nt[k][i] << 16);
             }
         }
         for (j = 0; j < nn; j++) {                  /* the notes it gains */
@@ -1333,7 +1388,7 @@ static void chord_revoice(uint32_t sel)
                 ;
             if (i == kb_n[k]) {
                 input_on(t, nw[j], 100);
-                midi_out_event(0x09u | (0x90u | mc) << 8 | (uint32_t)nw[j] << 16 | 100u << 24);
+                key_out(k, 0x09u | (0x90u | mc) << 8 | (uint32_t)nw[j] << 16 | 100u << 24);
             }
         }
         memcpy(kb_nt[k], nw, nn);
@@ -1343,11 +1398,12 @@ static void chord_revoice(uint32_t sel)
 
 static void key_down(uint32_t k)
 {
-    uint32_t layer = layer_now(), sel = song.sel % NTRK, i, mc;
+    uint32_t layer = layer_now(), sel = song.sel % NTRK, i, mc, vel = kb_pad ? kb_pad : 100u;
     track_t *t = &trk[sel];
     kb_kind[k] = KS_NONE;
     kb_trk[k] = (uint8_t)sel;
     kb_n[k] = 0;
+    kb_ext = kb_pad ? kb_ext | 1u << k : kb_ext & ~(1u << k);
     switch (layer) {
     case LY_FX: {                                     /* FX held: the white keys pick a punch-in effect */
         int32_t fx = punch_key(k);
@@ -1412,7 +1468,7 @@ static void key_down(uint32_t k)
         kb_kind[k] = KS_DRUM;
         drum_input(lane, lvl, 0, 1);
         mc = trk_midi_ch(sel);
-        midi_out_event(0x09u | (0x90u | mc) << 8 | (uint32_t)LANE_NOTE[lane] << 16 | lvl_vel(lvl, 100) << 24);
+        key_out(k, 0x09u | (0x90u | mc) << 8 | (uint32_t)LANE_NOTE[lane] << 16 | lvl_vel(lvl, 100) << 24);
         return;
     }
     {
@@ -1428,7 +1484,7 @@ static void key_down(uint32_t k)
             kb_kind[k] = KS_ROLL;
             kb_nt[k][0] = (uint8_t)n;
             kb_n[k] = 1;
-            roll_start(k, t, n, LV_NORM);
+            roll_start(k, t, n, kb_pad ? vel_lvl(kb_pad) : LV_NORM);
             return;
         }
         kb_kind[k] = KS_NOTE;
@@ -1444,9 +1500,9 @@ static void key_down(uint32_t k)
             in_chord = kb_n[k] > 1u ? kb_nt[k] : 0;
             in_chord_n = kb_n[k];
             in_chord_i = i;
-            input_on(t, kb_nt[k][i], 100);
+            input_on(t, kb_nt[k][i], vel);
             in_chord = 0;
-            midi_out_event(0x09u | (0x90u | mc) << 8 | (uint32_t)kb_nt[k][i] << 16 | 100u << 24);
+            key_out(k, 0x09u | (0x90u | mc) << 8 | (uint32_t)kb_nt[k][i] << 16 | vel << 24);
         }
         /* the pen of the SEQ layer: the keys down now (a chord), else this note */
         if (!(kb_prev & ~(1u << k)) || pen_n >= 4u)
@@ -1490,14 +1546,14 @@ static void key_up(uint32_t k)
         mc = trk_midi_ch(kb_trk[k] % NTRK);
         for (i = 0; i < kb_n[k]; i++) {
             input_off(t, kb_nt[k][i]);
-            midi_out_event(0x08u | (0x80u | mc) << 8 | (uint32_t)kb_nt[k][i] << 16);
+            key_out(k, 0x08u | (0x80u | mc) << 8 | (uint32_t)kb_nt[k][i] << 16);
         }
         return;
     case KS_DRUM:
         if (ft_on && ft_trk == TRK_DRUM)
             ft_note_off(kb_nt[k][0]);
         mc = trk_midi_ch(TRK_DRUM);
-        midi_out_event(0x08u | (0x80u | mc) << 8 | (uint32_t)LANE_NOTE[kb_nt[k][0] & 15u] << 16);
+        key_out(k, 0x08u | (0x80u | mc) << 8 | (uint32_t)LANE_NOTE[kb_nt[k][0] & 15u] << 16);
         return;
     default:
         return;
@@ -1534,9 +1590,71 @@ static void audition_block(void)
             trk_note_on(TDRUM, LANE_NOTE[l], lvl_vel((lv >> (2u * l)) & 3u, 100));
 }
 
+/* ------------------------------------------------------------- pads --- */
+/* the key of pad p (0 bottom left .. 15 top right): key 1 is the top left of the screen's 4 x 4 */
+static uint32_t pad_key(uint32_t p) { return key_of_lane((3u - ((p >> 2) & 3u)) * 4u + (p & 3u)); }
+
+/* a pad let go, or taken from the pads: its key goes up, unless a finger holds it too */
+static void pad_up(uint32_t k)
+{
+    uint32_t bit = 1u << k;
+    pad_keys &= ~bit;
+    if ((kb_prev & bit) && !(fm1_in.notes & bit)) {
+        key_up(k);
+        kb_prev &= ~bit;
+    }
+}
+
+/* a note of the MIDI queue (vel 0: a note-off): 1 = a pad's, played as its key; 0 = not one */
+static int pad_event(uint32_t ch, uint32_t note, uint32_t vel)
+{
+    uint32_t k, bit;
+    if (pads_learn && vel) {                          /* the menu waits for pad 1: this is it */
+        pads_ch = (uint8_t)(ch + 1u);
+        pads_base = (uint8_t)(note > PADS_BASE_MAX ? PADS_BASE_MAX : note);
+        pads_learn = 0;
+        return 1;
+    }
+    if (!pads_ch || ch + 1u != pads_ch || note < pads_base || note > pads_base + 15u)
+        return 0;
+    k = pad_key(note - pads_base);
+    bit = 1u << k;
+    if (!vel) {
+        if (!(pad_keys & bit))
+            return 0;                                 /* (held since before PADS was set: a note's own note-off) */
+        pad_up(k);
+        return 1;
+    }
+    if (pad_keys & bit)
+        pad_up(k);                                    /* hit again with no note-off between: a new press */
+    pad_keys |= bit;
+    if (!(kb_prev & bit)) {                           /* (a finger on the same key: it is down already) */
+        kb_pad = (uint8_t)vel;
+        key_down(k);
+        kb_pad = 0;
+        kb_prev |= bit;
+    }
+    return 1;
+}
+
+/* PADS switched off, or set to another controller, with pads down: they are let go */
+static void pads_block(void)
+{
+    uint32_t cfg = (uint32_t)pads_ch << 8 | pads_base, k;
+    if (cfg == pad_cfg)
+        return;
+    pad_cfg = (uint16_t)cfg;
+    for (k = 0; pad_keys && k < 27u; k++)
+        if ((pad_keys >> k) & 1u)
+            pad_up(k);
+}
+
 static void keyboard_block(void)
 {
-    uint32_t cur = fm1_in.notes, ch = cur ^ kb_prev, k, r;
+    uint32_t cur, ch, k, r;
+    pads_block();
+    cur = keys_down();
+    ch = cur ^ kb_prev;
     audition_block();
     if (!(layer_buttons() & ly_bit[LY_ROLL]))         /* ARP up (and not locked): the rolls end (the keys stay silent) */
         for (r = 0; r < NROLL; r++)
@@ -2220,11 +2338,15 @@ static void events_block(uint32_t n)
             mclk_event((pkt >> 8) & 0xFFu, ((pkt >> 4) & 15u) ? 2u : 1u);
             continue;
         }
+        if (st == 0xB0u && pads_ch && !song.g[G_ROUTE])
+            remote_cc(d1, d2);                        /* the PADS controller's buttons and knobs */
         if (st != 0x90u && st != 0x80u)
             continue;
         if (song.g[G_ROUTE] && st == 0x90u && d2)
             continue;                                 /* GLO > SYSTEM > IN = CLOCK: no notes (the note-offs still
                                                        * end what was held when it was set) */
+        if (pad_event(ch, d1, st == 0x90u ? d2 : 0u))
+            continue;                                 /* HOME menu > PADS: a pad of the controller, played as its key */
         t = midi_route(ch, d1, st == 0x90u && d2);
         if (is_drum(t)) {
             if (st == 0x90u && d2)

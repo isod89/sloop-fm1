@@ -682,7 +682,7 @@ static void layer_screen_draw(void)
         break;
     case LY_ERASE:
     case LY_ROLL: {                                     /* the keys' sounds: lit = held */
-        uint32_t held = fm1_in.notes;
+        uint32_t held = keys_down();
         col = layer == LY_ERASE ? TE_RED : col;
         str_cpy(sub, layer == LY_ERASE ? (song.playing ? "as it plays" : "every step") : "hold + key", sizeof sub);
         for (i = 0; i < 16u; i++) {

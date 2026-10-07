@@ -85,12 +85,21 @@ static const uint16_t LIGHTS_NS[LIGHTS_N] = {0u, 500u, 1000u, 2000u};   /* the b
                                                 * LED ~95 us, the glow (landmarks) 4 us (fm1_input.h) */
 static uint8_t usb_serial;                      /* menu USB SERIAL: 1 = the serial console presented (usb.c) */
 static uint8_t vis_style;                       /* the visualiser's style, 0..11 (ui_vis.c) */
+/* menu PADS (seq.c pads_ch, pads_base), the word's top 11 bits: 0 OFF, else 1 + (channel - 1) x 113 + the
+ * note of pad 1 (0..112); 0 in 2.4 and before = OFF */
+#define PADS_NB (PADS_BASE_MAX + 1u)
+static uint32_t pads_word(void) { return pads_ch ? 1u + (pads_ch - 1u) * PADS_NB + pads_base : 0u; }
+static void pads_from_word(uint32_t p)
+{
+    pads_ch = (uint8_t)(p && p <= 16u * PADS_NB ? (p - 1u) / PADS_NB + 1u : 0u);
+    pads_base = (uint8_t)(pads_ch ? (p - 1u) % PADS_NB : 0u);
+}
 static uint32_t lights_word(void)
 {
     return (uint32_t)lights_lvl | (uint32_t)lights_keys << 4 | (uint32_t)(lights_notes != 0u) << 8 |
            (uint32_t)(rec_tempo != 0u) << 9 | (uint32_t)(rec_count != 0u) << 10 | (uint32_t)(usb_full != 0u) << 11 |
            (uint32_t)(lights_sync % 3u) << 12 | (uint32_t)(lights_mout != 0u) << 14 | (uint32_t)(lights_min != 0u) << 15 |
-           (uint32_t)(usb_serial != 0u) << 16 | (uint32_t)(vis_style % 12u) << 17;
+           (uint32_t)(usb_serial != 0u) << 16 | (uint32_t)(vis_style % 12u) << 17 | pads_word() << 21;
 }
 static void lights_from_word(uint32_t w)
 {
@@ -105,6 +114,7 @@ static void lights_from_word(uint32_t w)
     lights_min = (uint8_t)((w >> 15) & 1u);     /* GLO > SYSTEM > IN (seq.c) */
     usb_serial = (uint8_t)((w >> 16) & 1u);
     vis_style = (uint8_t)(((w >> 17) & 15u) % 12u);   /* the visualiser (ui_vis.c); 0 in 2.3 = OSCILLOSCOPE */     /* menu USB SERIAL (usb.c usb_cdc_on, at the next start); 0 in 2.3 = OFF */
+    pads_from_word((w >> 21) & 0x7FFu);
 }
 
 static void settings_save(void);              /* project.c: flash copy (FELUCCA_FLASH) */

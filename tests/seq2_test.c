@@ -13,6 +13,8 @@
  *   locks    (2.4) a parameter lock sets p[] for its step, the base returns at the next one
  *   fill     (2.4) FILL ONLY / NO FILL steps follow GLO + key 9 (held) and key 10 (the next bar); STOP clears
  *   chain    (2.4) SAVE + two section taps: the sections in turn, each for its pattern's bars, looped
+ *   pads     HOME menu > PADS: a 16-pad controller plays the 16 white keys, in every layer; velocity = level
+ *   remote   ... and its buttons and knobs (CC 25..37) reach the UI; REC / PLAY close / drop a free take on time
  * Exit status: the number of failed checks. */
 #define FELUCCA_ARRANGER 1
 #define main hostsim_main
@@ -1109,6 +1111,219 @@ static void t_midiin(void)
     mi_r = mi_w;
 }
 
+/* PADS (HOME menu > SYSTEM > PADS): a 16-pad controller plays the 16 white keys. The notes are those an
+ * M-VAVE SMC-PAD sends as it comes: channel 10, 54 (pad 1, bottom left) .. 69 (top right). The pads lie as
+ * the screen's 4 x 4: 66..69 are keys 1..4 (the top row), 54..57 keys 13..16 */
+static void pad_note(uint32_t ch, uint32_t note, uint32_t vel)      /* ch 1..16; vel 0: a note-off */
+{
+    mclk_push(vel ? vel << 24 | note << 16 | (0x90u | (ch - 1u)) << 8 | 9u : note << 16 | (0x80u | (ch - 1u)) << 8 | 8u);
+}
+static void pad_hit(uint32_t note, uint32_t vel)
+{
+    pad_note(10, note, vel); run_block(); run_block();
+    pad_note(10, note, 0); run_block(); run_block();
+}
+static uint32_t gated_n(const track_t *t, uint32_t vel)             /* gated voices (vel != 0: at that velocity) */
+{
+    uint32_t k, n = 0;
+    for (k = 0; k < NVOICE; k++)
+        n += t->v[k].active && t->v[k].gate && (!vel || t->v[k].vel == vel);
+    return n;
+}
+static void t_pads(void)
+{
+    uint32_t i, n0, gh = 9, hd = 9, k0 = key_of_lane(0);
+    reset(120);
+    mi_r = mi_w;
+    song.g[G_ROUTE] = 0;
+    song.sel = TRK_DRUM;
+    pads_ch = pads_base = 0;
+    pads_learn = 0;
+    pad_keys = 0;
+    ly_bit[LY_FX] = 1u << 9;
+    ly_bit[LY_STEP] = 1u << 10;
+
+    pad_hit(54, 100);
+    check(nhits == 1u && hits[0].note == LANE_NOTE[lane_of_note(54)] && !pad_keys,
+          "PADS OFF (the default): a note on channel 10 is a GM drum note, as before");
+
+    n0 = nhits;
+    pads_learn = 1;                                   /* the menu: PADS turned right */
+    pad_hit(54, 100);
+    check(pads_ch == 10u && pads_base == 54u && !pads_learn && nhits == n0,
+          "PADS: the first pad hit sets the channel and the note of pad 1, and plays nothing");
+
+    pad_hit(66, 100); pad_hit(69, 100); pad_hit(54, 100); pad_hit(57, 100);
+    check(nhits == n0 + 4u && hits[n0].note == LANE_NOTE[0] && hits[n0 + 1].note == LANE_NOTE[3] &&
+          hits[n0 + 2].note == LANE_NOTE[12] && hits[n0 + 3].note == LANE_NOTE[15],
+          "PADS: the pads lie as the screen (top left: sound 1, top right: 4, bottom left: 13, bottom right: 16)");
+
+    n0 = nhits;
+    pad_note(10, 66, 100); pad_note(10, 66, 0);       /* down and up in one block (a trigger pad, a footswitch) */
+    run_block(); run_block();
+    check(nhits == n0 + 1u && !pad_keys && !kb_prev, "PADS: a note-on and its note-off in one block: the hit plays, no key stays down");
+    pad_note(10, 66, 100); run_block();
+    pad_note(10, 66, 100); run_block();               /* hit again, no note-off between */
+    pad_note(10, 66, 0); run_block(); run_block();
+    check(nhits == n0 + 3u && !pad_keys && !kb_prev, "PADS: a pad hit again with no note-off between plays again");
+    n0 = nhits;
+    pad_hit(36, 100);                                 /* not one of the 16 pads: an ordinary note of the channel */
+    check(nhits == n0 + 1u && hits[n0].note == 36u, "PADS: another note of the pads' channel is routed as before");
+
+    song.rec = 1u << TRK_DRUM;                        /* the velocity is the level: a ghost snare, a hard kick */
+    transport_req = 1;
+    run_block();
+    n0 = nhits;
+    pad_note(10, 68, 40); run_block(); pad_note(10, 68, 0); run_block();
+    while (TDRUM->seq_idx != 3u)
+        run_block();
+    pad_note(10, 66, 120); run_block(); pad_note(10, 66, 0); run_block();
+    for (i = 0; i < 16u; i++) {
+        if (dstep_has(&TDRUM->dstep[i], 2))
+            gh = dstep_lvl(&TDRUM->dstep[i], 2);
+        if (dstep_has(&TDRUM->dstep[i], 0))
+            hd = dstep_lvl(&TDRUM->dstep[i], 0);
+    }
+    check(gh == LV_GHOST && hd == LV_HARD && hits[n0].vel == 42u && hits[n0 + 1].vel == 127u,
+          "PADS: velocity 40 / 120 on the drums: a ghost snare and a hard kick, played and recorded so");
+    transport_req = 2;
+    run_block();
+    steps_clear(TDRUM);
+
+    fm1_in.buttons = ly_bit[LY_FX];                   /* a layer held: the pads are its keys */
+    pad_note(10, 67, 100); run_block();
+    check(punch.req == 1 && punch.keybit == 1u << key_of_lane(1), "PADS: FX held + pad 2 of the top row: the second punch-in effect");
+    pad_note(10, 67, 0); run_block();
+    check(punch.req == -1 && !punch.keybit, "... and it ends with the pad");
+    fm1_in.buttons = ly_bit[LY_STEP];
+    lk_r = lk_w;
+    pad_note(10, 66, 100); run_block();
+    pad_note(10, 66, 0); run_block();
+    check(lk_w - lk_r == 2u && lk_q[lk_r % LKQ] == (LY_STEP << 8 | 1u << 7 | k0) &&
+          lk_q[(lk_r + 1u) % LKQ] == (LY_STEP << 8 | k0), "PADS: SEQ held + the top left pad: step 1 down and up, to the UI");
+    lk_r = lk_w;
+    fm1_in.buttons = 0;
+
+    song.sel = 0;                                     /* a synth track: the key's note, at the pad's velocity */
+    usb.config = 1;
+    mo_r = mo_w;
+    pad_note(10, 66, 77); run_block(); run_block();
+    check(gated_n(&trk[0], 0) == 1u && gated_n(&trk[0], 77) == 1u, "PADS on a synth track: the key's note at the pad's velocity");
+    pad_note(10, 66, 0); run_block(); run_block();
+    check(!gated_n(&trk[0], 0) && mo_r == mo_w, "... ended by the pad's note-off; nothing of it sent back to MIDI OUT");
+    fm1_in.notes = 1u << k0; run_block(); fm1_in.notes = 0; run_block();
+    check(mo_w - mo_r == 2u, "... while a key of the panel still goes to MIDI OUT (note-on, note-off)");
+    mo_r = mo_w;
+    usb.config = 0;
+
+    pad_note(10, 66, 90); run_block(); run_block();
+    pads_ch = 0;                                      /* the menu: PADS OFF with a pad down */
+    run_block(); run_block();
+    check(!gated_n(&trk[0], 0) && !pad_keys && !kb_prev, "PADS switched OFF with a pad down: its note ends");
+    pad_note(10, 66, 0); run_block();                 /* (its late note-off: an ordinary one, of no note) */
+    pads_ch = 10;
+
+    song.sel = TRK_DRUM;
+    n0 = nhits;
+    fm1_in.notes = 1u << k0; run_block(); run_block();   /* a finger on key 1, then its pad too */
+    pad_note(10, 66, 100); run_block();
+    fm1_in.notes = 0; run_block(); run_block();
+    check(nhits == n0 + 1u && (kb_prev >> k0 & 1u), "PADS: a pad on a key a finger holds: one hit; the key stays down with the pad");
+    pad_note(10, 66, 0); run_block();
+    check(!kb_prev && !pad_keys, "... and goes up with it");
+
+    song.g[G_ROUTE] = 1;                              /* GLO > SYSTEM > IN = CLOCK: no notes, so no pads */
+    n0 = nhits;
+    pad_hit(66, 100);
+    check(nhits == n0 && !pad_keys, "PADS: IN = CLOCK ignores the pads too");
+    song.g[G_ROUTE] = 0;
+
+    pads_ch = pads_base = 0;
+    run_block();
+    ly_bit[LY_FX] = ly_bit[LY_STEP] = 0;
+    mi_r = mi_w;
+    for (i = 0; i < (uint32_t)(FS / CTL); i++)
+        run_block();                                  /* (the released voices die down for the next test) */
+}
+
+/* The PADS controller's buttons and knobs (seq.c remote_cc): CC 25 / 26 the track before / after, 27 / 28 /
+ * 29 PLAY / STOP / REC (127 pressed, 0 let go), 30..37 its knobs; on any channel, while PADS is set. Here:
+ * what the audio side hands to the UI, and the free take (the UI's part: tests/ui_pages_test.c) */
+static void rm_cc(uint32_t ch, uint32_t cc, uint32_t v) { mclk_push(v << 24 | cc << 16 | (0xB0u | (ch - 1u)) << 8 | 0xBu); }
+static void t_remote(void)
+{
+    reset(120);
+    mi_r = mi_w;
+    song.g[G_ROUTE] = 0;
+    rm_btn = rm_turn = rm_ft = 0;
+    pads_ch = 0;
+    rm_cc(1, 27, 127); rm_cc(1, 30, 64);
+    run_block();
+    check(!rm_btn && !rm_turn && !song.playing, "PADS OFF (the default): its controller numbers are ignored, as every CC");
+
+    pads_ch = 10; pads_base = 54;
+    rm_cc(1, 27, 127); rm_cc(1, 27, 0);                 /* PLAY pressed and let go */
+    run_block();
+    check(rm_btn == 1u << RM_PLAY, "PADS set: CC 27 at 127 is a PLAY press for the UI; letting go (0) is none");
+    rm_btn = 0;
+    rm_cc(1, 25, 127); rm_cc(16, 26, 127); rm_cc(1, 28, 127); rm_cc(1, 29, 127);
+    run_block();
+    check(rm_btn == (1u << RM_PREV | 1u << RM_NEXT | 1u << RM_STOP | 1u << RM_REC),
+          "... CC 25 / 26 / 28 / 29: the track before / after, STOP, REC; on any channel");
+    rm_btn = 0;
+    rm_cc(1, 30, 5); rm_cc(1, 37, 99); rm_cc(1, 30, 6);
+    run_block();
+    check(rm_turn == (1u | 1u << 7) && rm_knob[0] == 6u && rm_knob[7] == 99u,
+          "... CC 30..37: the knobs, each marked moved, its last position kept");
+    rm_turn = 0;
+    rm_cc(1, 24, 127); rm_cc(1, 38, 127); rm_cc(1, 7, 100);
+    run_block();
+    check(!rm_btn && !rm_turn, "... the controllers next to them (24, 38) and the others are still ignored");
+    song.g[G_ROUTE] = 1;                                /* GLO > SYSTEM > IN = CLOCK */
+    rm_cc(1, 27, 127); rm_cc(1, 30, 64);
+    run_block();
+    check(!rm_btn && !rm_turn, "... IN = CLOCK ignores the controller's buttons and knobs too");
+    song.g[G_ROUTE] = 0;
+
+    song.sel = 0;                                       /* a free take: PLAY (or STOP) drops it, on time, not the UI */
+    song.playing = 0;
+    rec_tempo = 0, rec_count = 0;
+    rec_wait = 1;
+    input_on(TSEL, 60, 100);
+    run_block();
+    rm_cc(1, 27, 127);
+    run_block(); run_block();
+    check(!ft_on && !song.playing && !rm_btn, "a free take: the controller's PLAY drops it (and the UI gets no press)");
+    trk_note_off(&trk[0], 60);
+    transport_req = 2; run_block(); ft_bars = 0;
+
+    reset(120);                                         /* ... and REC closes it: the loop plays */
+    song.sel = 0;
+    song.playing = 0;
+    rec_wait = 1;
+    input_on(TSEL, 60, 100);
+    run_block();
+    {
+        uint32_t k, bar = (uint32_t)(4.0 * FS * 60.0 / 120.0 / CTL + 0.5);
+        for (k = 1; k < bar; k++) {
+            if (k == bar / 2u) input_off(TSEL, 60);
+            run_block();
+        }
+    }
+    rm_cc(1, 29, 127);
+    run_block(); run_block();
+    check(!ft_on && song.playing && !rm_btn, "a free take: the controller's REC closes it and the loop plays");
+    transport_req = 2; run_block(); ft_bars = 0;
+    pads_ch = pads_base = 0;
+    rm_btn = rm_turn = rm_ft = 0;
+    mi_r = mi_w;
+    {
+        uint32_t k;
+        for (k = 0; k < (uint32_t)(FS / CTL); k++)
+            run_block();                                /* (the released voices die down for the next test) */
+    }
+}
+
 /* menu USB AUDIO = FULL (2.3): the USB input at the level of MASTER all the way up, whatever the knob;
  * the DAC path keeps following the knob */
 static void t_usbfull(void)
@@ -1207,6 +1422,8 @@ int main(void)
     t_longdiv();
     t_midiout();
     t_midiin();
+    t_pads();
+    t_remote();
     t_shed();
     t_drift();
     t_burst();

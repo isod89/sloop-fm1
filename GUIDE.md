@@ -800,7 +800,7 @@ The visualiser sees the mix **as if MASTER were all the way up**: with MASTER tu
 | **SCREEN** | **COLOR**: the screen palette (GREEN, AMBER, CYAN, RED, MONO…) | **ZOOM**: ON shows the value you touch large and white | — |
 | **LIGHTS** | **LIGHTS**: OFF, LOW, MID, HIGH | **KEYS**: OFF, C KEYS, WHITE KEYS, ALL KEYS | **NOTES**: OFF / ON |
 | **AUDIO** | **SPEAKER LOWCUT**: ON cuts the lows the small speaker cannot play (~110 Hz) | **USB AUDIO**: MASTER / FULL | **USB SERIAL**: OFF / ON (developers; takes effect at the next start) |
-| **SYSTEM** | **HARDWARE CALIBRATION** (the knob selects it, OCT+ opens it) | **ABOUT**, the version (the knob selects it, OCT+ opens it) | — |
+| **SYSTEM** | **HARDWARE CALIBRATION** (the knob selects it, OCT+ opens it) | **ABOUT**, the version (the knob selects it, OCT+ opens it) | **PADS**: OFF, or a 16-pad controller as the 16 white keys (see [MIDI](#21-midi)) |
 
 | Control in the menu | Does |
 | --- | --- |
@@ -842,6 +842,26 @@ Both work at once.
 | **1, 2, 3** | synth tracks 1, 2, 3 |
 | **10** | the drum track (the nearest of its 16 sounds; GLO → DRUMS → **CH** changes it, 0 = no drum input; the drums still go out on 10) |
 | **4–16** | the **selected** track: set your keyboard to channel 4 and it follows ALGORITHM |
+
+### Pad controllers (HOME menu → SYSTEM → PADS)
+
+A 16-pad controller can play the FM-1's 16 white keys. Turn **KNOB 3** right: the menu reads *HIT PAD 1*. Hit the controller's first pad — the bottom left one, its lowest note — and SLOOP keeps its channel and its note (*CH10 N54*): the 16 notes from there are the 16 keys. Turn it left for OFF (the default). A setting of the FM-1.
+
+- **Where they lie:** as the 4 × 4 on the screen. The top left pad is key 1, the bottom right one key 16.
+- **What they do:** what the keys do, wherever you are — the 16 sounds on the drum track, the scale or the chords on a synth track, and with a button held the punch-in effects (FX), the steps (SEQ), erase (EDIT), note repeat (ARP), mutes and solos (GLO), the sections (SAVE).
+- **How hard you hit** is the level: ghost, soft, normal or hard on the drum track, recorded so; the note's velocity on a synth track. On the drum track, OCT− / OCT+ held still make every hit a ghost / a hard one.
+- The other notes of the controller's channel play as before. What the pads play is not sent back to MIDI out, and **IN** = **CLOCK** ignores the pads too.
+
+**Its buttons and knobs.** While PADS is set, SLOOP also takes these controllers, on any channel — the numbers an M-VAVE SMC-PAD sends as it comes:
+
+| Controller | Does |
+| --- | --- |
+| CC 27 / 28 / 29 | PLAY / STOP / REC, as the FM-1's own (127: pressed, 0: let go). REC closes a free take; PLAY or STOP drops it |
+| CC 25 / 26 | the track before / after |
+| CC 30–33 | the levels of tracks 1–4 (as GLO + KNOB 1–4) |
+| CC 34–37 | FILT, DUST, DUCK and the selected track's filter (as FX + KNOB 1–4) |
+
+A knob sends a position, so it takes its setting over only once it has reached it: nothing jumps, and until then the screen shows the setting and which way to turn (`>>` or `<<`). IN = CLOCK ignores these too.
 
 ### MIDI settings (GLO → SYSTEM)
 
@@ -975,6 +995,7 @@ On the installer page, open **Return to the official firmware (V15)**: save a ba
 | Recorded notes move | SLOOP quantises to the track's DIV: use 1/32, or nudge the step (SEQ + step + KNOB 4) |
 | Notes fade out on a dense part | the processor is at its limit; SLOOP fades one voice at a time (never the bass or lead) rather than glitching. Fewer held notes or a lighter engine help |
 | Nothing from the MIDI IN jack | try the other adapter type (A / B); check the channel (1–3, 10, 4–16) and that GLO → SYSTEM → IN is NOTES |
+| PADS stays on *HIT PAD 1* | no note arrives: check the cable or the adapter type (A / B), and that GLO → SYSTEM → IN is NOTES |
 | The USB audio input does not show | replug the FM-1; on a Mac keep USB SERIAL OFF and restart the FM-1; in Audacity: Transport → Rescan Audio Devices |
 | The USB recording is quiet | HOME menu → USB AUDIO = FULL, or MASTER up |
 | An FM6 sound changed after loading a project | store the edited patch in the bank (editor → FM6 → Store in bank) and set PTCH to it |
@@ -1057,6 +1078,7 @@ On the installer page, open **Return to the official firmware (V15)**: save a ba
 | your projects | SAVE + keys 1–4 (play) / 5–8 (save) · SAVE → PROJECT |
 | your sounds | SAVE → USER · PRESETS (after the factory sounds) |
 | MIDI out / clock / clock only | GLO → SYSTEM: MIDI · SYNC · IN |
+| a pad controller as the 16 keys | hold HOME (menu) → SYSTEM → PADS |
 | lights, colours, USB audio level | hold HOME (menu) |
 | the version | hold HOME → SYSTEM → ABOUT |
 
