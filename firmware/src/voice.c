@@ -4,13 +4,14 @@
  * audio ISR.
  *
  * Each synth part has its own NVOICE voices (so MONO / LEGATO / UNISON keep using
- * v[0..]), but only NVOICE of all the parts' voices sound at once: a part that starts
+ * v[0..]), but only VOICE_BUDGET of all the parts' voices sound at once: a part that starts
  * a voice while the budget is full takes one from any part (voice_victim): the oldest
  * released voice, else the oldest extra UNISON voice, else the oldest held voice of a
  * POLY part that is not its lowest note. A voice taken from another part fades out
  * over one block (stage 4: the envelope goes to 0, the block's amplitude ramp
  * declicks it); one of the part's own is restarted in place. Extra UNISON
- * voices only start when there is room. The drum track has its own voices (drums.c). */
+ * voices only start when there is room; an engine with its own unison (engine_t uni: ANALOG) plays
+ * UNISON on one voice, never taken apart. The drum track has its own voices (drums.c). */
 static uint32_t vage;                                   /* voice ages: one clock for every part */
 /* engines that play recorded material (a position, not a phase): no phases kept or spread */
 #if FELUCCA_SLICE
@@ -163,11 +164,11 @@ static int voice_room(track_t *t, int soft)
 {
     track_t *vp = 0;
     uint32_t k;
-    if (voices_busy() < NVOICE)
+    if (voices_busy() < VOICE_BUDGET)
         return 1;
     k = voice_victim(t, soft, &vp);
     if (k == NVOICE)
-        return !soft;                                   /* hard: over the budget (cannot happen with 3 parts) */
+        return !soft;                                   /* hard: over the budget (nothing to take) */
     voice_kill(&vp->v[k]);
     return 1;
 }
@@ -188,7 +189,7 @@ static voice_t *voice_alloc(track_t *t, uint32_t note)
             return &t->v[i];
         nfree += !t->v[i].active;
     }
-    if (nfree && voices_busy() >= NVOICE) {
+    if (nfree && voices_busy() >= VOICE_BUDGET) {
         track_t *vp = 0;
         uint32_t k = voice_victim(t, 0, &vp);
         if (k < np && vp == t)
@@ -305,23 +306,24 @@ static void voice_start(track_t *t, voice_t *v, uint32_t note, uint32_t vel, int
     }
 }
 
-/* MONO / LEGATO / UNISON: one note on one voice (eight for UNISON, or the
- * engine's voice cap, spread by DETUNE over the same width) */
+/* MONO / LEGATO / UNISON: one note on one voice (UNISON: NPOLY voices or the engine's cap, spread by
+ * DETUNE over the width eight had; an engine with its own unison: one voice) */
 static void mono_play(track_t *t, uint32_t note, uint32_t vel, int retrig, int glide)
 {
-    uint32_t mode = (uint32_t)t->p[P_VOICE], nv = mode == V_UNISON ? trk_nvoice(t) : 1u, i;
+    uint32_t mode = (uint32_t)t->p[P_VOICE], i;
+    uint32_t nv = mode == V_UNISON && !ENGINES[t->engine]->uni ? trk_nvoice(t) : 1u;
     for (i = 0; i < nv; i++) {
         voice_t *v = &t->v[i];
-        int32_t k = 2 * (int32_t)i - (int32_t)(nv - 1u);   /* -7 .. 7 */
-        if (nv > 1u && nv < NVOICE)
-            k = k * (NVOICE - 1) / (int32_t)(nv - 1u);      /* fewer voices: the outer ones as wide */
-        v->fine = nv > 1u ? k * t->p[P_DETUNE] * 56 / 889 : 0;   /* up to ~±40 cents */
+        int32_t k = 2 * (int32_t)i - (int32_t)(nv - 1u);
+        if (nv > 1u)
+            k = k * 7 / (int32_t)(nv - 1u);                 /* -7 .. 7, as eight voices were */
+        v->fine = nv > 1u ? k * t->p[P_DETUNE] * 56 / 889 : 0;   /* up to ~±24 cents */
         if (retrig || !v->active || !v->gate) {
             int was_sounding = v->active && v->stage != 0;
             if ((!v->active || v->stage == 4u) && !voice_room(t, i > 0))
                 continue;                                   /* no room for this extra UNISON voice */
-            /* level: about the same sum for 8 or 4 voices at random phases */
-            voice_start(t, v, note, nv >= NVOICE ? vel * 36u / 100u : nv > 1u ? vel / 2u : vel, glide);
+            /* level: about the same sum for 2..4 voices at random phases */
+            voice_start(t, v, note, nv > 1u ? vel / 2u : vel, glide);
             if (nv > 1u && i && !eng_sampled(ENGINES[t->engine]) && !was_sounding) {   /* random start phases: */
                 static uint32_t seed = 0x1234567u;          /* in phase they stack, evenly spread they cancel */
                 seed = seed * 1664525u + 1013904223u;
@@ -606,6 +608,7 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
             pitch = (q >> 8) + tune;
             m.pitch16 = clamp(pitch, 0, 2047);
             m.inc = PITCH_INC[m.pitch16];
+            m.fine = v->fine + tune_fine + q;
             q = (q & 255) * 3792 >> 16;                 /* the fraction, as fine (1/16 st = 14.8) */
             if (v->fine + tune_fine + q)                /* unison detune, fine tune and the fraction */
                 m.inc += (uint32_t)((int32_t)(m.inc >> 12) * (v->fine + tune_fine + q));

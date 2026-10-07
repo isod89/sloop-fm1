@@ -499,12 +499,12 @@ static int chk_budget(char *msg, uint32_t n)
     finish();
     snprintf(msg, n, "3 POLY parts, random notes: at most %u voices active (budget %u), VOICE part at most %u (cap 4), "
              "%u voices taken, %u still fading after their KILL_BLOCKS, all free %.2f s after the note-offs",
-             worst, NVOICE, vworst, voice_kills - kills0, fading, R.free_s);
-    return worst <= NVOICE && vworst <= 4u && !fading && R.free_s >= 0 && voice_kills > kills0;
+             worst, VOICE_BUDGET, vworst, voice_kills - kills0, fading, R.free_s);
+    return worst <= VOICE_BUDGET && vworst <= 4u && !fading && R.free_s >= 0 && voice_kills > kills0;
 }
 
-/* a stolen voice fades: plain sines (filter open, no sends) on 3 parts; part 1 holds 7 notes, part 2 one,
- * then parts 2 and 3 take voices in turn. The largest sample step in the 2 blocks of each take must stay
+/* a stolen voice fades: plain sines (filter open, no sends) on 3 parts; parts 1 and 2 hold four notes each
+ * (the budget is full), then part 3's notes take voices from them. The largest sample step in the 2 blocks of each take must stay
  * within 1.5 x the largest one in the 0.25 s before it (a hard cut is several times larger) */
 static int chk_steal_fade(char *msg, uint32_t n)
 {
@@ -520,12 +520,13 @@ static int chk_steal_fade(char *msg, uint32_t n)
     for (f = 0; f < frames; f += CTL) {
         uint32_t ms = f * 1000u / FS, k0 = voice_kills;
         if (f == 0)
-            for (i = 0; i < 7u; i++)
+            for (i = 0; i < NVOICE; i++)
                 trk_note_on(&trk[0], N1[i], 90);
         if (f == at(0.5))
-            trk_note_on(&trk[1], 74, 90);
+            for (i = 0; i < NVOICE; i++)
+                trk_note_on(&trk[1], 74u + i * 3u, 90);
         if (ms >= 1000u && f % (FS / 2u) < CTL && ms < 3500u)
-            trk_note_on(&trk[ms / 500u % 2u ? 1u : 2u], 76u + ms / 250u, 90);
+            trk_note_on(&trk[2], 76u + ms / 250u, 90);
         blk();
         if (voice_kills != k0 && nev < 8u)
             ev[nev++] = f;
@@ -895,8 +896,8 @@ int main(int argc, char **argv)
         if (r->tail_peak > LIM_TAIL)
             snprintf(why + strlen(why), sizeof why - strlen(why), " not silent at the end: peak %d (limit %d);",
                      r->tail_peak, LIM_TAIL);
-        if (r->vmax > NVOICE)
-            snprintf(why + strlen(why), sizeof why - strlen(why), " %u voices (budget %u);", r->vmax, NVOICE);
+        if (r->vmax > VOICE_BUDGET)
+            snprintf(why + strlen(why), sizeof why - strlen(why), " %u voices (budget %u);", r->vmax, VOICE_BUDGET);
         if (why[0]) {
             printf("regress: HEALTH FAIL  %s:%s\n", j->name, why);
             h_fail++;

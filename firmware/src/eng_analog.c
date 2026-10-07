@@ -1,18 +1,71 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* ANALOG: two band-limited oscillators (saw / square / tri / sine / PWM),
- * noise, drive and a trapezoidal low-pass. */
+ * noise, drive and a trapezoidal low-pass. UNISON stacks oscillator 1 inside the voice: ANA_UNI
+ * copies spread by DETUNE over the width eight voices had, through the one filter, drive and
+ * envelope; the voice counts once in the budget (engine_t uni), so a unison chord keeps its notes. */
 static const char *const N_ANALOG_WAVE[] = {"SAW", "SQR", "TRI", "SIN", "PWM"};
+#define ANA_UNI 7u               /* UNISON: the centre and three a side */
+#define ANA_UNI_GAIN 24773u      /* 1 / sqrt(7), Q16: about the level of one at random phases */
+/* stack oscillator j: its detune in thirds of voice.c's unison step (outer ones at +-7, as eight voices had);
+ * its phase: j 0 is ph[0], then ph[2] and s[3..7] (ANALOG's free state) */
+static const int8_t ANA_SPREAD[ANA_UNI] = {0, -7, 7, -14, 14, -21, 21};
 
 static void analog_note_on(track_t *t, voice_t *v)
 {
-    (void)t;
-    if (!v->env && !v->env_out)
+    uint32_t j;
+    if (!v->env && !v->env_out) {
         v->ph[0] = 0;                                 /* a fresh note: from phase 0 (an 808 starts the same every time) */
+        if (t->p[P_VOICE] == V_UNISON) {              /* the stack at spread phases: in phase they would beat as one */
+            v->ph[2] = 0x9E3779B9u * (v->age | 1u);
+            for (j = 3; j < 8u; j++)
+                v->s[j] = (int32_t)(0x9E3779B9u * (v->age * 8u + j));
+        }
+    }
     v->ph[1] = v->ph[0] + 0x40000000u;
     v->s[0] = v->s[1] = 0;                            /* filter */
     if (!v->s[2])
         v->s[2] = 0x1234567 + (int32_t)v->age;        /* noise state */
+}
+
+/* UNISON: the stack of oscillator 1 over n (<= CTL) samples into a[], about one oscillator's level. One
+ * oscillator at a time (the wave chosen once, not per sample); dq8: voice.c's unison step in thirds, Q8.
+ * Its own function: the stack's cost is apart from analog_render's (tests/target_budget.txt) */
+static __attribute__((noinline)) void analog_stack(voice_t *v, uint32_t wave, uint32_t inc1, uint32_t pw, int32_t dq8,
+                                                   int32_t *a, uint32_t n)
+{
+    uint32_t i, j;
+    for (i = 0; i < n; i++)
+        a[i] = 0;
+    for (j = 0; j < ANA_UNI; j++) {
+        uint32_t *php = j == 0u ? &v->ph[0] : j == 1u ? &v->ph[2] : (uint32_t *)&v->s[j + 1u];
+        uint32_t ph = *php, inc = inc1 + (uint32_t)((int32_t)(inc1 >> 12) * ((ANA_SPREAD[j] * dq8) >> 8));
+        switch (wave) {
+        case 1:
+            for (i = 0; i < n; i++, ph += inc)
+                a[i] += osc_pulse(ph, inc, 0x80000000u);
+            break;
+        case 2:
+            for (i = 0; i < n; i++, ph += inc)
+                a[i] += osc_tri(ph);
+            break;
+        case 3:
+            for (i = 0; i < n; i++, ph += inc)
+                a[i] += osc_sine(ph);
+            break;
+        case 4:
+            for (i = 0; i < n; i++, ph += inc)
+                a[i] += osc_pulse(ph, inc, pw);
+            break;
+        default:
+            for (i = 0; i < n; i++, ph += inc)
+                a[i] += osc_saw(ph, inc);
+            break;
+        }
+        *php = ph;
+    }
+    for (i = 0; i < n; i++)
+        a[i] = mulq16(a[i], ANA_UNI_GAIN);
 }
 
 static void analog_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
@@ -28,15 +81,19 @@ static void analog_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
     /* DTN in cents: whole 1/16 semitones from the table, the rest as a fine factor */
     int32_t d16 = det * 16 / 100, rem = det * 16 - d16 * 100;            /* rem: 1/1600 semitone */
     uint32_t inc2 = PITCH_INC[clamp(m->pitch16 + d16, 0, 2047)];
-    inc2 += (uint32_t)((int32_t)(inc2 >> 12) * (rem * 2367 / 16000));
+    inc2 += (uint32_t)((int32_t)(inc2 >> 12) * (rem * 2367 / 16000 + m->fine));   /* (as inc1: tune, glide, LFO) */
     uint32_t pw = 0x80000000u + (uint32_t)((m->shape - (64 << 8)) << 15);
     int32_t m2 = mix * 258, m1 = 32767 - m2;                    /* osc mix Q15 */
     int32_t nz = noise * 200, drv = p[P_E6];
     uint32_t ph0 = v->ph[0], ph1 = v->ph[1];                  /* state in locals: out[] may alias v->s[] */
     int32_t ic1 = v->s[0], ic2 = v->s[1], nst = v->s[2];
+    uint32_t uni = p[P_VOICE] == V_UNISON;
+    int32_t ua[CTL];
     tsvf_coef(&flt, cut, p[P_E5]);
     if (det == 0)
         inc2 = inc1;
+    if (uni)                                          /* voice.c's unison step k * DETUNE * 56 / 889, k in thirds (Q8) */
+        analog_stack(v, wave, inc1, pw, p[P_DETUNE] * 56 * 256 / (889 * 3), ua, n);
     for (i = 0; i < n; i++) {
         int32_t a, b = 0, s;
         switch (wave) {
@@ -66,6 +123,8 @@ static void analog_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
                 b = osc_saw(ph1, inc2);
             break;
         }
+        if (uni)
+            a = ua[i];                                /* UNISON: the stack for oscillator 1 (2 as it is) */
         ph0 += inc1;
         ph1 += inc2;
         s = m2 ? mulq15(a, m1) + mulq15(b, m2) : a;  /* (MIX 0, the 808s and subs: one oscillator) */
@@ -83,7 +142,8 @@ static void analog_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
         }
         out[i] += mulq15(mulq15(s, amp_at(m, i)), VOICE_FS) << 1;
     }
-    v->ph[0] = ph0;
+    if (!uni)
+        v->ph[0] = ph0;                               /* (UNISON: the stack moved it) */
     v->ph[1] = ph1;
     v->s[0] = ic1;
     v->s[1] = ic2;
@@ -110,7 +170,7 @@ static const preset_t ANALOG_PRESETS[] = {
      XP(P_GLIDE + 1, 74, P_LD_PIT + 1, 2, P_LRATE + 1, 89, P_LFADE + 1, 50)},
     {"TRAP PLUCK", {0, 8, 64, 0, 52, 35, 20, 64}, {0, 80, 24, 45}, 48, 0, FX(0, 15, 34, 26)},
     {"SYN BRASS", {0, 10, 64, 0, 45, 20, 16, 64}, {12, 70, 96, 35}, 34, 0, FX(0, 15, 12, 24)},
-    /* trance / EDM: eight detuned saw voices on one note */
+    /* trance / EDM: seven detuned saws on one note (UNISON inside the voice) */
     {"SUPERSAW", {0, 14, 64, 0, 96, 12, 10, 64}, {4, 70, 112, 46}, 10, 1, FX(0, 20, 30, 36), XP(P_VOICE + 1, 3, P_DETUNE + 1, 64, P_GLIDE + 1, 30)},
     {"WARM PAD", {4, 12, 64, 6, 52, 8, 0, 32}, {75, 90, 115, 90}, 0, 0, FX(0, 55, 20, 55), XP(P_LRATE + 1, 30, P_LD_SHP + 1, 20)},
     {"DARK STR", {0, 18, 64, 0, 48, 6, 0, 32}, {60, 90, 118, 85}, 0, 0, FX(0, 50, 18, 60)},
@@ -131,4 +191,5 @@ static const engine_t ENG_ANALOG = {
     },
     ANALOG_PRESETS, sizeof(ANALOG_PRESETS) / sizeof(ANALOG_PRESETS[0]), 1, analog_note_on, analog_render,
     0xF986, {P_E4, P_E5, P_ATK, P_REL},
+    0, 0, 0, 0, ANA_UNI,                              /* (poly, amp, desc, block), uni: UNISON in the voice */
 };

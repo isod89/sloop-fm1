@@ -7,7 +7,10 @@
 # SLOOP 2.3 as released (the budget was not updated with it): fm1_alnk0_irq +47 % (the USB audio
 # input is fed from the audio ISR), drums_mix +8 %. Measured on an FM-1 running 2.3: a dense
 # 4-track pattern at 150 BPM peaks at 71 % of an audio half (tools/fm1_cpu.py).
+# SLOOP 2.4: analog_stack is ANALOG's UNISON inside one voice (7 oscillators, one at a time, per block),
+# instead of eight voices of two oscillators and a filter each; analog_render +1 % (its stack's output).
 analog_render 638
+analog_stack 1073
 digital_render 333
 phase_render 79
 lofi_render 128

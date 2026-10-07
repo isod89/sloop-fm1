@@ -4,11 +4,13 @@
  * Eight tracks: track 4 (TRK_DRUM) is the GM drum part (drums.c; its own voices, pattern and the
  * pattern parameters of its track_t), the seven others are synth parts (each its own engine,
  * preset, parameters, voices and 64-step pattern): tracks 1..3 as in the four-track SLOOP, 5..8
- * after the drum track. A part is any track but TRK_DRUM (trk_is_part). The parts share one
- * budget of NVOICE sounding voices (voice.c). */
+ * after the drum track. A part is any track but TRK_DRUM (trk_is_part). Each part has NVOICE
+ * voices; the parts share one budget of VOICE_BUDGET sounding voices (voice.c). */
 #include <stdint.h>
-#define NVOICE 8                 /* voices per part, and the budget shared by all parts */
-#define NPOLY 8
+#define NVOICE 4                 /* voices per part (a chord of a step: 4 notes) */
+#define VOICE_BUDGET 8           /* voices sounding at once, all parts together (voice.c) */
+#define NPOLY 4                  /* POLY / UNISON on several voices: at most this many (<= NVOICE) */
+_Static_assert(NPOLY <= NVOICE && NVOICE <= VOICE_BUDGET, "a part's voices fit its array and the budget");
 #define NTRK 8                   /* tracks: seven synth parts and the drum track */
 #define TRK_DRUM 3               /* track 4, where the four-track SLOOP had it: its projects load as they were */
 #define NPART (NTRK - 1)         /* synth parts: a count, not an index bound (TRK_DRUM sits among them) */
@@ -94,6 +96,7 @@ typedef struct {
 typedef struct {                 /* per-voice control-rate modulation, computed in voice.c */
     uint32_t inc;                /* phase increment of the base pitch */
     int32_t pitch16;
+    int32_t fine;                /* what inc adds to PITCH_INC[pitch16], in 1/4096: unison, tune, glide / LFO fraction */
     int32_t amp0, amp1;          /* Q15 ramp over the block */
     int32_t cutoff;              /* 0..127 << 8 */
     int32_t shape;               /* 0..127 << 8 */
@@ -130,7 +133,7 @@ typedef struct {
     void (*render)(struct track *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m);
     uint16_t color;              /* accent colour of the engine (RGB565) */
     uint8_t macro[4];            /* HOME: the four parameters on KNOB 1..4 */
-    uint8_t poly;                /* voice cap for POLY and UNISON, 0 = NVOICE */
+    uint8_t poly;                /* voice cap for POLY and UNISON, 0 = NPOLY */
     /* optional (0 = none): the voice amplitude instead of the ADSR curve, once per control tick;
      * gets the ADSR value (Q15, env_tick already ran: it still gates the voice), returns Q15 */
     int32_t (*amp)(struct track *t, voice_t *v, int32_t adsr);
@@ -139,6 +142,9 @@ typedef struct {
     const param_desc_t *(*desc)(const struct track *t, uint32_t k);
     /* optional: once per block and part, before its voices (also with no voice sounding) */
     void (*block)(struct track *t);
+    /* UNISON inside one voice: the engine stacks its own detuned oscillators (ANALOG), the voice counts
+     * once in the budget; 0 = UNISON on several voices (voice.c mono_play) */
+    uint8_t uni;
 } engine_t;
 
 /* ------------------------------------------------------------ track --- */
