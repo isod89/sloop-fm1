@@ -14,6 +14,7 @@
  *   fill     (2.4) FILL ONLY / NO FILL steps follow GLO + key 9 (held) and key 10 (the next bar); STOP clears
  *   chain    (2.4) SAVE + two section taps: the sections in turn, each for its pattern's bars, looped
  *   pads     HOME menu > PADS: a 16-pad controller plays the 16 white keys, in every layer; velocity = level
+ *   remote   ... and its buttons and knobs (CC 25..37) reach the UI; REC / PLAY close / drop a free take on time
  * Exit status: the number of failed checks. */
 #define FELUCCA_ARRANGER 1
 #define main hostsim_main
@@ -1245,6 +1246,84 @@ static void t_pads(void)
         run_block();                                  /* (the released voices die down for the next test) */
 }
 
+/* The PADS controller's buttons and knobs (seq.c remote_cc): CC 25 / 26 the track before / after, 27 / 28 /
+ * 29 PLAY / STOP / REC (127 pressed, 0 let go), 30..37 its knobs; on any channel, while PADS is set. Here:
+ * what the audio side hands to the UI, and the free take (the UI's part: tests/ui_pages_test.c) */
+static void rm_cc(uint32_t ch, uint32_t cc, uint32_t v) { mclk_push(v << 24 | cc << 16 | (0xB0u | (ch - 1u)) << 8 | 0xBu); }
+static void t_remote(void)
+{
+    reset(120);
+    mi_r = mi_w;
+    song.g[G_ROUTE] = 0;
+    rm_btn = rm_turn = rm_ft = 0;
+    pads_ch = 0;
+    rm_cc(1, 27, 127); rm_cc(1, 30, 64);
+    run_block();
+    check(!rm_btn && !rm_turn && !song.playing, "PADS OFF (the default): its controller numbers are ignored, as every CC");
+
+    pads_ch = 10; pads_base = 54;
+    rm_cc(1, 27, 127); rm_cc(1, 27, 0);                 /* PLAY pressed and let go */
+    run_block();
+    check(rm_btn == 1u << RM_PLAY, "PADS set: CC 27 at 127 is a PLAY press for the UI; letting go (0) is none");
+    rm_btn = 0;
+    rm_cc(1, 25, 127); rm_cc(16, 26, 127); rm_cc(1, 28, 127); rm_cc(1, 29, 127);
+    run_block();
+    check(rm_btn == (1u << RM_PREV | 1u << RM_NEXT | 1u << RM_STOP | 1u << RM_REC),
+          "... CC 25 / 26 / 28 / 29: the track before / after, STOP, REC; on any channel");
+    rm_btn = 0;
+    rm_cc(1, 30, 5); rm_cc(1, 37, 99); rm_cc(1, 30, 6);
+    run_block();
+    check(rm_turn == (1u | 1u << 7) && rm_knob[0] == 6u && rm_knob[7] == 99u,
+          "... CC 30..37: the knobs, each marked moved, its last position kept");
+    rm_turn = 0;
+    rm_cc(1, 24, 127); rm_cc(1, 38, 127); rm_cc(1, 7, 100);
+    run_block();
+    check(!rm_btn && !rm_turn, "... the controllers next to them (24, 38) and the others are still ignored");
+    song.g[G_ROUTE] = 1;                                /* GLO > SYSTEM > IN = CLOCK */
+    rm_cc(1, 27, 127); rm_cc(1, 30, 64);
+    run_block();
+    check(!rm_btn && !rm_turn, "... IN = CLOCK ignores the controller's buttons and knobs too");
+    song.g[G_ROUTE] = 0;
+
+    song.sel = 0;                                       /* a free take: PLAY (or STOP) drops it, on time, not the UI */
+    song.playing = 0;
+    rec_tempo = 0, rec_count = 0;
+    rec_wait = 1;
+    input_on(TSEL, 60, 100);
+    run_block();
+    rm_cc(1, 27, 127);
+    run_block(); run_block();
+    check(!ft_on && !song.playing && !rm_btn, "a free take: the controller's PLAY drops it (and the UI gets no press)");
+    trk_note_off(&trk[0], 60);
+    transport_req = 2; run_block(); ft_bars = 0;
+
+    reset(120);                                         /* ... and REC closes it: the loop plays */
+    song.sel = 0;
+    song.playing = 0;
+    rec_wait = 1;
+    input_on(TSEL, 60, 100);
+    run_block();
+    {
+        uint32_t k, bar = (uint32_t)(4.0 * FS * 60.0 / 120.0 / CTL + 0.5);
+        for (k = 1; k < bar; k++) {
+            if (k == bar / 2u) input_off(TSEL, 60);
+            run_block();
+        }
+    }
+    rm_cc(1, 29, 127);
+    run_block(); run_block();
+    check(!ft_on && song.playing && !rm_btn, "a free take: the controller's REC closes it and the loop plays");
+    transport_req = 2; run_block(); ft_bars = 0;
+    pads_ch = pads_base = 0;
+    rm_btn = rm_turn = rm_ft = 0;
+    mi_r = mi_w;
+    {
+        uint32_t k;
+        for (k = 0; k < (uint32_t)(FS / CTL); k++)
+            run_block();                                /* (the released voices die down for the next test) */
+    }
+}
+
 /* menu USB AUDIO = FULL (2.3): the USB input at the level of MASTER all the way up, whatever the knob;
  * the DAC path keeps following the knob */
 static void t_usbfull(void)
@@ -1344,6 +1423,7 @@ int main(void)
     t_midiout();
     t_midiin();
     t_pads();
+    t_remote();
     t_shed();
     t_drift();
     t_burst();

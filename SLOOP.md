@@ -447,6 +447,17 @@ SLOOP takes MIDI from two places at once:
 - **How hard you hit** is the level: ghost, soft, normal or hard on the drum track, recorded so; the note's velocity on a synth track. On the drum track, OCT− / OCT+ held still make every hit a ghost / a hard one.
 - The other notes of the controller's channel play as before. What the pads play is not sent back to MIDI out, and **IN** = **CLOCK** ignores the pads too.
 
+**Its buttons and knobs.** While PADS is set, SLOOP also takes these controllers, on any channel — the numbers an M-VAVE SMC-PAD sends as it comes:
+
+| Controller | Does |
+| --- | --- |
+| CC 27 / 28 / 29 | PLAY / STOP / REC, as the FM-1's own (127: pressed, 0: let go). REC closes a free take; PLAY or STOP drops it |
+| CC 25 / 26 | the track before / after |
+| CC 30–33 | the levels of tracks 1–4 (as GLO + KNOB 1–4) |
+| CC 34–37 | FILT, DUST, DUCK and the selected track's filter (as FX + KNOB 1–4) |
+
+A knob sends a position, so it takes its setting over only once it has reached it: nothing jumps, and until then the screen shows the setting and which way to turn (`>>` or `<<`). IN = CLOCK ignores these too.
+
 Bluetooth MIDI is not supported: SLOOP, like Felucca, never switches the radio on.
 
 ## USB audio: record on a computer

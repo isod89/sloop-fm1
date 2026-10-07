@@ -897,20 +897,52 @@ static int ft_owns_press(void)
     return ft_on || (ft_closed && (uint32_t)(fm1_ms - ft_close_ms) < 300u);
 }
 
+/* The buttons and knobs of the PADS controller (HOME menu > SYSTEM > PADS; an M-VAVE SMC-PAD sends these as
+ * it comes), taken on any channel while PADS is set:
+ *   CC 25 / 26        the track before / after        (127: pressed, 0: let go)
+ *   CC 27 / 28 / 29   PLAY / STOP / REC
+ *   CC 30 .. 37       its eight knobs, a position 0..127: the four levels, then FILT, DUST, DUCK and the
+ *                     selected track's filter
+ * The UI acts on them, once a pass (ui_input.c remote_input); a free take is closed (REC) or dropped
+ * (PLAY, STOP) here, on time, as by the panel's own buttons (ft_block). */
+enum { RM_PREV, RM_NEXT, RM_PLAY, RM_STOP, RM_REC, RM_NBTN };
+#define RM_CC0 25u                            /* RM_PREV; the knobs follow the buttons */
+#define RM_NKNOB 8u
+static volatile uint8_t rm_btn;               /* presses the UI has not taken yet: bit per RM_* */
+static volatile uint8_t rm_ft;                /* presses during a free take, for ft_block: bit per RM_* */
+static volatile uint8_t rm_knob[RM_NKNOB];    /* the knobs' positions */
+static volatile uint8_t rm_turn;              /* bit per knob: moved since the UI took it */
+static void remote_cc(uint32_t cc, uint32_t v)
+{
+    uint32_t i = cc - RM_CC0;
+    if (cc < RM_CC0 || i >= RM_NBTN + RM_NKNOB)
+        return;
+    if (i >= RM_NBTN) {
+        rm_knob[i - RM_NBTN] = (uint8_t)v;
+        rm_turn |= (uint8_t)(1u << (i - RM_NBTN));
+    } else if (v >= 64u) {
+        if (ft_on)
+            rm_ft |= (uint8_t)(1u << i);
+        else
+            rm_btn |= (uint8_t)(1u << i);
+    }
+}
+
 /* a free take, once per block: REC closes it, PLAY drops it (their press, timed here, not by the UI) */
 static void ft_block(void)
 {
-    uint32_t b = fm1_in.buttons & (ft_btn_mask | ft_drop_mask), press = b & ~ft_btn_prev;
+    uint32_t b = fm1_in.buttons & (ft_btn_mask | ft_drop_mask), press = b & ~ft_btn_prev, rm = rm_ft;
     ft_btn_prev = b;
+    rm_ft = 0;
     if (!ft_on)
         return;
     ft_t++;
-    if (press & ft_drop_mask) {
+    if ((press & ft_drop_mask) || (rm & (1u << RM_PLAY | 1u << RM_STOP))) {
         ft_on = 0;                                    /* PLAY: dropped, nothing changes */
         ft_bars = 0xFF;
         ft_close_ms = fm1_ms;
         ft_closed = 1;
-    } else if ((press & ft_btn_mask) || ft_t >= FT_BLOCKS) {
+    } else if ((press & ft_btn_mask) || (rm & 1u << RM_REC) || ft_t >= FT_BLOCKS) {
         ft_close();
     }
 }
@@ -2306,6 +2338,8 @@ static void events_block(uint32_t n)
             mclk_event((pkt >> 8) & 0xFFu, ((pkt >> 4) & 15u) ? 2u : 1u);
             continue;
         }
+        if (st == 0xB0u && pads_ch && !song.g[G_ROUTE])
+            remote_cc(d1, d2);                        /* the PADS controller's buttons and knobs */
         if (st != 0x90u && st != 0x80u)
             continue;
         if (song.g[G_ROUTE] && st == 0x90u && d2)

@@ -162,7 +162,7 @@ Save up to four sections **A–D** (SAVE + keys 5–8), play them live on the ne
 
 - **USB MIDI** in and out, class compliant.
 - **TRS MIDI IN** (the 3.5 mm jack, 2.3) for a keyboard or a pad controller.
-- **Pad controllers:** a 16-pad controller plays the 16 white keys, in every layer, with its velocity (HOME menu → PADS).
+- **Pad controllers:** a 16-pad controller plays the 16 white keys, in every layer, with its velocity; its transport buttons and knobs work too (HOME menu → PADS).
 - **MIDI clock in** (USB or TRS): tempo, START, CONTINUE, STOP.
 - **MIDI out:** the keys always; the sequencer, the arp and the rolls too with GLO → SYSTEM → MIDI = SEQ (2.4).
 - Details: [MIDI and USB audio](#midi-and-usb-audio).
@@ -285,6 +285,17 @@ HOME menu → SYSTEM → **PADS** makes a 16-pad controller the FM-1's 16 white 
 - **What they do:** what the keys do, wherever you are — the 16 sounds on the drum track, the scale or the chords on a synth track, and with a button held the punch-in effects (FX), the steps (SEQ), erase (EDIT), note repeat (ARP), mutes and solos (GLO), the sections (SAVE).
 - **How hard you hit** is the level: ghost, soft, normal or hard on the drum track, recorded so; the note's velocity on a synth track. On the drum track, OCT− / OCT+ held still make every hit a ghost / a hard one.
 - The other notes of the controller's channel play as before. What the pads play is not sent back to MIDI out, and **IN** = **CLOCK** ignores the pads too.
+
+**Its buttons and knobs.** While PADS is set, SLOOP also takes these controllers, on any channel — the numbers an M-VAVE SMC-PAD sends as it comes:
+
+| Controller | Does |
+| --- | --- |
+| CC 27 / 28 / 29 | PLAY / STOP / REC, as the FM-1's own (127: pressed, 0: let go). REC closes a free take; PLAY or STOP drops it |
+| CC 25 / 26 | the track before / after |
+| CC 30–33 | the levels of tracks 1–4 (as GLO + KNOB 1–4) |
+| CC 34–37 | FILT, DUST, DUCK and the selected track's filter (as FX + KNOB 1–4) |
+
+A knob sends a position, so it takes its setting over only once it has reached it: nothing jumps, and until then the screen shows the setting and which way to turn (`>>` or `<<`). IN = CLOCK ignores these too.
 
 ### MIDI out
 

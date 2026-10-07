@@ -739,6 +739,74 @@ int main(int argc, char **argv)
         go_home(); ui.force = 1; frame();
     }
 
+    {   /* the PADS controller's buttons and knobs (seq.c remote_cc, ui_input.c remote_input): CC 25 / 26 the
+         * track before / after, 27 / 28 / 29 PLAY / STOP / REC, 30..37 the knobs (the four levels; FILT, DUST,
+         * DUCK, the track's filter). A knob takes its setting over only once it has reached it */
+        #define RCC(n, v) do { midi_in_q[mi_w % MQ] = (uint32_t)(v) << 24 | (uint32_t)(n) << 16 | 0xB0u << 8 | 0xBu; \
+                               mi_w++; frame(); frame(); } while (0)
+        int16_t k_lv = trk[0].p[P_LEVEL], k_dr = song.g[G_DRLVL], k_f = song.g[G_FILT], k_du = song.g[G_DUST],
+                k_tf = trk[1].p[P_TFLT];
+        uint8_t k_sel = song.sel;
+        transport_req = 2; song.rec = 0; rec_wait = 0; song.sel = 0; ui.menu = 0; go_home(); ui.force = 1; frames(2);
+        pads_ch = 0;
+        RCC(27, 127);
+        check(!song.playing, "PADS OFF: the controller's PLAY (CC 27) does nothing");
+        pads_ch = 10; pads_base = 54;
+        RCC(27, 127); RCC(27, 0);
+        check(song.playing, "PADS controller: PLAY (CC 27) plays");
+        RCC(27, 127);
+        check(song.playing, "... PLAY again: it still plays (PLAY and STOP are two buttons)");
+        RCC(28, 127);
+        check(!song.playing, "... STOP (CC 28) stops");
+        RCC(26, 127);
+        check(song.sel == 1u, "... the track after (CC 26)");
+        RCC(26, 127); RCC(26, 127); RCC(26, 127);
+        check(song.sel == NTRK - 1u, "... stopping at the last track");
+        RCC(25, 127);
+        check(song.sel == NTRK - 2u, "... the track before (CC 25)");
+        song.sel = 0; ui.force = 1; frame();
+        RCC(29, 127);
+        check(rec_wait == 1u, "... REC (CC 29), stopped: armed, as the REC button");
+        RCC(29, 127);
+        check(!rec_wait && !song.rec, "... REC again: off");
+        ui.menu = 1; ui.force = 1; frame();
+        RCC(27, 127);
+        ui.menu = 0; ui.force = 1; go_home(); frames(3);
+        check(!song.playing, "... with the menu up a button does nothing, then or later");
+
+        trk[0].p[P_LEVEL] = 100;
+        RCC(30, 10);
+        check(trk[0].p[P_LEVEL] == 100 && !strncmp(ui.msg, "LEVEL 1 ", 8) && strstr(ui.msg, ">>"),
+              "knob 1 (CC 30), first position: the level does not jump; the message says which way to turn");
+        RCC(30, 60);
+        check(trk[0].p[P_LEVEL] == 100, "... still below the level: nothing");
+        RCC(30, 101);
+        check(trk[0].p[P_LEVEL] == 101 && !strstr(ui.msg, ">>"), "... once it reaches the level it takes it over");
+        RCC(30, 90);
+        check(trk[0].p[P_LEVEL] == 90, "... and the level follows it");
+        trk[0].p[P_LEVEL] = 20;                          /* turned on the FM-1 meanwhile */
+        RCC(30, 91);
+        check(trk[0].p[P_LEVEL] == 20 && strstr(ui.msg, "<<"), "... a level set on the FM-1 since: the knob lets go (turn left)");
+        RCC(30, 15);
+        check(trk[0].p[P_LEVEL] == 15, "... until it reaches it again");
+        song.g[G_DRLVL] = 100;
+        RCC(33, 100); RCC(33, 110);
+        check(song.g[G_DRLVL] == 110, "knob 4 (CC 33): the drums' level");
+        song.g[G_FILT] = 0;
+        RCC(34, 60); RCC(34, 70);
+        check(song.g[G_FILT] == 6, "knob 5 (CC 34): FILT, OFF in the middle (64)");
+        song.g[G_DUST] = 0;
+        RCC(35, 0); RCC(35, 40);
+        check(song.g[G_DUST] == 40, "knob 6 (CC 35): DUST");
+        song.sel = 1; trk[1].p[P_TFLT] = 0;
+        RCC(37, 64); RCC(37, 44);
+        check(trk[1].p[P_TFLT] == -20 && trk[0].p[P_TFLT] == 0, "knob 8 (CC 37): the selected track's filter");
+        pads_ch = pads_base = 0;
+        trk[0].p[P_LEVEL] = k_lv; song.g[G_DRLVL] = k_dr; song.g[G_FILT] = k_f; song.g[G_DUST] = k_du; trk[1].p[P_TFLT] = k_tf;
+        song.sel = k_sel; ui.msg_t = 0; ui.force = 1; go_home(); frames(2);
+        #undef RCC
+    }
+
     {   /* SELECT (2.4): the pages of the family shown; the tempo on HOME (TRACKS), in a layer, on REC */
         int16_t bpm;
         #define PT() (PAGES[ui.page].title)

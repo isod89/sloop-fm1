@@ -787,6 +787,67 @@ static void holds_input(uint32_t pressed, uint32_t now_ms)
     (void)sb, (void)save_down, (void)save_on, (void)save_t0;   /* (SAVE is a layer now: ui_layers.c) */
 }
 
+/* The PADS controller's buttons and knobs (seq.c remote_cc), once a pass. PLAY, STOP, REC and the track
+ * before / after do what the panel's own do (not with the menu up, nor during a hold to confirm). The
+ * knobs are the mix (1..4: the four levels, as GLO + KNOB 1..4) and the master (5..8: FILT, DUST, DUCK and
+ * the selected track's filter, as FX + KNOB 1..4). A knob sends a position, so it takes its setting over
+ * only once it has reached it: nothing jumps, and until then the message shows the setting and which way
+ * to turn. */
+static void remote_input(void)
+{
+    static uint8_t last[RM_NKNOB] = {255, 255, 255, 255, 255, 255, 255, 255};
+    static const char *const NAME[RM_NKNOB] = {"LEVEL 1 ", "LEVEL 2 ", "LEVEL 3 ", "LEVEL 4 ", "FILT ", "DUST ", "DUCK ",
+                                               "TRACK FILT "};
+    static const uint8_t MASTER[3] = {G_FILT, G_DUST, G_DUCK};
+    uint32_t btn, turn, k;
+    fm1_irq_off();
+    btn = rm_btn;
+    rm_btn = 0;
+    turn = rm_turn;
+    rm_turn = 0;
+    fm1_irq_on();
+    if (btn || turn)
+        ui_input_ms = fm1_ms;
+    for (k = 0; k < RM_NKNOB; k++) {
+        const param_desc_t *d = k < 4u ? (k == TRK_DRUM ? &GP[G_DRLVL] : &TP[P_LEVEL]) : k < 7u ? &GP[MASTER[k - 4u]] : &TP[P_TFLT];
+        int16_t *p = k < 4u ? (k == TRK_DRUM ? &song.g[G_DRLVL] : &trk[k].p[P_LEVEL])
+                            : k < 7u ? &song.g[MASTER[k - 4u]] : &TSEL->p[P_TFLT];
+        int32_t v, c;
+        char m[24], val[12];
+        const char *unit;
+        if (!((turn >> k) & 1u))
+            continue;
+        v = rm_knob[k];
+        c = *p - d->min;                                /* the setting as a knob position */
+        if (last[k] != 255u && ((last[k] <= c && c <= v) || (v <= c && c <= last[k]))) {
+            *p = (int16_t)clamp(v + d->min, d->min, d->max);
+            c = v;
+        }
+        last[k] = (uint8_t)v;
+        param_format(d, *p, val, &unit);
+        str_cpy(m, NAME[k], sizeof m);
+        str_cpy(m + str_len(m), val, sizeof m - str_len(m));
+        str_cpy(m + str_len(m), unit, sizeof m - str_len(m));
+        ui_say(m, c == v ? "" : v < c ? " >>" : " <<");
+    }
+    if (!btn || ui.menu || ui.hold_kind)
+        return;
+    if (btn & (1u << RM_PREV | 1u << RM_NEXT))
+        track_select((uint32_t)clamp((int32_t)song.sel + ((btn >> RM_NEXT) & 1u ? 1 : -1), 0, NTRK - 1));
+    if ((btn >> RM_STOP) & 1u) {
+        transport_req = 2;
+    } else if (((btn >> RM_PLAY) & 1u) && !song.playing) {
+#if FELUCCA_ARRANGER
+        if (arrangement_enabled && !arr_valid(&arrangement, arrangement_ready()))
+            ui_message("EMPTY SECTION: REC");
+        else
+#endif
+            transport_req = 1;
+    }
+    if (((btn >> RM_REC) & 1u) && !on_song_page())
+        rec_toggle();
+}
+
 static void ui_input(void)
 {
     uint32_t pressed = fm1_input_edges(0), notes = fm1_input_note_edges(), now = fm1_ticks(), id, b, k;
@@ -810,6 +871,7 @@ static void ui_input(void)
         }
     }
     kb_grid = (uint8_t)grid_keys_on();                  /* (seq.c: the keys are the grid's steps) */
+    remote_input();                                     /* (seq.c: the PADS controller's buttons and knobs) */
     if (ui.menu) {                                      /* HOME / REC taps do nothing here */
         punch.hold = 0;
         if (!ui.home_t0)
