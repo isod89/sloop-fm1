@@ -6,7 +6,7 @@
  * (outside the parts' voice budget). One-shots: note-offs are ignored; a closed or
  * pedal hi-hat chokes the open one. LEVEL / REV: GLO > DRUMS (G_DRLVL, G_DRREV);
  * PAN and MUTE: the drum track's P_PAN / P_MUTE. Rendered from the audio ISR. */
-#define NDRUM 6
+#define NDRUM 8                  /* its own voices: eight hits ring at once */
 #include "drum_synth.c"       /* synthesised kits (DS_KITS) */
 /* P_E0 was unused on the drum track: it holds the kit. 0..4: the GM sample kit and its four
  * treatments (as before: old projects keep their kit), 5..: the synthesised kits. */

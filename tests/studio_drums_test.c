@@ -37,6 +37,22 @@ int main(int argc,char **argv)
         for(k=0;k<NDRUM;k++)assert(!drums.v[k].active);
         for(k=0;k<i;k++)assert(energy[k]!=energy[i]);
     }
+    /* eight hits at once (long ones: crash, toms, ride) all ring; a ninth takes the oldest */
+    {
+        static const uint8_t HIT[9]={49,57,41,43,45,47,51,52,39};
+        uint32_t ring=0;
+        memset(&drums,0,sizeof drums);drums.set=-2;
+        TDRUM->p[P_E0]=0;                                 /* the GM sample kit */
+        for(i=0;i<8u;i++)drum_on(HIT[i],100);
+        for(k=0;k<NDRUM;k++)ring+=drums.v[k].active;
+        assert(NDRUM==8 && ring==8);
+        drum_on(HIT[8],100);
+        for(ring=0,k=0;k<NDRUM;k++)ring+=drums.v[k].active && drums.v[k].note==HIT[0];
+        assert(ring==0);                                  /* the crash (the oldest) gave way */
+        for(ring=0,k=0;k<NDRUM;k++)ring+=drums.v[k].active;
+        assert(ring==8);
+        printf("drums: eight hits ring at once, a ninth takes the oldest ok\n");
+    }
     /* LIVE metronome (seq.c click_tick): 120 BPM, 2 s = 4 beats; REC mode clicks only while a
      * track records, ON always while playing, OFF never; the first beat of the bar is louder */
     for(v=0;v<4;v++) {
