@@ -19,6 +19,7 @@
  *   DRUMS   the grid: sound / step / hit / level knobs, GRID <-> KIT
  * then 20000 frames of random use: every draw stays on the screen. */
 #define FELUCCA_ARRANGER 1
+#define HOST_HAS_REAL_UI 1
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -123,6 +124,13 @@ static uint32_t cc_pkt(uint32_t ch, uint32_t cc, uint32_t val)
 static void send_cc(uint32_t ch, uint32_t cc, uint32_t val)
 {
     midi_in_q[mi_w % MQ] = cc_pkt(ch, cc, val);
+    mi_w++;
+    events_block(CTL);
+}
+
+static void send_pc(uint32_t ch, uint32_t prog)
+{
+    midi_in_q[mi_w % MQ] = 0xCu | ((0xC0u | (ch & 15u)) << 8) | ((prog & 127u) << 16);
     mi_w++;
     events_block(CTL);
 }
@@ -246,6 +254,53 @@ static void midi_cc_tests(void)
     check(trk[0].p[P_SUS] == 33, "unmapped CCs do not change parameters");
 }
 
+static void midi_pc_tests(void)
+{
+    printf("midi PC: Program Change per channel (presets, FM6 patches, drum kits)\n");
+    host_tracks_init();
+    song.g[G_DRCH] = 10;                              /* drum track on MIDI ch 10 */
+
+    /* 1. Track 1 (ch 1) synth preset */
+    set_engine_of(&trk[0], 0);                        /* ANALOG */
+    send_pc(0, 3);
+    check(trk[0].preset == 3, "PC on ch 1 sets track 1 preset");
+
+    /* 2. Track 2 (ch 2) synth preset */
+    set_engine_of(&trk[1], 1);                        /* DIGITAL */
+    send_pc(1, 2);
+    check(trk[1].preset == 2, "PC on ch 2 sets track 2 preset");
+
+    /* 3. Drum track (ch 10 / index 9) selects drum kit */
+    TDRUM->p[P_E0] = 0;
+    send_pc(9, 5);
+    check(TDRUM->p[P_E0] == 5, "PC on drum channel sets drum kit");
+
+    /* Drum kit wrapping */
+    send_pc(9, DRUM_KITS + 2);
+    check(TDRUM->p[P_E0] == 2, "PC on drum channel wraps at DRUM_KITS");
+
+    /* 4. FM6 engine DX7 patch selection (PTCH, P_E7) */
+    set_engine_of(&trk[2], 9);                        /* FM6 */
+    send_pc(2, 7);
+    check(trk[2].p[P_E7] == 7, "PC on FM6 track sets DX7 patch slot");
+
+    send_pc(2, FM6_NSLOT + 3);
+    check(trk[2].p[P_E7] == 3, "PC on FM6 track wraps at FM6_NSLOT");
+
+    /* 5. Unassigned channel follows selected track */
+    song.sel = 1;                                     /* Track 2 selected */
+    set_engine_of(&trk[1], 0);
+    send_pc(4, 4);                                    /* Ch 5 (unassigned) -> TSEL */
+    check(trk[1].preset == 4, "PC on unassigned channel reaches selected track");
+
+    /* 6. Clock-only mode ignores PC */
+    song.g[G_ROUTE] = 1;                              /* GLO > SYSTEM > IN = CLOCK */
+    trk[0].preset = 1;
+    send_pc(0, 5);
+    check(trk[0].preset == 1, "PC ignored when IN = CLOCK (G_ROUTE)");
+    song.g[G_ROUTE] = 0;
+}
+
 #ifndef UI_PAGES_HARNESS_ONLY                       /* (tests/stress_test.c: the harness, its own main) */
 int main(int argc, char **argv)
 {
@@ -275,6 +330,7 @@ int main(int argc, char **argv)
     palette_set(4);
     host_tracks_init();
     midi_cc_tests();
+    midi_pc_tests();
     for (i = 0; i < NPART; i++) { set_engine_of(&trk[i], TRK_DEF[i][0]); apply_preset_to(&trk[i], TRK_DEF[i][1]); trk[i].engine = trk[i].eng_req; }
     TDRUM->p[P_E0] = DRUM_DEFAULT_KIT;
     sloop_splash(); ppm("page-splash");

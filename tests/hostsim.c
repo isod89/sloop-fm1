@@ -117,6 +117,22 @@ static void host_preset(track_t *t, uint32_t e, uint32_t pi)
     t->engine = (uint8_t)e;
 }
 
+#ifndef HOST_HAS_REAL_UI
+void midi_pc(track_t *t, uint32_t prog)
+{
+    if (!t)
+        return;
+    if (is_drum(t)) {
+        t->p[P_E0] = (int16_t)(prog % DRUM_KITS);
+    } else if (t->eng_req == ENGI_FM6) {
+        t->p[P_E7] = (int16_t)(prog % FM6_NSLOT);
+        fm6_track_loaded(t);
+    } else {
+        host_preset_req(t, t->eng_req, prog);
+    }
+}
+#endif
+
 /* the sequencer clock as the harness sees it: the step of t at the clock (as the next block plays it),
  * *q100: how far into it, in % of its (swung) length */
 static uint32_t at_step(const track_t *t, uint32_t *q100)

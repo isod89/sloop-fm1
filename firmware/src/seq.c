@@ -2311,6 +2311,11 @@ static void events_block(uint32_t n)
                 midi_cc(midi_track(ch), d1, d2);
             continue;
         }
+        if (st == 0xC0u) {                            /* program change: preset / kit per track */
+            if (!song.g[G_ROUTE])
+                midi_pc(midi_track(ch), d1);
+            continue;
+        }
         if (st != 0x90u && st != 0x80u)
             continue;
         if (song.g[G_ROUTE] && st == 0x90u && d2)

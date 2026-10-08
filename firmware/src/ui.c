@@ -324,6 +324,22 @@ static void set_engine_of(track_t *t, uint32_t ei)
 static void apply_preset(uint32_t pi) { apply_preset_to(TSEL, pi); }
 static void set_engine(uint32_t ei) { set_engine_of(TSEL, ei); }
 
+void midi_pc(track_t *t, uint32_t prog)
+{
+    if (!t)
+        return;
+    if (is_drum(t)) {
+        t->p[P_E0] = (int16_t)(prog % DRUM_KITS);             /* drum kit */
+    } else if (t->eng_req == ENGI_FM6) {
+        t->p[P_E7] = (int16_t)(prog % FM6_NSLOT);             /* FM6 patch */
+        fm6_track_loaded(t);                                  /* load DX7 voice */
+    } else {
+        apply_preset_to(t, prog);                             /* synth preset of engine */
+    }
+    ui.force = 1;                                             /* redraw LCD */
+    sync_reload = 1;                                          /* push RELOAD to SysEx */
+}
+
 static void track_defaults(track_t *t)
 {
     uint32_t i;
