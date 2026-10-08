@@ -226,7 +226,7 @@ Nothing to download or compile. Your projects, user presets, samples and setting
 | **MASTER** | volume (and the USB audio level, if USB AUDIO is on MASTER) |
 | **SELECT** | on HOME and inside a layer: tempo · on a page: the previous / next page of its group · DRUMS: grid / kit |
 | **ALGORITHM** | the selected track: 1 · 2 · 3 (synths) · 4 (drums) |
-| **PRESETS** | the selected track's sound, or the drum kit |
+| **PRESETS** | the selected track's sound, or the drum kit · **hold HOME while turning: by kind** (basses, keys, … your presets) |
 | **KNOB 1–4** | what the four dials at the bottom of the screen show, each in its colour |
 | **OCT− / OCT+** | octave (both: back to 0) · on the drum track, held: ghost / hard hits |
 | **FX · SCL · ENV · LFO · EDIT · GLO** (top row) | tap: their pages · hold FX, SCL, EDIT, GLO: a layer. **SCL** is the second button of the top row, between FX and ENV |

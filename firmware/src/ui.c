@@ -414,6 +414,41 @@ static uint32_t preset_at(uint32_t n, uint32_t *k)
     return BANK[n].e;
 }
 static const char *preset_kind(uint32_t n) { return n < NBANK ? BANK_KIND[BANK[n].kind] : "USER"; }
+/* the kind of list index n as a number: a bank kind, then the user presets (one group) */
+#define PG_USER (BK_FX + 1u)
+static uint32_t preset_group(uint32_t n) { return n < NBANK ? BANK[n].kind : PG_USER; }
+/* the first entry of the next (dir > 0) or the previous kind from list index cur, round the list:
+ * HOME held + PRESETS, and KNOB 3 on the PRESETS page. Backwards goes to the START of the previous
+ * kind (as a knob should), never to its last entry */
+static uint32_t preset_group_jump(uint32_t cur, int dir)
+{
+    uint32_t total, n, g;
+    preset_pos(&total);
+    if (!total)
+        return 0;
+    cur %= total;
+    g = preset_group(cur);
+    if (dir > 0) {
+        for (n = (cur + 1u) % total; n != cur; n = (n + 1u) % total)
+            if (preset_group(n) != g)
+                return n;
+        return cur;
+    }
+    n = cur;
+    while (n && preset_group(n - 1u) == g)                /* the start of this group ... */
+        n--;
+    if (n == 0u) {                                       /* ... was the first: the last group's start */
+        g = preset_group(total - 1u);
+        for (n = total - 1u; n && preset_group(n - 1u) == g; n--)
+            ;
+        return n;
+    }
+    n--;                                                 /* the previous group: back to its start */
+    g = preset_group(n);
+    while (n && preset_group(n - 1u) == g)
+        n--;
+    return n;
+}
 
 static void preset_go(uint32_t n)                    /* load list index n into the selected track */
 {

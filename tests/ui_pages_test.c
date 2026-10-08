@@ -138,6 +138,31 @@ int main(int argc, char **argv)
                 }
             }
     }
+    {   /* the jump by kind (ui.c preset_group_jump): from any entry, forward lands on the first entry of the
+         * next kind, backwards on the START of the previous kind, round the list in 9 hops (8 kinds + USER) */
+        uint32_t n = 0, hops = 0, total, k0, k1;
+        char path[80] = "";
+        bank_resolve();
+        do {
+            k0 = preset_group(n);
+            n = preset_group_jump(n, 1);
+            k1 = preset_group(n);
+            str_cpy(path + str_len(path), n < NBANK ? BANK_KIND[BANK[n].kind] : "USER", 5);
+            str_cpy(path + str_len(path), " ", 2);
+            check(k1 != k0 && (n == 0u || preset_group(n - 1u) != k1), "kind jump forward: the first entry of a new kind");
+            hops++;
+        } while (n && hops < 20u);
+        check(hops == 9u, "kind jump: 8 kinds and USER round and back to the start in 9 hops");
+        printf("ui:   kinds: %s\n", path);
+        n = preset_group_jump(0, -1);
+        check(n >= NBANK && (n == NBANK), "kind jump back from the start: the START of the user presets");
+        n = preset_group_jump(3, -1);
+        check(n == NBANK, "kind jump back from inside the first kind: the previous kind (USER), as forward goes to the next");
+        check(preset_group_jump(NBANK, -1) < NBANK && preset_group(preset_group_jump(NBANK, -1)) == BK_FX,
+              "kind jump back from USER: the start of FX");
+        preset_pos(&total);
+        check(preset_group_jump(total - 1u, 1) == 0u, "kind jump forward from the last user preset: the start");
+    }
     panel = PANEL_DEFAULT;
     layers_init();
     settings.palette = 4;
@@ -184,6 +209,40 @@ int main(int argc, char **argv)
             song.g[G_ROUTE] = r0;
         }
         song.g[G_MIDI] = (int16_t)m0; go_home(); frame();
+    }
+
+    {   /* HOME held + PRESETS: by kind, on the TRACKS screen; no menu opens, no HOME tap on release (a HOME tap
+         * on TRACKS is the visualiser since 2.4, so a taken hold must not become one either) */
+        uint32_t before, after, k0, k1, total;
+        track_select(0);
+        preset_go(0);                                    /* 808 BOOM: kind BASS */
+        go_home(); ui.force = 1; frame();
+        before = preset_pos(&total);
+        k0 = preset_group(before);
+        fm1_in.buttons |= BT(B_HOME); frame();           /* HOME down ... */
+        encs[panel.enc[EN_PRESET]] = 1; frame();         /* ... and one click of PRESETS */
+        after = preset_pos(&total);
+        k1 = preset_group(after);
+        check(k1 == k0 + 1u && after > before && !ui.menu, "HOME + PRESETS: the next kind (KEYS), no menu");
+        check(ui.msg_t && !strcmp(ui.msg, "KEYS"), "HOME + PRESETS: the kind flashes in the top bar");
+        frames(60);                                      /* a second with HOME still down: still no menu */
+        check(!ui.menu && cur_page()->scope == SC_TRK, "HOME + PRESETS: HOME held on, the menu stays shut");
+        encs[panel.enc[EN_PRESET]] = -1; frame();
+        check(preset_group(preset_pos(&total)) == k0, "HOME + PRESETS back: the previous kind");
+        fm1_in.buttons &= ~BT(B_HOME); frame(); frames(2);
+        check(!ui.menu && !vis_shown() && cur_page()->scope == SC_TRK, "HOME let go: no tap, no visualiser, TRACKS stays");
+        preset_go(0);
+        {   /* KNOB 3 on the PRESETS page: the same jump, and the KIND column */
+            uint32_t i;
+            for (i = 0; i < NPAGES; i++) if (!strcmp(PAGES[i].title, "PRESETS")) break;
+            open_family(FAM_SAVE); ui.page = (uint8_t)i; ui.fam_last[FAM_SAVE] = (uint8_t)i; page_entered(); ui.force = 1; frame();
+            encs[panel.enc[EN_K3]] = 1; frame();
+            check(i < NPAGES && preset_group(preset_pos(&total)) == k0 + 1u, "PRESETS page KNOB 3: the next kind");
+            ui.force = 1; frame(); ppm("page-presets-kind");
+            encs[panel.enc[EN_K3]] = -1; frame();
+            check(preset_group(preset_pos(&total)) == k0 && preset_pos(&total) == 0u, "PRESETS page KNOB 3 back: the start of BASS");
+            go_home(); frame();
+        }
     }
 
     /* ---- taps open pages, holds are layers */
