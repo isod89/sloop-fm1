@@ -13,11 +13,17 @@
  * voices only start when there is room. The drum track has its own voices (drums.c). */
 static uint32_t vage;                                   /* voice ages: one clock for every part */
 /* engines that play recorded material (a position, not a phase): no phases kept or spread */
+static int eng_sampled(const engine_t *e)
+{
+    return e == &ENG_SAMPLE
 #if FELUCCA_SLICE
-static int eng_sampled(const engine_t *e) { return e == &ENG_SAMPLE || e == &ENG_SLICE; }
-#else
-static int eng_sampled(const engine_t *e) { return e == &ENG_SAMPLE; }
+           || e == &ENG_SLICE
 #endif
+#if FELUCCA_SNES
+           || e == &ENG_SNES
+#endif
+        ;
+}
 static int32_t lfo_wave(track_t *t, uint32_t ph)
 {
     switch (t->p[P_LWAVE]) {
@@ -709,6 +715,8 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
         e->render(t, v, out, n, &m);
         nr++;
     }
+    if (e->post)                                        /* the engine's part-wide output (SNES: echo) */
+        nr += e->post(t, out, n);
     if (fade) {
         for (i = 0; i < 8u; i++)
             t->p[P_E0 + i] = pe_new[i];

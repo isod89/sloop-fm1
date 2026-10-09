@@ -563,6 +563,9 @@ static void persist_boot(void)                    /* before settings_init / pane
         uint32_t k;
         for (k = 0; k < SMP_USER_SLOTS; k++)
             smp_user_scan(k);
+#if FELUCCA_SNES
+        snes_bank_scan();                          /* (the SNES engine's bank, eng_snes.c) */
+#endif
     }
     {
         int n = st_load(OBJ_SETTINGS, &p, sizeof p);

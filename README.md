@@ -422,7 +422,7 @@ See [BUILDING.md](BUILDING.md). In short: the JieLi toolchain and three files of
 - **@renebohne** — the played-note key lights (pull request #11).
 - **ChanceTheMaker** and **keremimo** — the TRS MIDI input fix (Felucca Salt) and contributions to the MIDI clock.
 - **Everyone who installed SLOOP, made music with it, commented, reported a bug or asked for a feature** — most of 2.3 and 2.4 comes from your messages (parameter locks, DX7 patches, dotted delays, longer steps: you asked for them).
-- Samples: Versilian Studios VSCO-2 CE and VCSL, Sonic Pi (all CC0). Font: Terminus (SIL OFL 1.1). Icons: Fukiai (MIT, Hügelton Instruments). PHASE engine after CrispyZebra (GPL); VOICE after klattsch (MIT); FM6: msfa from Dexed by Google Inc. and Pascal Gauthier (Apache-2.0).
+- Samples: Versilian Studios VSCO-2 CE and VCSL, Sonic Pi (all CC0). Font: Terminus (SIL OFL 1.1). Icons: Fukiai (MIT, Hügelton Instruments). PHASE engine after CrispyZebra (GPL); VOICE after klattsch (MIT); FM6: msfa from Dexed by Google Inc. and Pascal Gauthier (Apache-2.0). SNES: the S-DSP of snes_spc by Shay Green (LGPL-2.1-or-later).
 - Interface ideas after teenage engineering's pocket operators and EP-133, Elektron's step entry and Akai's MPC (swing, note repeat, erase).
 
 ## Licence

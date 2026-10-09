@@ -1,0 +1,326 @@
+{
+ "BASS": {
+  "cents": -3,
+  "file": "BASS.wav",
+  "keep": 1.0,
+  "note": 28,
+  "path": "Strings/Solo Contrabass/Pizz/BKCtbss_Pizz_E0_v1_rr1.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "BASSOON": {
+  "cents": 0,
+  "file": "BASSOON.wav",
+  "keep": 1.0,
+  "note": 41,
+  "path": "Woodwinds/Bassoon/sus/PSBassoon_F1_v2_1.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "BELLS": {
+  "cents": 31,
+  "file": "BELLS.wav",
+  "keep": 1.0,
+  "note": 62,
+  "path": "Idiophones/Struck Idiophones/Tubular Bells 1/chimes_D3_ff_rr1.wav",
+  "repo": "VCSL",
+  "v": 3
+ },
+ "CHAT": {
+  "cents": 0,
+  "file": "CHAT.wav",
+  "keep": 1.0,
+  "note": 60,
+  "path": "Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitC_v3_rr1_Mid.wav",
+  "repo": "VCSL",
+  "v": 3
+ },
+ "CLAP": {
+  "cents": 0,
+  "file": "CLAP.wav",
+  "keep": 1.0,
+  "note": 60,
+  "path": "Idiophones/Struck Idiophones/Claps/Clap_rr1.wav",
+  "repo": "VCSL",
+  "v": 3
+ },
+ "CLARNET": {
+  "cents": 4,
+  "file": "CLARNET.wav",
+  "keep": 1.0,
+  "note": 62,
+  "path": "Woodwinds/Clarinet/susLong/DCClar_susLong_D3_v2_rr1_sum.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "COWBELL": {
+  "cents": 0,
+  "file": "COWBELL.wav",
+  "keep": 1.0,
+  "note": 60,
+  "path": "Idiophones/Struck Idiophones/Cowbells/Cowbell1_Normal_v3_rr1_Mid.wav",
+  "repo": "VCSL",
+  "v": 3
+ },
+ "CRASH": {
+  "cents": 0,
+  "file": "CRASH.wav",
+  "keep": 1.0,
+  "note": 60,
+  "path": "VSCO 1 Percussion/varMetal/Cymbals/clash/crash_hit_ff_loose.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "E.PIANO": {
+  "cents": -1,
+  "file": "E_PIANO.wav",
+  "keep": 1.0,
+  "note": 68,
+  "path": "Electrophones/TX81Z/FM Piano/FMPiano_G#4_vl2.wav",
+  "repo": "VCSL",
+  "v": 3
+ },
+ "FLUTE": {
+  "cents": 0,
+  "file": "FLUTE.wav",
+  "keep": 1.0,
+  "note": 72,
+  "path": "Woodwinds/Flute/susNV/LDFlute_susNV_C4_v1_1.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "GLOCK": {
+  "cents": 12,
+  "file": "GLOCK.wav",
+  "keep": 1.0,
+  "note": 84,
+  "path": "Percussion/Glock/glock_medium_C5.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "GUITAR": {
+  "cents": -2,
+  "file": "GUITAR.wav",
+  "keep": 1.0,
+  "note": 59,
+  "path": "Chordophones/Composite Chordophones/Strumstick/Finger/Strumstick_Finger_Str2_Main_B2_vl2_rr1.wav",
+  "repo": "VCSL",
+  "v": 3
+ },
+ "HARMNCA": {
+  "cents": 2,
+  "file": "HARMNCA.wav",
+  "keep": 1.0,
+  "note": 67,
+  "path": "Aerophones/Free Aerophones/Harmonica-Hohner-Super64/Sustains/Normal/Hohner-Super64_Normal _G3.wav",
+  "repo": "VCSL",
+  "v": 3
+ },
+ "HARP": {
+  "cents": -8,
+  "file": "HARP.wav",
+  "keep": 1.0,
+  "note": 69,
+  "path": "Strings/Harp/KSHarp_A4_mf.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "HARPSI": {
+  "cents": -1,
+  "file": "HARPSI.wav",
+  "keep": 1.0,
+  "note": 66,
+  "path": "Chordophones/Zithers/Harpsichord, French/Sustains/Harpsi2_Normal_F#3_rr1_Main.wav",
+  "repo": "VCSL",
+  "v": 3
+ },
+ "HORN": {
+  "cents": -10,
+  "file": "HORN.wav",
+  "keep": 1.0,
+  "note": 50,
+  "path": "Brass/F Horn/sus/MOHorn_sus_D2_v2_1.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "KALIMBA": {
+  "cents": 16,
+  "file": "KALIMBA.wav",
+  "keep": 1.0,
+  "note": 67,
+  "path": "Idiophones/Plucked Idiophones/Kalimba, Tanzania/MBira3_pluck_Main_G3_k6_50_100_rr2.wav",
+  "repo": "VCSL",
+  "v": 3
+ },
+ "LO STR": {
+  "cents": -8,
+  "file": "LO_STR.wav",
+  "keep": 1.0,
+  "note": 40,
+  "path": "Strings/Cello Section/susvib/susvib_E1_v3_1.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "MARIMBA": {
+  "cents": 4,
+  "file": "MARIMBA.wav",
+  "keep": 1.0,
+  "note": 72,
+  "path": "Percussion/Marimba/Marimba_hit_Outrigger_C4_loud_01.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "OBOE": {
+  "cents": 5,
+  "file": "OBOE.wav",
+  "keep": 1.0,
+  "note": 65,
+  "path": "Woodwinds/Oboe/Sus/Oboe_Sus_F3_v3_Main.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "OCARINA": {
+  "cents": 0,
+  "file": "OCARINA.wav",
+  "keep": 1.0,
+  "note": 69,
+  "path": "Aerophones/Edge-blown Aerophones/Ocarina, Typical/Sustains/Sus/StdOcarina_Sus_A3.wav",
+  "repo": "VCSL",
+  "v": 3
+ },
+ "OHAT": {
+  "cents": 0,
+  "file": "OHAT.wav",
+  "keep": 1.0,
+  "note": 60,
+  "path": "Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitO_rr1_Mid.wav",
+  "repo": "VCSL",
+  "v": 3
+ },
+ "PIZZ": {
+  "cents": -8,
+  "file": "PIZZ.wav",
+  "keep": 1.0,
+  "note": 59,
+  "path": "Strings/Violin Section/Pizz/VlnEns_Pizz_B2_v2_rr1.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "RECORDR": {
+  "cents": 8,
+  "file": "RECORDR.wav",
+  "keep": 1.0,
+  "note": 68,
+  "path": "Aerophones/Edge-blown Aerophones/Baroque Alto Recorder/Sustain/AltRecorder_Sus_G#3_rr1_Main.wav",
+  "repo": "VCSL",
+  "v": 3
+ },
+ "SNARE": {
+  "cents": 0,
+  "file": "SNARE.wav",
+  "keep": 1.0,
+  "note": 60,
+  "path": "Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitSN_v5_rr1_Mid.wav",
+  "repo": "VCSL",
+  "v": 3
+ },
+ "STRINGS": {
+  "cents": 1,
+  "file": "STRINGS.wav",
+  "keep": 1.0,
+  "note": 72,
+  "path": "Strings/Violin Section/susVib/VlnEns_susVib_C4_v2.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "TAMB": {
+  "cents": 0,
+  "file": "TAMB.wav",
+  "keep": 1.0,
+  "note": 60,
+  "path": "Idiophones/Struck Idiophones/Tambourine 1/Tamb1_Hit_v2_rr1_Mid.wav",
+  "repo": "VCSL",
+  "v": 3
+ },
+ "TIMPANI": {
+  "cents": -5,
+  "file": "TIMPANI.wav",
+  "keep": 1.0,
+  "note": 47,
+  "path": "Percussion/Timpani/Timpani2_Hit_v3_rr1_Sum.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "TOM": {
+  "cents": 0,
+  "file": "TOM.wav",
+  "keep": 1.0,
+  "note": 60,
+  "path": "Membranophones/Struck Membranophones/Tom 2/Stick/TomL_HitS_v3_rr1_Mid.wav",
+  "repo": "VCSL",
+  "v": 3
+ },
+ "TREMOLO": {
+  "cents": 14,
+  "file": "TREMOLO.wav",
+  "keep": 1.0,
+  "note": 59,
+  "path": "Strings/Violin Section/Trem/VlnEns_Trem_B2_v2.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "TROMBNE": {
+  "cents": 0,
+  "file": "TROMBNE.wav",
+  "keep": 1.0,
+  "note": 46,
+  "path": "Brass/Tenor Trombone/sus/tenortbn_sus_A#1_v2_1.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "TRUMPET": {
+  "cents": 0,
+  "file": "TRUMPET.wav",
+  "keep": 1.0,
+  "note": 70,
+  "path": "Brass/Trumpet/sus/Sum_SHTrumpet_sus_A#3_v3_rr1.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "TUBA": {
+  "cents": 3,
+  "file": "TUBA.wav",
+  "keep": 1.0,
+  "note": 34,
+  "path": "Brass/Tuba/sus/Tuba3_sus_A#0_v2_rr1_Mid.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "VIBES": {
+  "cents": 0,
+  "file": "VIBES.wav",
+  "keep": 1.0,
+  "note": 67,
+  "path": "Idiophones/Struck Idiophones/Vibraphone/Soft Mallets/Vibes_soft_G3_v2_rr1_Main.wav",
+  "repo": "VCSL",
+  "v": 3
+ },
+ "VIOLIN": {
+  "cents": -3,
+  "file": "VIOLIN.wav",
+  "keep": 1.0,
+  "note": 76,
+  "path": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_E5_f.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ },
+ "XYLO": {
+  "cents": 14,
+  "file": "XYLO.wav",
+  "keep": 1.0,
+  "note": 79,
+  "path": "Percussion/Xylo/Xylo_Medium_G4_ff_01_far.wav",
+  "repo": "VSCO-2-CE",
+  "v": 3
+ }
+}

@@ -26,9 +26,21 @@
  *    selected track changes, the keys while the selected track changes, with ARP and the voice modes).
  * env: GOLDEN_UPDATE=1 rewrites GOLDEN_FILE, BUDGET_UPDATE=1 rewrites CPU_FILE (on purpose: review the
  * diff), VERBOSE=1 prints every render's numbers, JOBS=n children at once (default 8). */
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#if !defined(FELUCCA_SNES) || FELUCCA_SNES
+/* the user slots (a RAM image): the SNES engine's bank in USR1.. (tools/gen_brr.py --bank build/snes_bank/test,
+ * tests/run_tests.sh), so its presets past the built-in waves sound */
+static unsigned char snes_test_slots[4 * 0x14000];
+#define SMP_USER_XIP(k) ((const uint8_t *)snes_test_slots + (k) * SMP_USER_SIZE)
+#endif
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
+#if FELUCCA_SNES
+#include "snes_bankfile.h"
+#endif
 #ifdef __APPLE__
 #include <libproc.h>
 #include <sys/resource.h>
@@ -812,6 +824,13 @@ int main(int argc, char **argv)
     const char *gpath = argc > 1 ? argv[1] : "tests/golden.txt";
     const char *cpath = argc > 2 ? argv[2] : "tests/cpu_baseline.txt";
     int gupd = getenv("GOLDEN_UPDATE") != 0, cupd = getenv("BUDGET_UPDATE") != 0, verbose = getenv("VERBOSE") != 0;
+#if FELUCCA_SNES
+    if (!snes_test_load("build/snes_bank/test", 0)) {
+        fprintf(stderr, "regress: no SNES bank: tools/gen_brr.py --bank build/snes_bank/test first\n");
+        return 2;
+    }
+    snes_bank_scan();
+#endif
     uint32_t jobs_at_once = getenv("JOBS") ? (uint32_t)atoi(getenv("JOBS")) : 8u;
     static const char *const MN[4] = {"POLY", "MONO", "LEGATO", "UNISON"};
     static const char *const SN[6] = {"dry", "chorus", "delay", "reverb", "all", "dist"};
