@@ -109,6 +109,9 @@ static int ed_smp_erase(uint32_t k, uint32_t all)  /* header sector, or the whol
 {
     uint32_t i, took;
     int rc = 0;
+#if FELUCCA_SNES
+    snes_bank_drop(k);                             /* (a bank this slot is part of goes, its voices first) */
+#endif
     usr_nz[k] = 0;
     for (i = 0; i < 16u; i++)
         usr_zone[k][i].n = 0;                     /* a sounding voice ends instead of reading 0xFF */
@@ -127,6 +130,23 @@ static int ed_smp_end(uint32_t k, const uint8_t *a, uint32_t na)
         return 6;                                  /* no BEGIN first (a header over a header: flash ANDs them) */
     if (ed_unpack7(a, na, ed_smp_buf, sizeof(smp_user_hdr_t)) != sizeof(smp_user_hdr_t))
         return 1;
+#if FELUCCA_SNES
+    if (h->magic == SNES_SLOT_MAGIC) {             /* a part of an SNES bank (eng_snes.c): its directory and
+                                                    * samples are checked when the bank is whole (snes_bank_scan) */
+        if (!snes_slot_ok((const snes_slot_hdr_t *)ed_smp_buf))
+            return 2;
+        ed_smp_open[k] = 0;
+        ed_smp_inval(k);
+        if (st_crc32(smp_user_xip(k) + SMP_USER_DATA, h->data_len) != h->crc)
+            return 3;
+        if (fl_write(ed_smp_slot(k), ed_smp_buf, sizeof(smp_user_hdr_t)))
+            return 4;
+        ed_smp_inval(k);
+        smp_user_scan(k);                          /* (a sample set no more) */
+        snes_bank_scan();
+        return 0;
+    }
+#endif
     if (h->magic != SMP_USER_MAGIC || h->version != 1 || !h->nz || h->nz > 16u ||
         h->data_len > SMP_USER_SIZE - SMP_USER_DATA)
         return 2;
@@ -442,6 +462,10 @@ static const uint8_t *ed_bk_obj(uint32_t id, uint32_t *len)   /* 0 = no such obj
         if (h->magic == SMP_USER_MAGIC && h->version == 1u && h->nz && h->nz <= 16u &&
             h->data_len <= SMP_USER_SIZE - SMP_USER_DATA)
             *len = SMP_USER_DATA + h->data_len;
+#if FELUCCA_SNES
+        if (snes_slot_ok((const snes_slot_hdr_t *)h))   /* an SNES bank's part: kept as it is */
+            *len = SMP_USER_DATA + h->data_len;
+#endif
         return smp_user_xip(id - 32u);
     }
     return 0;
@@ -778,12 +802,16 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         for (i = 0; i < SMP_USER_SLOTS; i++) {
             const smp_user_hdr_t *h = (const smp_user_hdr_t *)smp_user_xip(i);
             char nm[9] = {0};
-            uint32_t j;
-            ed_b(usr_nz[i]);
-            for (j = 0; usr_nz[i] && j < 8u; j++)
+            uint32_t j, used = usr_nz[i];
+#if FELUCCA_SNES
+            if (snes_slot_ok((const snes_slot_hdr_t *)h))   /* an SNES bank's part: 0x7F "zones", in use */
+                used = 0x7Fu;
+#endif
+            ed_b(used);
+            for (j = 0; used && j < 8u; j++)
                 nm[j] = h->name[j] >= 32 && h->name[j] < 127 ? h->name[j] : 0;
             ed_str(nm, 8);
-            ed_b(usr_nz[i] ? (h->data_len + 1023u) / 1024u : 0u);
+            ed_b(used ? (h->data_len + 1023u) / 1024u : 0u);
         }
         break;
     case ED_UP_LIST: {                                     /* start, count -> start, count, total, per slot: used, engine, name */

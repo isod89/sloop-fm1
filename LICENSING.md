@@ -12,9 +12,9 @@ Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 
 ## What is code (GPL-3.0-only)
 
-Every file in this tree that carries an `SPDX-License-Identifier: GPL-3.0-only` header (one source file
-carries another: `firmware/src/fm6_core.c`, msfa, Apache-2.0, below; the firmware built with it is
-GPL-3.0-only as a whole):
+Every file in this tree that carries an `SPDX-License-Identifier: GPL-3.0-only` header (two source files
+carry another: `firmware/src/fm6_core.c`, msfa, Apache-2.0, and `firmware/src/snes_dsp.c`, snes_spc,
+LGPL-2.1-or-later, below; the firmware built with them is GPL-3.0-only as a whole):
 
 - the firmware: `firmware/` (app, HAL, update loader)
 - the build script and tools: `build.sh`, `tools/`
@@ -45,6 +45,8 @@ assets, is entirely governed by the GPL.
 | What | Licence | Where |
 | --- | --- | --- |
 | Instrument and drum samples (Versilian Studios VSCO-2 CE, VCSL; Sonic Pi: SCRCH) | CC0 1.0 | `assets/samples-cc0/`, provenance in `ATTRIBUTION.txt` there |
+| The SNES engine's bank: short excerpts of Versilian Studios VSCO-2 CE and VCSL recordings (`tools/fetch_snes_cc0.py`) | CC0 1.0 | `assets/snes-cc0/`, provenance in `ATTRIBUTION.txt` there |
+| snes_spc 0.9.0 by Shay Green (<http://www.slack.net/~ant/>): the SNES engine's S-DSP (BRR decoding, Gaussian interpolation, ADSR and GAIN envelopes, noise, echo and FIR), ported to C for one voice at a time; `tools/gen_brr.py`'s BRR decoder follows its `decode_brr` | LGPL-2.1-or-later | `firmware/src/snes_dsp.c`, `LICENSES/LGPL-2.1-snes_spc.txt` |
 | Terminus font 8x16 (ter-u16n): the FM-1's screen, and the web editor's font (`tools/gen_webfont.py` makes it a TrueType font inlined in `web/editor.html`) | SIL OFL 1.1 | `assets/fonts/ter-u16n.bdf`, `assets/fonts/Terminus-LICENSE.txt` |
 | Fukiai icon font (Hügelton Instruments), web editor only | MIT | `web/fukiai.ttf`, `web/FUKIAI-LICENSE.txt` |
 | CrispyZebra by Leo Kuroshita (<https://github.com/hugelton/CrispyZebra>): the PHASE engine's waveforms are a C port of its oscillator | GPL-3.0 | `firmware/src/eng_phase.c` |

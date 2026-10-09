@@ -7,6 +7,9 @@
   fm1_sample_upload.py load SLOT NAME file.wav[:ROOT[:LO-HI]] ...   (SLOT 1..4)
   fm1_sample_upload.py erase SLOT
   fm1_sample_upload.py build NAME OUT_PREFIX file.wav[...] ...      (no device: writes OUT_PREFIX.hdr / .bin)
+  fm1_sample_upload.py raw SLOT PREFIX                              (a built slot: PREFIX.hdr / PREFIX.bin)
+  fm1_sample_upload.py snes SLOT [--own-only]                       (the SNES engine's bank: tools/gen_brr.py
+                                                                     --bank builds it; part N goes to SLOT + N)
 
 Each file becomes one zone: mono, 22050 Hz, IMA ADPCM (sampleio.py, the same encoder
 as the built-in sets and the web editor). ROOT is a MIDI note (default: from the file
@@ -87,10 +90,49 @@ def build(name, specs):
     return sio.user_slot(name, zones)
 
 
+def upload(link, slot, hdr, data, what):
+    """a built slot (its 480-byte header, its data) into user slot `slot` (0..3): BEGIN, WRITE..., END"""
+    print(f"USR{slot + 1} {what}: {len(data)} B")
+    if link.req(11, [slot])[1]:
+        sys.exit("begin failed")
+    t0 = time.time()
+    for off in range(0, len(data), 256):
+        a = sio.SLOT_DATA_OFF + off
+        r = link.req(12, [slot, a & 0x7F, (a >> 7) & 0x7F, (a >> 14) & 0x7F] + pack7(data[off:off + 256]))
+        if r[4]:
+            sys.exit(f"write at {a:#x} failed ({r[4]})")
+        print(f"\r  {min(off + 256, len(data))} / {len(data)}", end="", flush=True)
+    r = link.req(13, [slot] + pack7(hdr), 5)
+    print(f"\n  {time.time() - t0:.1f} s, end:", "ok" if r[1] == 0 else f"FAILED ({r[1]}, {RC.get(r[1], '?')})")
+    return r[1] == 0
+
+
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("info", "load", "erase", "build"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("info", "load", "erase", "build", "raw", "snes"):
         sys.exit(__doc__)
     cmd = sys.argv[1]
+    if cmd in ("raw", "snes"):                     # a built slot, or the SNES engine's bank (one slot per part)
+        if len(sys.argv) < 3 or sys.argv[2] not in ("1", "2", "3", "4"):
+            sys.exit(__doc__)
+        slot = int(sys.argv[2]) - 1
+        if cmd == "raw":
+            if len(sys.argv) != 4:
+                sys.exit(__doc__)
+            parts = [(Path(sys.argv[3] + ".hdr").read_bytes(), Path(sys.argv[3] + ".bin").read_bytes(), sys.argv[3])]
+        else:
+            import gen_brr
+            out = Path(__file__).resolve().parents[1] / "build" / "snes_bank" / "bank"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            built = gen_brr.build_bank(str(out), "--own-only" in sys.argv[3:])
+            parts = [(Path(p + ".hdr").read_bytes(), Path(p + ".bin").read_bytes(), f"SNES bank {k + 1}/{len(built)}")
+                     for k, (p, _) in enumerate(built)]
+        if slot + len(parts) > 4:
+            sys.exit(f"the bank needs {len(parts)} slots: from USR{slot + 1} that goes past USR4")
+        link = Link()
+        for k, (hdr, data, what) in enumerate(parts):
+            if not upload(link, slot + k, hdr, data, what):
+                sys.exit(1)
+        return
     if cmd in ("load", "build"):
         if len(sys.argv) < 5:
             sys.exit(__doc__)
@@ -114,24 +156,14 @@ def main():
         for k in range(n):
             nz = r[i]
             j = r.index(0, i + 1)
-            print(f"USR{k + 1}: {'empty' if not nz else f'{nz} zones, {bytes(r[i + 1:j]).decode()}, {r[j + 1]} KiB'}")
+            what = "SNES bank" if nz == 0x7F else f"{nz} zones"
+            print(f"USR{k + 1}: {'empty' if not nz else f'{what}, {bytes(r[i + 1:j]).decode()}, {r[j + 1]} KiB'}")
             i = j + 2
         return
     if cmd == "erase":
         print("erase:", "ok" if link.req(14, [slot], 10)[1] == 0 else "FAILED")
         return
-    print(f"USR{slot + 1} {sys.argv[3]}: {len(data)} B ADPCM, {hdr[6]} zones")
-    if link.req(11, [slot])[1]:
-        sys.exit("begin failed")
-    t0 = time.time()
-    for off in range(0, len(data), 256):
-        a = sio.SLOT_DATA_OFF + off
-        r = link.req(12, [slot, a & 0x7F, (a >> 7) & 0x7F, (a >> 14) & 0x7F] + pack7(data[off:off + 256]))
-        if r[4]:
-            sys.exit(f"write at {a:#x} failed ({r[4]})")
-        print(f"\r  {min(off + 256, len(data))} / {len(data)}", end="", flush=True)
-    r = link.req(13, [slot] + pack7(hdr), 5)
-    print(f"\n  {time.time() - t0:.1f} s, end:", "ok" if r[1] == 0 else f"FAILED ({r[1]}, {RC.get(r[1], '?')})")
+    upload(link, slot, hdr, data, f"{sys.argv[3]} ({hdr[6]} zones, ADPCM)")
 
 
 if __name__ == "__main__":

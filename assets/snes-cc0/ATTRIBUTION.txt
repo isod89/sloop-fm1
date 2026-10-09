@@ -1,0 +1,48 @@
+Felucca SNES engine - source recordings (tools/fetch_snes_cc0.py)
+Licence: CC0 1.0 Universal (public domain dedication)
+  https://creativecommons.org/publicdomain/zero/1.0/
+Sources: Versilian Studios (Sam Gossner)
+  VSCO-2 Community Edition  https://github.com/sgossner/VSCO-2-CE  (repository licence: CC0-1.0)
+  VCSL                      https://github.com/sgossner/VCSL       (repository licence: CC0-1.0)
+Each file: the start of the recording, mixed to mono, normalized, 16-bit.
+
+BASS.wav  <-  sgossner/VSCO-2-CE: Strings/Solo Contrabass/Pizz/BKCtbss_Pizz_E0_v1_rr1.wav
+BASSOON.wav  <-  sgossner/VSCO-2-CE: Woodwinds/Bassoon/sus/PSBassoon_F1_v2_1.wav
+BELLS.wav  <-  sgossner/VCSL: Idiophones/Struck Idiophones/Tubular Bells 1/chimes_D3_ff_rr1.wav
+CHAT.wav  <-  sgossner/VCSL: Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitC_v3_rr1_Mid.wav
+CLAP.wav  <-  sgossner/VCSL: Idiophones/Struck Idiophones/Claps/Clap_rr1.wav
+CLARNET.wav  <-  sgossner/VSCO-2-CE: Woodwinds/Clarinet/susLong/DCClar_susLong_D3_v2_rr1_sum.wav
+COWBELL.wav  <-  sgossner/VCSL: Idiophones/Struck Idiophones/Cowbells/Cowbell1_Normal_v3_rr1_Mid.wav
+CRASH.wav  <-  sgossner/VSCO-2-CE: VSCO 1 Percussion/varMetal/Cymbals/clash/crash_hit_ff_loose.wav
+E_PIANO.wav  <-  sgossner/VCSL: Electrophones/TX81Z/FM Piano/FMPiano_G#4_vl2.wav
+FLUTE.wav  <-  sgossner/VSCO-2-CE: Woodwinds/Flute/susNV/LDFlute_susNV_C4_v1_1.wav
+GLOCK.wav  <-  sgossner/VSCO-2-CE: Percussion/Glock/glock_medium_C5.wav
+GUITAR.wav  <-  sgossner/VCSL: Chordophones/Composite Chordophones/Strumstick/Finger/Strumstick_Finger_Str2_Main_B2_vl2_rr1.wav
+HARMNCA.wav  <-  sgossner/VCSL: Aerophones/Free Aerophones/Harmonica-Hohner-Super64/Sustains/Normal/Hohner-Super64_Normal _G3.wav
+HARP.wav  <-  sgossner/VSCO-2-CE: Strings/Harp/KSHarp_A4_mf.wav
+HARPSI.wav  <-  sgossner/VCSL: Chordophones/Zithers/Harpsichord, French/Sustains/Harpsi2_Normal_F#3_rr1_Main.wav
+HORN.wav  <-  sgossner/VSCO-2-CE: Brass/F Horn/sus/MOHorn_sus_D2_v2_1.wav
+KALIMBA.wav  <-  sgossner/VCSL: Idiophones/Plucked Idiophones/Kalimba, Tanzania/MBira3_pluck_Main_G3_k6_50_100_rr2.wav
+LO_STR.wav  <-  sgossner/VSCO-2-CE: Strings/Cello Section/susvib/susvib_E1_v3_1.wav
+MARIMBA.wav  <-  sgossner/VSCO-2-CE: Percussion/Marimba/Marimba_hit_Outrigger_C4_loud_01.wav
+OBOE.wav  <-  sgossner/VSCO-2-CE: Woodwinds/Oboe/Sus/Oboe_Sus_F3_v3_Main.wav
+OCARINA.wav  <-  sgossner/VCSL: Aerophones/Edge-blown Aerophones/Ocarina, Typical/Sustains/Sus/StdOcarina_Sus_A3.wav
+OHAT.wav  <-  sgossner/VCSL: Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitO_rr1_Mid.wav
+PIZZ.wav  <-  sgossner/VSCO-2-CE: Strings/Violin Section/Pizz/VlnEns_Pizz_B2_v2_rr1.wav
+RECORDR.wav  <-  sgossner/VCSL: Aerophones/Edge-blown Aerophones/Baroque Alto Recorder/Sustain/AltRecorder_Sus_G#3_rr1_Main.wav
+SNARE.wav  <-  sgossner/VCSL: Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitSN_v5_rr1_Mid.wav
+STRINGS.wav  <-  sgossner/VSCO-2-CE: Strings/Violin Section/susVib/VlnEns_susVib_C4_v2.wav
+TAMB.wav  <-  sgossner/VCSL: Idiophones/Struck Idiophones/Tambourine 1/Tamb1_Hit_v2_rr1_Mid.wav
+TIMPANI.wav  <-  sgossner/VSCO-2-CE: Percussion/Timpani/Timpani2_Hit_v3_rr1_Sum.wav
+TOM.wav  <-  sgossner/VCSL: Membranophones/Struck Membranophones/Tom 2/Stick/TomL_HitS_v3_rr1_Mid.wav
+TREMOLO.wav  <-  sgossner/VSCO-2-CE: Strings/Violin Section/Trem/VlnEns_Trem_B2_v2.wav
+TROMBNE.wav  <-  sgossner/VSCO-2-CE: Brass/Tenor Trombone/sus/tenortbn_sus_A#1_v2_1.wav
+TRUMPET.wav  <-  sgossner/VSCO-2-CE: Brass/Trumpet/sus/Sum_SHTrumpet_sus_A#3_v3_rr1.wav
+TUBA.wav  <-  sgossner/VSCO-2-CE: Brass/Tuba/sus/Tuba3_sus_A#0_v2_rr1_Mid.wav
+VIBES.wav  <-  sgossner/VCSL: Idiophones/Struck Idiophones/Vibraphone/Soft Mallets/Vibes_soft_G3_v2_rr1_Main.wav
+VIOLIN.wav  <-  sgossner/VSCO-2-CE: Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_E5_f.wav
+XYLO.wav  <-  sgossner/VSCO-2-CE: Percussion/Xylo/Xylo_Medium_G4_ff_01_far.wav
+
+from-samples-cc0/ (the two recordings the bank took from Felucca's assets/samples-cc0, CC0):
+from-samples-cc0/PIANO.wav  <-  sgossner/VCSL: Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_C4_v2_rr1_Player.wav
+from-samples-cc0/SAX.wav    <-  sgossner/VCSL: Aerophones/Reed Aerophones/Tenor Saxophone/Non-Vibrato/BrettTenor_NV_Main_A#3_vl2_rr1.wav

@@ -69,6 +69,27 @@ The CC0 instrument samples that the SAMPLE engine uses are in `assets/samples-cc
 again from the source repositories. Without that folder the build still works and the
 SAMPLE engine has only the generated drum kit.
 
+## The SNES engine's bank
+
+The SNES engine (engine 12, `firmware/src/eng_snes.c`; `FELUCCA_SNES=0` builds without it) has six single-cycle
+waves in the firmware (INST 0..5: SQUARE PULSE SAW SINE SYNBASS ORGAN). Its other instruments, its two drum kits
+(KIT, E.KIT) and your own samples are a bank in the user sample slots, outside the firmware:
+
+```
+python tools/fm1_sample_upload.py snes 1          # build the bank and load it into USR1 and the slots after it
+python tools/gen_brr.py --bank build/bank          # or only build it: build/bank.N.hdr / .bin, one per slot
+python tools/fm1_sample_upload.py raw 3 build/bank.0   # ... and load a part into a slot of your choice
+```
+
+The standard bank (33 instruments and 2 kits from `assets/snes-cc0/`, ~84 KB) takes two slots; the second has
+~77 KB left for your own: put `.spc` files (every BRR sample of the sound RAM, its root measured) or `.brr` files
+in `assets/snes-local/` (not in git) before building it; `NAME.txt` beside an `.spc` chooses (`keep=0,2,5-9`,
+`skip=3`, `root11=64`). `--own-only` leaves the standard bank out. A bank takes up to four slots (127 INST values
+at most). The engine finds it at boot and after an upload; erasing or overwriting one of its slots removes it
+(its notes stop). Without a bank, INST stops at the six built-in waves and the presets past them are silent.
+`fetch_snes_cc0.py` downloads the recordings again. Only use `.spc` files from games you own: a bank made from
+them is yours alone.
+
 ## Tests
 
 ```

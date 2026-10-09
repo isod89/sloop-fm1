@@ -128,6 +128,20 @@ run "SLICER: no clicks, timing, sync with the sequencer, STUT, cost, demos" "$OU
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/fm6_test" tests/fm6_test.c -lm
 mkdir -p build/fm6_demo
 run "FM6: algorithms, envelopes, retrigger, DC, clipping, macros, patch formats, voices, the bank, demos" "$OUT/fm6_test" build/fm6_demo
+# SNES (tests/snes_test.c): its bank (tools/gen_brr.py --bank) in a RAM image of the user slots; the voice against
+# snes_spc's SPC_DSP.cpp (tests/snes_ref.cpp) when SNES_SPC points at a snes_spc 0.9.0 checkout
+mkdir -p build/snes_bank build/snes_demo
+python3 tools/gen_brr.py --bank build/snes_bank/test >/dev/null
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/snes_test" tests/snes_test.c -lm
+S=${SNES_SPC:-vendor/snes_spc}/snes_spc
+if [ -f "$S/SPC_DSP.cpp" ] && command -v c++ >/dev/null 2>&1; then
+    c++ -O2 -w -I"$S" -Ibuild/gen -Itests -o "$OUT/snes_ref" tests/snes_ref.cpp
+    "$OUT/snes_ref" build/snes_bank/test "$OUT/snes_ref.bin" >/dev/null
+    run "SNES: the bank in the user slots, the S-DSP voice bit for bit against snes_spc, counters, presets, demos"         "$OUT/snes_test" build/snes_bank/test "$OUT/snes_ref.bin" build/snes_demo
+else
+    echo "== SNES: no snes_spc (set SNES_SPC to a checkout): the comparison with it skipped"
+    run "SNES: the bank in the user slots, counters, presets, demos" "$OUT/snes_test" build/snes_bank/test - build/snes_demo
+fi
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress" tests/regress.c -lm
 # the CPU budget: counted by the kernel on macOS; elsewhere under callgrind when valgrind is there (exact, ~45 s;
 # SKIP_CPU_VALGRIND=1 to time instead, which is only a rough check)
