@@ -19,6 +19,7 @@
  *   DRUMS   the grid: sound / step / hit / level knobs, GRID <-> KIT
  * then 20000 frames of random use: every draw stays on the screen. */
 #define FELUCCA_ARRANGER 1
+#define HOST_HAS_REAL_UI 1
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -115,6 +116,191 @@ static int fails;
 static void check(int ok, const char *what) { printf("ui: %-74s %s\n", what, ok ? "ok" : "FAIL"); fails += !ok; }
 static const char *sub_line(void) { return layer_sub_shown; }   /* the layer's sub line as last drawn (ui_layers.c) */
 
+/* a CC message on channel ch: status 0xB0 | ch, controller cc, value val */
+static uint32_t cc_pkt(uint32_t ch, uint32_t cc, uint32_t val)
+{
+    return 0xBu | (0xB0u | (ch & 15u)) << 8 | (cc & 127u) << 16 | (val & 127u) << 24;
+}
+static void send_cc(uint32_t ch, uint32_t cc, uint32_t val)
+{
+    midi_in_q[mi_w % MQ] = cc_pkt(ch, cc, val);
+    mi_w++;
+    events_block(CTL);
+}
+
+static void send_pc(uint32_t ch, uint32_t prog)
+{
+    midi_in_q[mi_w % MQ] = 0xCu | ((0xC0u | (ch & 15u)) << 8) | ((prog & 127u) << 16);
+    mi_w++;
+    events_block(CTL);
+}
+
+static void midi_cc_tests(void)
+{
+    printf("midi CC: Felucca 1.1.5 standard map (#103) per channel\n");
+    host_tracks_init();
+    song.g[G_DRCH] = 10;                              /* drum track on MIDI ch 10 */
+    song.g[G_ROUTE] = 0;                             /* normal routing (not clock-only) */
+
+    /* 1. Channel routing to synth parts 1..3 */
+    trk[0].p[P_LEVEL] = 50; trk[1].p[P_LEVEL] = 50; trk[2].p[P_LEVEL] = 50;
+    send_cc(0, 7, 127);                               /* Ch 1 -> Track 0 */
+    check(trk[0].p[P_LEVEL] == 127, "CC 7 on ch 1 sets track 1 level");
+    check(trk[1].p[P_LEVEL] == 50 && trk[2].p[P_LEVEL] == 50, "CC 7 on ch 1 leaves other tracks alone");
+
+    send_cc(1, 7, 110);                               /* Ch 2 -> Track 1 */
+    check(trk[1].p[P_LEVEL] == 110 && trk[0].p[P_LEVEL] == 127, "CC 7 on ch 2 sets track 2 level");
+
+    send_cc(2, 7, 95);                                /* Ch 3 -> Track 2 */
+    check(trk[2].p[P_LEVEL] == 95, "CC 7 on ch 3 sets track 3 level");
+
+    /* 2. Drum channel (ch 10 / index 9) */
+    song.g[G_DRLVL] = 40;
+    send_cc(9, 7, 120);                               /* CC 7 on drum channel sets G_DRLVL */
+    check(song.g[G_DRLVL] == 120, "CC 7 on drum channel sets G_DRLVL");
+
+    send_cc(9, 10, 64);                               /* CC 10 PAN on drum channel */
+    check(TDRUM->p[P_PAN] == 0, "CC 10 on drum channel sets drum PAN (centered)");
+
+    song.g[G_DRREV] = 20;
+    send_cc(9, 91, 85);                               /* CC 91 REV on drum channel */
+    check(song.g[G_DRREV] == 85, "CC 91 on drum channel sets G_DRREV");
+
+    song.g[G_DRDLY] = 15;
+    send_cc(9, 94, 75);                               /* CC 94 DLY on drum channel (2.5) */
+    check(song.g[G_DRDLY] == 75, "CC 94 on drum channel sets G_DRDLY");
+
+    TDRUM->p[P_TFLT] = 0;
+    send_cc(9, 74, 90);                               /* CC 74 on drum channel sets drum track filter */
+    check(TDRUM->p[P_TFLT] == 26, "CC 74 on drum channel sets drum track filter P_TFLT");
+
+    /* Synth-only CCs are ignored on the drum track */
+    TDRUM->p[P_ATK] = 0;
+    send_cc(9, 73, 100);
+    check(TDRUM->p[P_ATK] == 0, "CC 73 (ATK) is ignored on drum track");
+    TDRUM->p[P_GLIDE] = 0;
+    send_cc(9, 5, 100);
+    check(TDRUM->p[P_GLIDE] == 0, "CC 5 (GLIDE) is ignored on drum track");
+
+    /* 3. Unassigned channel follows selected track */
+    song.sel = 1;                                     /* Track 2 selected */
+    trk[1].p[P_REL] = 20;
+    send_cc(4, 72, 80);                               /* Ch 5 (unassigned) -> TSEL (Track 2) */
+    check(trk[1].p[P_REL] == 80, "CC 72 on unassigned channel reaches selected track");
+
+    /* 4. Standard CC parameters scaling on synth */
+    send_cc(0, 5, 127);                               /* CC 5 GLIDE max */
+    check(trk[0].p[P_GLIDE] == 127, "CC 5 sets GLIDE to max");
+    send_cc(0, 5, 0);                                 /* CC 5 GLIDE min */
+    check(trk[0].p[P_GLIDE] == 0, "CC 5 sets GLIDE to min");
+
+    send_cc(0, 10, 0);                                /* CC 10 PAN min (-64) */
+    check(trk[0].p[P_PAN] == -64, "CC 10 val 0 scales to PAN -64");
+    send_cc(0, 10, 127);                              /* CC 10 PAN max (+63) */
+    check(trk[0].p[P_PAN] == 63, "CC 10 val 127 scales to PAN 63");
+    send_cc(0, 10, 64);                               /* CC 10 PAN center (0) */
+    check(trk[0].p[P_PAN] == 0, "CC 10 val 64 scales to PAN 0");
+
+    send_cc(0, 73, 50); check(trk[0].p[P_ATK] == 50, "CC 73 sets ATK");
+    send_cc(0, 75, 60); check(trk[0].p[P_DEC] == 60, "CC 75 sets DEC");
+    send_cc(0, 91, 70); check(trk[0].p[P_REV] == 70, "CC 91 sets REV");
+    send_cc(0, 93, 80); check(trk[0].p[P_CHOR] == 80, "CC 93 sets CHOR");
+    send_cc(0, 94, 90); check(trk[0].p[P_DLY] == 90, "CC 94 sets DLY");
+
+    /* 5. Engine brightness (CC 74) and resonance (CC 71) */
+    set_engine_of(&trk[0], 0);                        /* ANALOG */
+    send_cc(0, 74, 115);
+    check(trk[0].p[P_E4] == 115, "CC 74 sets ANALOG CUT (E4)");
+    send_cc(0, 71, 45);
+    check(trk[0].p[P_E5] == 45, "CC 71 sets ANALOG RES (E5)");
+
+    set_engine_of(&trk[0], 2);                        /* PHASE */
+    send_cc(0, 74, 99);
+    check(trk[0].p[P_E2] == 99, "CC 74 sets PHASE DCW (E2)");
+    trk[0].p[P_E5] = 12;
+    send_cc(0, 71, 55);                               /* PHASE has no resonance */
+    check(trk[0].p[P_E5] == 12, "CC 71 ignored for engine without resonance");
+
+    set_engine_of(&trk[0], 9);                        /* FM6 */
+    send_cc(0, 74, 127);                              /* bipolar MLVL: 0..127 -> -64..63 */
+    check(trk[0].p[P_E2] == 63, "CC 74 sets FM6 MLVL (E2) max");
+
+    set_engine_of(&trk[0], 10);                       /* PHYS (2.5) */
+    send_cc(0, 74, 105);
+    check(trk[0].p[P_E2] == 105, "CC 74 sets PHYS BRIT (E2)");
+
+    set_engine_of(&trk[0], 11);                       /* NOISE (2.5) */
+    send_cc(0, 74, 88);
+    check(trk[0].p[P_E2] == 88, "CC 74 sets NOISE FREQ (E2)");
+    send_cc(0, 71, 62);
+    check(trk[0].p[P_E3] == 62, "CC 71 sets NOISE RES (E3)");
+
+    set_engine_of(&trk[0], 1);                        /* DIGITAL (no internal cut/res, fallback to P_TFLT) */
+    trk[0].p[P_TFLT] = 0;
+    send_cc(0, 74, 127);
+    check(trk[0].p[P_TFLT] == 63, "CC 74 falls back to P_TFLT for engine without internal timbre");
+
+    /* 6. Clock-only mode ignores CCs */
+    song.g[G_ROUTE] = 1;                              /* GLO > SYSTEM > IN = CLOCK */
+    trk[0].p[P_LEVEL] = 40;
+    send_cc(0, 7, 100);
+    check(trk[0].p[P_LEVEL] == 40, "CC 7 ignored when IN = CLOCK (G_ROUTE)");
+    song.g[G_ROUTE] = 0;
+
+    /* 7. Unmapped CCs are ignored */
+    trk[0].p[P_SUS] = 33;
+    send_cc(0, 16, 127);                              /* CC 16 unmapped */
+    send_cc(0, 64, 127);                              /* CC 64 unmapped */
+    check(trk[0].p[P_SUS] == 33, "unmapped CCs do not change parameters");
+}
+
+static void midi_pc_tests(void)
+{
+    printf("midi PC: Program Change per channel (presets, FM6 patches, drum kits)\n");
+    host_tracks_init();
+    song.g[G_DRCH] = 10;                              /* drum track on MIDI ch 10 */
+
+    /* 1. Track 1 (ch 1) synth preset */
+    set_engine_of(&trk[0], 0);                        /* ANALOG */
+    send_pc(0, 3);
+    check(trk[0].preset == 3, "PC on ch 1 sets track 1 preset");
+
+    /* 2. Track 2 (ch 2) synth preset */
+    set_engine_of(&trk[1], 1);                        /* DIGITAL */
+    send_pc(1, 2);
+    check(trk[1].preset == 2, "PC on ch 2 sets track 2 preset");
+
+    /* 3. Drum track (ch 10 / index 9) selects drum kit */
+    TDRUM->p[P_E0] = 0;
+    send_pc(9, 5);
+    check(TDRUM->p[P_E0] == 5, "PC on drum channel sets drum kit");
+
+    /* Drum kit wrapping */
+    send_pc(9, DRUM_KITS + 2);
+    check(TDRUM->p[P_E0] == 2, "PC on drum channel wraps at DRUM_KITS");
+
+    /* 4. FM6 engine DX7 patch selection (PTCH, P_E7) */
+    set_engine_of(&trk[2], 9);                        /* FM6 */
+    send_pc(2, 7);
+    check(trk[2].p[P_E7] == 7, "PC on FM6 track sets DX7 patch slot");
+
+    send_pc(2, FM6_NSLOT + 3);
+    check(trk[2].p[P_E7] == 3, "PC on FM6 track wraps at FM6_NSLOT");
+
+    /* 5. Unassigned channel follows selected track */
+    song.sel = 1;                                     /* Track 2 selected */
+    set_engine_of(&trk[1], 0);
+    send_pc(4, 4);                                    /* Ch 5 (unassigned) -> TSEL */
+    check(trk[1].preset == 4, "PC on unassigned channel reaches selected track");
+
+    /* 6. Clock-only mode ignores PC */
+    song.g[G_ROUTE] = 1;                              /* GLO > SYSTEM > IN = CLOCK */
+    trk[0].preset = 1;
+    send_pc(0, 5);
+    check(trk[0].preset == 1, "PC ignored when IN = CLOCK (G_ROUTE)");
+    song.g[G_ROUTE] = 0;
+}
+
 #ifndef UI_PAGES_HARNESS_ONLY                       /* (tests/stress_test.c: the harness, its own main) */
 int main(int argc, char **argv)
 {
@@ -143,6 +329,8 @@ int main(int argc, char **argv)
     settings.palette = 4;
     palette_set(4);
     host_tracks_init();
+    midi_cc_tests();
+    midi_pc_tests();
     for (i = 0; i < NPART; i++) { set_engine_of(&trk[i], TRK_DEF[i][0]); apply_preset_to(&trk[i], TRK_DEF[i][1]); trk[i].engine = trk[i].eng_req; }
     TDRUM->p[P_E0] = DRUM_DEFAULT_KIT;
     sloop_splash(); ppm("page-splash");
