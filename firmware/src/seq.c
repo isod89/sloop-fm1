@@ -2016,23 +2016,50 @@ static track_t *midi_route(uint32_t ch, uint32_t note, int on)
     return t;
 }
 
-/* SLOOP 2.5: MIDI CCs set track parameters, after Felucca 1.1.5's standard CC map (#103, Leo Kuroshita).
+/* Felucca 1.1.5 standard CC map (#103, Leo Kuroshita): standard CCs bound to track parameters.
  * A CC acts on the track its channel plays, as the notes do (1-3 the synths, the drum channel the drum
  * track, 4-16 the selected track), and sets its parameter as a knob would: 0..127 over the parameter's
- * range, 64 the middle of a bipolar one. 5 GLIDE, 7 LEVEL, 10 PAN, 71 the engine's resonance (RES or Q;
- * an engine without one ignores it), 72 / 73 / 75 release / attack / decay, 74 the track's FILTER (64 off,
- * below a low-pass, above a high-pass: on every engine and the drums), 91 / 93 / 94 the reverb, chorus and
- * delay sends. The drum track takes 7, 91 and 94 as GLO > DRUMS LVL, REV and DLY (2.5), and 10 and 74. */
+ * range (64 the middle of a bipolar one). 5 GLIDE, 7 LEVEL, 10 PAN, 71 resonance, 72 / 73 / 75 release /
+ * attack / decay, 74 engine timbre/cutoff (or track filter if none), 91 / 93 / 94 reverb, chorus and
+ * delay sends. On the drum track: 7, 91, 94 set GLO > DRUMS LVL, REV and DLY (2.5), 10 sets PAN, and 74
+ * sets the drum track filter.
+ * Engine brightness (CC 74) and resonance (CC 71) map to engine edit parameters (1-based index,
+ * 0 = none; CC 74 falls back to P_TFLT if an engine has no internal timbre control):
+ *   ANALOG: CUT = E4, RES = E5
+ *   DIGITAL: - (fallback P_TFLT)
+ *   PHASE: DCW = E2, RES = none
+ *   LOFI: TONE = E7, RES = none
+ *   SAMPLE: CUT = E4, RES = none
+ *   VOICE (FORMANT): - (fallback P_TFLT), RES = Q (E6)
+ *   TRIO: CUT = E5, RES = E6
+ *   WHEEL (DRAWBAR): - (fallback P_TFLT)
+ *   GRAIN: TONE = E7, RES = none
+ *   FM6: MLVL = E2, RES = none
+ *   PHYS: BRIT = E2, RES = none
+ *   NOISE: FREQ = E2, RES = E3
+ *   SLICE: TONE = E7, RES = none */
+#define MCC_CUT 0xFEu
 #define MCC_RES 0xFFu
 static const uint8_t MIDI_CC_MAP[][2] = {
-    {5, P_GLIDE}, {7, P_LEVEL}, {10, P_PAN}, {71, MCC_RES}, {72, P_REL}, {73, P_ATK}, {74, P_TFLT}, {75, P_DEC},
+    {5, P_GLIDE}, {7, P_LEVEL}, {10, P_PAN}, {71, MCC_RES}, {72, P_REL}, {73, P_ATK}, {74, MCC_CUT}, {75, P_DEC},
     {91, P_REV}, {93, P_CHOR}, {94, P_DLY},
+};
+/* nibble high = CC74 Cutoff/Timbre (1-based E index, 0 = none / fallback P_TFLT), nibble low = CC71 Resonance */
+static const uint8_t MIDI_CC_ENG[NENGINES] = {
+    0x56, 0x00, 0x30, 0x80, 0x50, 0x07, 0x67, 0x00,   /* ANALOG CUT RES, -, PHASE DCW, LOFI TONE, SAMPLE CUT, VOICE Q,
+                                                       * TRIO CUT RES, WHEEL - */
+    0x80, 0x30, 0x30, 0x34,                           /* GRAIN TONE, FM6 MLVL, PHYS BRIT, NOISE FREQ RES */
+#if FELUCCA_SLICE
+    0x80,                                             /* SLICE TONE */
+#endif
 };
 static void __attribute__((noinline)) midi_cc(track_t *t, uint32_t cc, uint32_t value)
 {
     const param_desc_t *d = 0;
     int16_t *slot = 0;
-    uint32_t i, id = 0xFFFFu;
+    uint32_t i, id = 0xFFFFu, e;
+    if (!t)
+        return;
     for (i = 0; i < NELEM(MIDI_CC_MAP); i++)
         if (MIDI_CC_MAP[i][0] == cc)
             id = MIDI_CC_MAP[i][1];
@@ -2043,17 +2070,28 @@ static void __attribute__((noinline)) midi_cc(track_t *t, uint32_t cc, uint32_t 
             id = id == P_LEVEL ? G_DRLVL : id == P_REV ? G_DRREV : G_DRDLY;
             d = &GP[id];
             slot = &song.g[id];
-        } else if (id == P_PAN || id == P_TFLT) {
+        } else if (id == P_PAN) {
             d = &TP[id];
             slot = &t->p[id];
+        } else if (id == MCC_CUT) {
+            d = &TP[P_TFLT];
+            slot = &t->p[P_TFLT];
+        } else {
+            return;
         }
-    } else if (id == MCC_RES) {
-        const engine_t *e = ENGINES[t->eng_req % NENGINES];
-        for (i = 0; i < 8u && !d; i++)
-            if (str_eq(e->edit[i].label, "RES") || str_eq(e->edit[i].label, "Q")) {
-                d = &e->edit[i];
-                slot = &t->p[P_E0 + i];
-            }
+    } else if (id >= MCC_CUT) {
+        uint32_t e_idx = t->eng_req % NENGINES;
+        e = (MIDI_CC_ENG[e_idx] >> (id == MCC_CUT ? 4 : 0)) & 15u;
+        if (e) {
+            id = P_E0 + e - 1u;
+            d = &ENGINES[e_idx]->edit[e - 1u];
+            slot = &t->p[id];
+        } else if (id == MCC_CUT) {
+            d = &TP[P_TFLT];
+            slot = &t->p[P_TFLT];
+        } else {
+            return;
+        }
     } else {
         d = &TP[id];
         slot = &t->p[id];

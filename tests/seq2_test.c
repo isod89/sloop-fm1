@@ -1135,12 +1135,12 @@ static void t_midicc(void)
     cc_push(0, 7, 0); cc_push(0, 10, 127); cc_push(0, 74, 64); cc_push(0, 72, 127); cc_push(0, 73, 0);
     cc_push(0, 75, 64); cc_push(0, 5, 127); cc_push(0, 91, 127); cc_push(0, 93, 64); cc_push(0, 94, 1);
     run_block(); run_block();
-    check(a->p[P_LEVEL] == 0 && a->p[P_PAN] == 63 && a->p[P_TFLT] == 0 && a->p[P_REL] == 127 && a->p[P_ATK] == 0
+    check(a->p[P_LEVEL] == 0 && a->p[P_PAN] == 63 && a->p[P_E4] == 64 && a->p[P_REL] == 127 && a->p[P_ATK] == 0
           && a->p[P_DEC] == 64 && a->p[P_GLIDE] == 127 && a->p[P_REV] == 127 && a->p[P_CHOR] == 64 && a->p[P_DLY] == 1,
-          "2.5: CC 7 10 74 72 73 75 5 91 93 94 on ch 1 set track 1 (64 = the middle of PAN / FILTER)");
+          "2.5: CC 7 10 74 72 73 75 5 91 93 94 on ch 1 set track 1 (CC 74 = engine cutoff/timbre)");
     cc_push(0, 10, 0); cc_push(0, 74, 0); cc_push(0, 7, 127);
     run_block(); run_block();
-    check(a->p[P_PAN] == -64 && a->p[P_TFLT] == -64 && a->p[P_LEVEL] == 127, "2.5: CC 0 / 127: the ends of the range");
+    check(a->p[P_PAN] == -64 && a->p[P_E4] == 0 && a->p[P_LEVEL] == 127, "2.5: CC 0 / 127: the ends of the range");
     cc_push(0, 71, 127);
     for (i = 0; i < P_COUNT; i++) before[i] = b->p[i];
     cc_push(1, 71, 127); cc_push(1, 1, 99); cc_push(1, 64, 127);   /* DIGITAL has no RES; mod wheel, sustain: not mapped */
