@@ -5,7 +5,8 @@ header). Commands 16-26 (user presets and live sync) form protocol v2; commands 
 protocol v3; commands 31-32 (any track's parameters) form protocol v4; command 33 and the extra step,
 `INFO` and `TRACK` bytes form protocol v5 (SLOOP 2.0); commands 34-36 (backup / restore) form protocol v6
 (SLOOP 2.3); commands 37-40 (the steps' nudges and parameter locks) form protocol v7, commands 41-42 (the
-steps' fill conditions) protocol v8 and commands 68-71 (the FM6 engine's patches) protocol v9 (all SLOOP 2.4).
+steps' fill conditions) protocol v8 and commands 68-71 (the FM6 engine's patches) protocol v9 (all SLOOP 2.4);
+command 43 (PERFORM: the live layers for a remote surface) forms protocol v11.
 
 **v3 (four tracks):** the device has four tracks: 1..3 are synth parts, 4 is the drum track. One
 of them is *selected* (the TRACKS page on the device, or `TRACK`). Every v1 / v2 command acts on the
@@ -113,6 +114,10 @@ An absent status byte retains the original reply format.
 | 69 FM6_PUT | target, index, the 128-byte packed patch | target, index, rc |
 | 70 FM6_LIST | — | factory count, bank count, then per slot (factory first): used (0/1), name string ("" if empty) |
 | 71 FM6_ERASE | bank index | index, rc |
+
+| cmd (v11) | Request args | Reply args |
+| --- | --- | --- |
+| 43 PERFORM | op, op args (below); no op = 0 STATE | op, rc (0 ok, 1 arguments / unknown op, else per op), then the **live state** (below) |
 
 **pack7:** groups of up to 7 bytes, each preceded by one byte holding their top bits
 (bit j = bit 7 of byte j).
@@ -412,6 +417,54 @@ is put into range before a voice sees it.
 Backup object **9** is the four kits (`dsu_bank_t`, 1464 bytes: "DSU1", version 1, count 4, then per kit name 8,
 crush, src, 2 reserved, 16 x 22). Its commit answers rc 3 while the song plays. A device before v10 answers the
 begin of object 9 with rc 5: the editor skips it (as object 8 on a v8 device).
+
+## v11: PERFORM (the live layers for a remote surface)
+
+`firmware/src/perform.c`. A phone or tablet plays the layers the panel plays with a held function button:
+each op runs the same code as the key (`ui_layers.c` `layer_key`, `seq.c` live sections), so the screen,
+the LEDs and the messages follow as if the key was pressed. Every reply carries the live state, so a remote
+follows the device by sending `PERFORM` 0 (STATE) about every 100-250 ms between its other requests.
+
+| op | args | what it does |
+| --- | --- | --- |
+| 0 STATE | — | nothing: the state |
+| 1 FX | fx 0..15, 127 off | punch-in effect held from the remote (FX + white key 1..16): LOOP 4, LOOP 8, LOOP 16, LOOP 32, STUTTER, REVERSE, STOP, HALF, LOW, HIGH, PHONE, CRUSH, ALIAS, GATE, ECHO, WOBBLE. Another fx replaces it (crossfaded). A panel key held under FX takes over; the remote neither replaces nor ends it |
+| 2 SECTION | 0..3 | SAVE + key 1..4: stopped, the section is loaded as the loop; playing, it starts on the next bar (any chain stops); song playing / empty: nothing (the device says so) |
+| 3 CHAIN | n 1..8, n × section | the quick chain (SAVE held + n taps): the first on the next bar, each for its pattern's bars, looped. rc 1 stopped, 2 an empty section, 3 the song plays |
+| 4 MUTE | track 0..3, 0 off / 1 on / 2 toggle | `P_MUTE` of that track |
+| 5 SOLO | track 0..3, 0 / 1 / 2 | its bit of the solo mask |
+| 6 TRANSPORT | 0 toggle, 1 play, 2 stop | as PLAY (count-in, REC armed and free takes as the button). rc 1: song mode with an empty section |
+| 7 FILL | 0 let go, 1 hold, 2 the next bar (again: off) | GLO + key 9 / 10 |
+| 8 TAP | — | tap tempo (GLO + the last white key) |
+| 9 SONGMODE | 0 loop, 1 song, 2 toggle | SAVE + key 13 |
+| 10 SONGREC | — | SAVE + key 14: arm / stop SONG REC |
+| 11 STORE | 0..3 | SAVE + key 5..8: the loop into the section; over a used one, send it twice within 3 s (the first arms) |
+
+**Live state** (14 bytes, the chain, then 5 bytes; after op and rc):
+
+| Byte | |
+| --- | --- |
+| flags | bit 0 playing, 1 song mode, 2 the song plays, 3 fill held, 4 fill next bar, 5 the FX is the remote's, 6 REC armed / count-in |
+| bpm | v14 |
+| beat | beats since PLAY or the section's first bar, mod 128 (bar = beat / 4) |
+| fx | the punch-in effect asked for, 127 none |
+| mute | bit per track |
+| solo | bit per track |
+| armed | bit per track recording |
+| ready | bit per section A..D that holds a loop |
+| section | the section playing (last jumped to, loaded or stored), 127 none |
+| next | the section asked for the next bar, 127 none |
+| songrec | 0 off, 1 armed, 2 recording |
+| chain n, chain i | the quick chain: entries (0 none), the one playing |
+| n × section | the chain |
+| sel | the selected track (0..3) |
+| 4 × bars | each section's length in bars as a chain plays it (its longest pattern), 0 = empty |
+
+- **Holds end when the remote goes quiet.** A remote FX or FILL hold is let go 1.5 s after the last request of
+  any kind: a dropped phone never leaves the mix looping. Keep sending (STATE, or PING) while a pad is held.
+- The parameters of the master (`G_FILT`, `G_DUST`, `G_DUCK`, `G_ROLL`, `G_BPM`, swing) and the levels stay
+  `SET` / `TRACK_MIX`: find their ids by `DESC` label.
+- A device that does not know `PERFORM` (v10 and older) sends no reply: `INFO`'s version byte is 11.
 
 ## Notes for the editor
 

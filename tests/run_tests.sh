@@ -65,6 +65,11 @@ run "punch-in FX: 16 effects, bounded, dry after release, FX-held keys" "$OUT/pu
 
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/ui_pages_test" tests/ui_pages_test.c -lm
 run "live UI: pages, layers (punch, steps, erase, roll, key, mix), holds, drums, REC, fuzz" "$OUT/ui_pages_test" "$OUT"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/perform_test" tests/perform_test.c -lm
+run "PERFORM (editor v11): remote FX, sections, chain, mute / solo, transport, fill, tap, song mode" "$OUT/perform_test"
+$CC -O1 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/live_mockdata" tests/live_mockdata.c -lm
+run "SLOOP live's demo device has the firmware's tables (web/live/mockdata.js)" \
+    sh -c "'$OUT/live_mockdata' | cmp -s - web/live/mockdata.js && echo same || { echo 'web/live/mockdata.js is stale: $OUT/live_mockdata > web/live/mockdata.js'; exit 1; }"
 # no divide by 0 (the FM-1 runs with the div0 trap off, hal/fm1_irq.h: a real one would give a wrong value
 # silently): the UI fuzz, the sequencer, the projects and a minute of random live use, with UBSan
 UBSAN="${CC_UB:-cc} -O1 -w -fsanitize=integer-divide-by-zero -fno-sanitize-recover=integer-divide-by-zero -Ibuild/gen -Ifirmware/src -Ifirmware/hal"
@@ -142,6 +147,7 @@ run "installer CLI (fm1_install.py) against a simulated FM-1" python3 tests/inst
 
 if command -v node >/dev/null 2>&1; then
     run "web pages: editor protocol, samples, packages, update protocol" node web/test_web.mjs
+    run "SLOOP live: frames, link, PERFORM against the demo device" node web/live/test_live.mjs
 else
     echo "== skip web tests (no node)"
 fi

@@ -994,6 +994,11 @@ Every change goes to the FM-1 at once, and the grid shows the same steps.
 
 The editor writes presets, the FM6 bank and backups to flash only while the song is stopped, as the FM-1 does (it asks you to stop first). Try it without hardware: add `?mock=1` to the editor's address. The protocol is documented in [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md).
 
+**SLOOP live** is the editor's companion for playing: a phone or tablet page with the punch-in effects as pads, an XY
+pad for the DJ filter, sections and chains, presets and the engine's knobs, and the mix, with no menus. Plug the FM-1
+into an Android phone (Chrome, a USB OTG cable) and it connects. Use one of the two at a time: they share the FM-1's
+MIDI port. The guide: [LIVE.md](LIVE.md).
+
 ---
 
 ## 25. Backup, rescue, going back, troubleshooting

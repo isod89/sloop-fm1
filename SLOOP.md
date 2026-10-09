@@ -110,12 +110,13 @@ Projects, autosaves and backups from 2.4 load as they are. Going back to 2.4: a 
 14. [Your own samples](#your-own-samples-usr1usr4)
 15. [Song mode](#song-mode)
 16. [The web editor](#the-web-editor)
-17. [Sound design pages](#sound-design-pages)
-18. [MIDI keyboards](#midi-keyboards)
-19. [USB audio: record on a computer](#usb-audio-record-on-a-computer)
-20. [Lights](#lights)
-21. [Specifications](#specifications)
-22. [Rescue, going back, credits](#rescue-going-back-credits)
+17. [SLOOP live: the phone surface](#sloop-live-the-phone-surface)
+18. [Sound design pages](#sound-design-pages)
+19. [MIDI keyboards](#midi-keyboards)
+20. [USB audio: record on a computer](#usb-audio-record-on-a-computer)
+21. [Lights](#lights)
+22. [Specifications](#specifications)
+23. [Rescue, going back, credits](#rescue-going-back-credits)
 
 ---
 
@@ -430,7 +431,17 @@ It looks like the FM-1 (its black screen, the four track colours, its own Termin
 - **Library**, **Samples** (with CHOP), **Drum kit** (your own kits, [above](#your-own-drum-kits-kit-usr1usr4-usr34)), **Projects**, **Settings** (GLOBAL, **MASTER**: DUST, DUCK, FILT, ROLL; DRUMS).
 - **Backup** (Projects tab): **Save a backup** writes everything on the FM-1 to one file (SLOOP-backup-DATE.json): the music you are working on, the projects 1–4 (the song sections A–D), the 32 user presets, the FM6 bank, the samples USR1–USR4 (your drum kits with them) and the settings (colours, calibration, the song order, the lights, SYNC, MIDI OUT). **Restore from a file** puts it all back — what is on the FM-1 is replaced. A damaged file is refused before anything is written, every object is checked as a load checks it, and each one is written as a save writes it (a cut-off restore never leaves half an object). Stop the song (PLAY) before restoring.
 
-The protocol is documented in [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md) (v9). The editor writes presets and the FM6 bank to flash only while the song is stopped, as the FM-1 does.
+The protocol is documented in [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md) (v11). The editor writes presets and the FM6 bank to flash only while the song is stopped, as the FM-1 does.
+
+## SLOOP live: the phone surface
+
+**[SLOOP live](https://isod89.github.io/sloop-fm1/webapp/live/)** plays SLOOP from a phone or a tablet while your hands
+stay on the FM-1: the 16 punch-in effects as pads, an XY pad (the DJ filter, DUST, or any parameter; it springs back),
+sections A–D on the bar, **Capture** (the loop into the next empty section), chains, SONG REC, mute and solo, presets,
+drum kits and the engine's knobs, revert and keep, the mix. It connects by itself when the FM-1 is plugged in (Chrome
+on Android with a USB OTG cable, or Chrome / Edge on a computer), and splits the screen on a tablet. It uses the
+`PERFORM` command (protocol v11), which runs each layer through the same code as the panel: the screen and the lights
+follow, and a key on the FM-1 always takes over from the phone. The guide: [LIVE.md](LIVE.md).
 
 ## Sound design pages
 

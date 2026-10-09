@@ -7,6 +7,7 @@
   firmware/felucca-VER.fwsc   the package
   webapp/installer/index.html index_pkg.html with fm1pkg.js, fm1ota.js and the metadata inlined
   webapp/editor/index.html    editor.html (+ fukiai.ttf, FUKIAI-LICENSE.txt)
+  webapp/live/                live/ (SLOOP live, the phone surface: a PWA, copied as it is)
   src/                        not touched
 
   web/make_site.py build/felucca-X.Y.fwsc X.Y OUT_DIR [--beta]
@@ -78,6 +79,10 @@ def main(pkg, version, out):
     for f in ("fukiai.ttf", "FUKIAI-LICENSE.txt"):
         if (HERE / f).exists():
             shutil.copy(HERE / f, ed / f)
+    live = out / "webapp" / "live"                 # SLOOP live (PWA): its own folder, so its service worker scope is its own
+    if live.exists():
+        shutil.rmtree(live)
+    shutil.copytree(HERE / "live", live, ignore=shutil.ignore_patterns("test_*.mjs", "README.md"))
     (out / "index.html").write_text(
         '<!doctype html><meta charset="utf-8"><title>SLOOP</title>'
         '<meta http-equiv="refresh" content="0; url=webapp/installer/">'

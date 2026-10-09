@@ -9,6 +9,7 @@ Free and open source (GPL-3.0), based on <a href="https://github.com/hugelton/Fe
 <a href="SLOOP.md">Manual</a> ·
 <a href="DEMARRAGE-RAPIDE-FR.md">Guide en français</a> ·
 <a href="https://isod89.github.io/sloop-fm1/webapp/editor/">Web editor</a> ·
+<a href="https://isod89.github.io/sloop-fm1/webapp/live/">SLOOP live</a> ·
 <a href="../../releases">Releases</a> ·
 <a href="../../issues">Report a bug</a>
 </p>
@@ -30,14 +31,15 @@ SLOOP turns the FM-1 into a four-track groovebox you play live: **three synths a
 7. [The menu: settings of the FM-1](#the-menu-settings-of-the-fm-1)
 8. [MIDI and USB audio](#midi-and-usb-audio)
 9. [The web editor](#the-web-editor)
-10. [Compatibility](#compatibility)
-11. [Troubleshooting](#troubleshooting)
-12. [Specifications](#specifications)
-13. [Documentation](#documentation)
-14. [Building and tests](#building-and-tests)
-15. [Contributing](#contributing)
-16. [Credits and thanks](#credits-and-thanks)
-17. [Licence](#licence)
+10. [SLOOP live: play it from a phone](#sloop-live-play-it-from-a-phone)
+11. [Compatibility](#compatibility)
+12. [Troubleshooting](#troubleshooting)
+13. [Specifications](#specifications)
+14. [Documentation](#documentation)
+15. [Building and tests](#building-and-tests)
+16. [Contributing](#contributing)
+17. [Credits and thanks](#credits-and-thanks)
+18. [Licence](#licence)
 
 ---
 
@@ -341,7 +343,27 @@ Open it from the [installer page](https://isod89.github.io/sloop-fm1/) (or the [
 
 <p align="center"><img src="assets/screens/editor-backup.png" alt="SLOOP web editor: projects and backup" width="560"></p>
 
-The protocol is documented in [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md).
+## SLOOP live: play it from a phone
+
+[**SLOOP live**](https://isod89.github.io/sloop-fm1/webapp/live/) is the touch partner for the FM-1. Poke out a beat on
+the device, plug a phone or a tablet in, and play it without menus while your hands stay on the keys.
+
+<p align="center"><img src="assets/screens/live-phone.png" alt="SLOOP live on a phone: Live, Arrange and Sound" width="900"></p>
+
+- **Live**: the 16 punch-in effects as pads (hold; two fingers, the last one plays; latch), an **XY pad** that springs
+  back (the DJ filter across, dust up, or any master or track parameter), sections A–D with the bar they are on, tracks
+  (tap: mute, hold: solo while held), fill.
+- **Arrange**: **Capture** the loop into the next empty section in one tap, launch sections on the bar, build a chain,
+  record the song as you play it.
+- **Sound**: follows the FM-1's selected track. Flip presets or drum kits, pick an engine, turn the engine's eight knobs
+  and the envelope, sends, slicer, LFO and arp; **revert** to the preset, **keep** a sound as a user preset.
+- **Mix**: levels, mute and solo, tempo, swing, dust, duck, roll rate, filter.
+- **Tablets** split the screen: Live stays up, Sound, Arrange or Mix beside it.
+
+Plug in and it connects (after the first time, no button); unplug and it waits. It runs in **Chrome on Android** with
+the FM-1 on a USB OTG cable, and in Chrome or Edge on a computer; it installs as an app and keeps the screen awake.
+It needs editor protocol **v11** (`PERFORM`); with older firmware the Sound and Mix tabs work. **Try the demo** runs it
+against a pretend FM-1. The user guide: [LIVE.md](LIVE.md).
 
 ## Compatibility
 
@@ -401,14 +423,16 @@ Something else? [Open an issue](../../issues): what you did, what you expected, 
 - [SLOOP.md](SLOOP.md) — the manual (every page, layer, sound and kit) and the history of each version
 - [DEMARRAGE-RAPIDE-FR.md](DEMARRAGE-RAPIDE-FR.md) — guide de démarrage en français
 - [BUILDING.md](BUILDING.md) — building, build options and tests
-- [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md) — the editor's SysEx protocol
+- [LIVE.md](LIVE.md) — SLOOP live, the phone and tablet surface: the user guide
+- [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md) — the editor's SysEx protocol (v11: `PERFORM`, the live layers)
+- [web/live/README.md](web/live/README.md) — how SLOOP live is built, tested and extended
 - [LICENSING.md](LICENSING.md) — the licences of the code and the assets
 
 ## Building and tests
 
 See [BUILDING.md](BUILDING.md). In short: the JieLi toolchain and three files of the AC79 SDK, then `./build.sh` (Linux / macOS) or `INSTALL-SLOOP.bat` (Windows with WSL), which builds the firmware and serves the installer and the editor on `http://localhost:8766`.
 
-`tests/run_tests.sh` runs the host test suite with no hardware: audio renders against golden hashes, CPU budgets, the sequencer's timing (no drift, swing, ratchets, rolls, the REC modes and the count-in, MIDI clock), the UI pages and layers, the knobs, flash storage, the update loader, MIDI and USB audio, and the web pages (editor, backup, CHOP, installer).
+`tests/run_tests.sh` runs the host test suite with no hardware: audio renders against golden hashes, CPU budgets, the sequencer's timing (no drift, swing, ratchets, rolls, the REC modes and the count-in, MIDI clock), the UI pages and layers, the knobs, flash storage, the update loader, MIDI and USB audio, `PERFORM` (the live layers from a remote), and the web pages (editor, backup, CHOP, installer, SLOOP live against its demo device).
 
 ## Contributing
 
