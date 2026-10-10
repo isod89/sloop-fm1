@@ -34,7 +34,8 @@ const E = vm.runInNewContext(proto + `
    CHOP, chopNovelty, chopHits, chopSnap, chopGrid, chopEqual, chopList, chopPick, chopFit, chopZones, wavFile, zipStore, crc32,
    UP, bank, capturePatch, auditionPatch, startWatch, libraryFile, readLibraryFile, paramKeys, patternFromSteps, stepsFromPattern, upName,
    mixer, GM_DRUM, drumName, parseNotes, fmtValue, F, DRUM_LANES, LV_NAMES, emptyDrum, lockable, MICRO, FC, fillGet, fillSet, pack7, unpack7,
-   backupCapture, backupRestore, backupObjects, b64enc, b64dec, FM6, KIT, kitPad, kitZones, kitLen, kitBytes, kitFit, kitSplit, kitLaneOf, kitPlace, zipRead, ROLL, SMF, ARR, mockSettings, fm6CartWrite, fm6CartPreset, fm6CartSlots, fm6CartPresets, DSYN, DSYN_MOCK_NAMES, DSYN_MOCK_KITS })`,
+   backupCapture, backupRestore, backupObjects, b64enc, b64dec, FM6, KIT, kitPad, kitZones, kitLen, kitBytes, kitFit, kitSplit, kitLaneOf, kitPlace, zipRead, ROLL, SMF, ARR, mockSettings, fm6CartWrite, fm6CartPreset, fm6CartSlots, fm6CartPresets, DSYN, DSYN_MOCK_NAMES, DSYN_MOCK_KITS,
+   setState, setTouch, setBegin, setSent, setTouched, setForget })`,
 { setTimeout, clearTimeout, setInterval, clearInterval, console, TextEncoder, TextDecoder, Blob, Response, DecompressionStream });
 
 async function editorMock() {
@@ -281,6 +282,31 @@ async function editorLive() {
   const bl = await E.bank.list((rr, oo) => o.rq(rr, { ...oo, timeout: 60, quiet: true })).then(() => "listed", (e) => e.message);
   ok(!w && !sw && /^timeout/.test(bl) && o.ev.timeouts === 0, "live: older firmware -> WATCH unanswered (fall back to polling), no bank");
   o.done();
+}
+
+/* --------------------------------- editor UI: the SET throttle (isod89/sloop-fm1#97) --- */
+function editorSetThrottle() {
+  /* the drag throttle (web/editor.html userSet) is keyed by the control ("scope:id") and forgotten on a
+     track / sound change (afterSoundChange -> setForget), so a value equal to the last one sent for
+     *another* track is not silently dropped. */
+  const K = "0:30";                                /* DIV of the selected track */
+  E.setForget();
+  ok(E.setBegin(K, 1, 0) === true && E.setTouched(K, 0) === true, "sets: the first SET is sent, touched() holds it");
+  E.setSent(K, 1);
+  ok(E.setBegin(K, 1, 10) === false, "sets: the same value again in the drag is dropped (one SET in flight)");
+  ok(E.setBegin(K, 2, 20) === true, "sets: a different value is sent");
+  E.setSent(K, 2);
+  E.setForget();                                   /* selectTrack / RELOAD / preset -> afterSoundChange */
+  ok(E.setTouched(K, 30) === false, "sets: a track / sound change forgets touched() too");
+  ok(E.setBegin(K, 2, 30) === true, "sets: after a track / sound change the same value is sent again (issue #97)");
+  E.setSent(K, 2);
+  ok(E.setTouched(K, 300) === true && E.setTouched(K, 700) === false, "sets: touched() holds a control for 600 ms, then not");
+  E.setForget();
+  ok(E.setTouched(K, 0) === false && E.setBegin("0:31", 5, 0) === true && E.setBegin(K, 5, 0) === true,
+    "sets: reset forgets everything; another control is independent");
+  /* the wiring: afterSoundChange is where a track / sound change forgets it */
+  const body = (/async function afterSoundChange\([^)]*\)\s*\{([\s\S]*?)\n\}/.exec(html) || [])[1] || "";
+  ok(/\bsetForget\(\)/.test(body), "sets: afterSoundChange forgets the throttle (issue #97)");
 }
 
 /* ------------------------------------------------------ editor protocol v3: tracks --- */
@@ -1353,6 +1379,7 @@ async function updater() {
 await editorMock();
 await editorLibrarian();
 await editorLive();
+editorSetThrottle();
 await editorTracks();
 await editorMixer();
 await editorTrackParam();
