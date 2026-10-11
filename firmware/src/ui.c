@@ -3,15 +3,17 @@
 /* Felucca user interface. Four columns map to KNOB 1..4. Rendering is lazy:
  * every element remembers what it last drew and is redrawn only on change. */
 #ifndef FELUCCA_VERSION
-#define FELUCCA_VERSION "SLOOP 2.5"  /* the beat machine firmware for the FM-1 (based on Felucca) */
+#define FELUCCA_VERSION "SLOOP 2.6"  /* the beat machine firmware for the FM-1 (based on Felucca) */
 #endif
 static void project_save(uint32_t slot);
 static void arrangement_save(void);
 static void panel_setup(void);
 static void project_load(uint32_t slot);
+static void project_erase(uint32_t slot);        /* SAVE > PROJECT > ERASE (2.6) */
 static int project_used(uint32_t slot);
 static int up_used(uint32_t k);              /* user presets: upreset.c */
 static int up_load(uint32_t k);
+static int up_load_to(track_t *t, uint32_t k);
 static uint32_t up_count(void);
 static uint32_t up_nth(uint32_t n);
 static uint32_t up_rank(uint32_t slot);
@@ -118,12 +120,100 @@ static void page_entered(void)
 {
     const page_t *pg = cur_page();
     song.seq_mode = !ui.home && pg->fam == FAM_SEQ;
+    if (!ui.home && pg->fam == FAM_GLO && pg->id[0] == G_CH1 && song.g[G_ROUTE]) {   /* (2.6) GLO > MIDI while MIDI 2 >
+                                                                                   * IN sets the channels aside */
+        if (song.g[G_ROUTE] == 1)
+            ui_message("IN = CLOCK: NO NOTES");
+        else {
+            char b[10];
+            str_cpy(b, "IN CH ", sizeof b);
+            fmt_int(b + 6, song.g[G_ROUTE] - 1);
+            ui_say(b, ": SEL TRK ONLY");
+        }
+    }
     ui.entry_open = 0;
     ui.hot_t = 0;                                /* the white value / focus box was the old page's */
     ui.force = 1;
 }
 
+/* (2.6) GLO > MIDI: two tracks never share a channel (it would play the first only, the other silent): a channel
+ * turned (a knob, the editor, a backup) onto one another track has goes on to the next free one, the way it was
+ * turned, and says whose it was. Every frame (ui_input) */
+static void midi_chan_fix(void)
+{
+    static const uint8_t ID[4] = {G_CH1, G_CH2, G_CH3, G_DRCH};
+    static int16_t was[4] = {-1, -1, -1, -1};
+    uint32_t k, j;
+    for (k = 0; k < 4u; k++) {
+        int32_t v = song.g[ID[k]], dir, owner = -1;
+        if (was[k] < 0 || v == was[k] || !v) {
+            was[k] = (int16_t)v;
+            continue;
+        }
+        dir = v > was[k] ? 1 : -1;
+        for (;;) {
+            int32_t o = -1;
+            for (j = 0; j < 4u; j++)
+                if (j != k && song.g[ID[j]] == v)
+                    o = (int32_t)j;
+            if (o < 0)
+                break;
+            if (owner < 0)
+                owner = o;
+            v += dir;
+            if (v < 1) {                                /* (down past 1: OFF, never taken) */
+                v = 0;
+                break;
+            }
+            if (v > 16) {                               /* (none free up there: as it was) */
+                v = was[k];
+                break;
+            }
+        }
+        if (owner >= 0) {
+            char b[8];
+            str_cpy(b, "CH ", sizeof b);
+            fmt_int(b + 3, song.g[ID[k]]);
+            ui_say(b, owner == 3 ? " = DRUMS" : owner == 0 ? " = TRACK 1" : owner == 1 ? " = TRACK 2" : " = TRACK 3");
+            song.g[ID[k]] = (int16_t)v;
+        }
+        was[k] = (int16_t)v;
+    }
+}
+
 static int step_on(const step_t *st) { return st->time == ST_NOTE && st->n; }
+/* LEN (SLOOP 2.6, after Felucca 1.5 by Leo Kuroshita, Discussions #178, #173): a NOTE step's length is the step and
+ * the TIE steps after it (inside LEN, no wrap); SEQ > STEP's KNOB 3 on a note sets it (ui_input.c step_edit). Longer:
+ * the steps after it become clean TIEs (a REST or an empty step; it stops at the next step holding notes, which stays,
+ * and at LEN); shorter: its last TIEs become RESTs (one holding notes keeps them). The steps' locks and nudges stay;
+ * the turns on one step are one undo (ui_input.c). Returns the length it got */
+static uint32_t note_len(const track_t *t, uint32_t i)
+{
+    uint32_t len = (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP), n = 1;
+    while (i + n < len && t->step[i + n].time == ST_TIE)
+        n++;
+    return n;
+}
+static uint32_t note_set_len(track_t *t, uint32_t i, uint32_t want)
+{
+    uint32_t len = (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP), n = note_len(t, i);
+    for (; n > want && n > 1u; n--) {
+        if (!t->step[i + n - 1u].n)                    /* (a TIE holding notes, from TIME or an older SLOOP, */
+            memset(&t->step[i + n - 1u], 0, sizeof(step_t));   /* keeps them, as TIME would) */
+        t->step[i + n - 1u].time = ST_REST;
+    }
+    for (; n < want && i + n < len && !t->step[i + n].n; n++) {
+        memset(&t->step[i + n], 0, sizeof(step_t));
+        t->step[i + n].time = ST_TIE;
+    }
+    return n;
+}
+/* a synth step's velocity as it plays (seq.c step_vel: ACC 127, else its VEL, 96 when 0, through its first note's level) */
+static uint32_t step_vel_shown(const step_t *st)
+{
+    uint32_t base = (st->flags & SF_ACCENT) ? 127u : (st->vel ? st->vel : 96u);
+    return lvl_vel(st->lvl & 3u, base);
+}
 /* step i of track t has something to play (synth: notes, drums: a lane) */
 static int trk_step_on(const track_t *t, uint32_t i)
 {
@@ -188,12 +278,14 @@ static void open_family(uint32_t fam)
 {
     if (!ui.home && cur_page()->fam == fam) {          /* same button again: next page */
         uint32_t i = ui.page + 1u;
+        while (i < NPAGES && PAGES[i].fam == fam && !page_shown(&PAGES[i]))
+            i++;                                        /* (not a page of another engine: EDIT > FILTER) */
         if (i >= NPAGES || PAGES[i].fam != fam)
             i = page_first(fam);
         ui.page = (uint8_t)i;
     } else {
-        ui.page = ui.fam_last[fam] && PAGES[ui.fam_last[fam]].fam == fam ? ui.fam_last[fam]
-                                                                          : (uint8_t)page_first(fam);
+        ui.page = ui.fam_last[fam] && PAGES[ui.fam_last[fam]].fam == fam && page_shown(&PAGES[ui.fam_last[fam]])
+                      ? ui.fam_last[fam] : (uint8_t)page_first(fam);
     }
     ui.fam_last[fam] = ui.page;
     ui.home = 0;
@@ -212,7 +304,7 @@ static int page_walk(int32_t s)
     if (ui.home || pg->scope == SC_SONG || pg->scope == SC_DRUM)
         return 0;
     for (i = 0; i < NPAGES && n < 8u; i++) {
-        if (PAGES[i].fam != fam || PAGES[i].scope == SC_SONG || PAGES[i].scope == SC_DRUM)
+        if (PAGES[i].fam != fam || PAGES[i].scope == SC_SONG || PAGES[i].scope == SC_DRUM || !page_shown(&PAGES[i]))
             continue;
         if (i == ui.page)
             cur = (int32_t)n;
@@ -227,6 +319,20 @@ static int page_walk(int32_t s)
         page_entered();
     }
     return 1;
+}
+
+/* the page shown is one the selected track has (2.6: EDIT > FILTER, ANALOG only): after a track or engine change,
+ * from the previous page of the family that it has (a hidden page is never the first one), once a frame */
+static void page_fix(void)
+{
+    uint32_t i = ui.page, fam = PAGES[i].fam;
+    if (ui.home || page_shown(&PAGES[i]))
+        return;
+    while (i > 0u && PAGES[i - 1u].fam == fam && !page_shown(&PAGES[i - 1u]))
+        i--;
+    ui.page = (uint8_t)(i > 0u && PAGES[i - 1u].fam == fam ? i - 1u : page_first(fam));
+    ui.fam_last[fam] = ui.page;
+    page_entered();
 }
 
 static void go_home(void)
@@ -272,6 +378,7 @@ static void apply_preset_to(track_t *t, uint32_t pi)
     uint32_t i;
     if (is_drum(t))
         return;
+    sound_change(t);                                  /* (2.6: what sounds fades out with the old sound, no click) */
     panic_req |= (uint8_t)(1u << trk_index(t));       /* MONO/POLY may change: release what sounds */
     t->user = 0;
     if (t == TSEL)
@@ -314,6 +421,7 @@ static void set_engine_of(track_t *t, uint32_t ei)
         return;
     fm1_irq_off();
     locks_restore(t);                                 /* (a lock in force: its base first, then the new sound) */
+    sound_change(t);                                  /* (2.6: the sound as it is, before anything new is written) */
     t->eng_req = (uint8_t)(ei % NENGINES);
     for (i = 0; i < 8u; i++)
         t->p[P_E0 + i] = e->edit[i].def;
@@ -441,6 +549,56 @@ static uint32_t preset_at(uint32_t n, uint32_t *k)
 }
 static const char *preset_kind(uint32_t n) { return n < NBANK ? BANK_KIND[BANK[n].kind] : "USER"; }
 
+/* list index n into track t (2.6: MIDI Program Change, any track); 0 done, 1 no such sound */
+static int preset_go_to(track_t *t, uint32_t n)
+{
+    uint32_t k, total, e;
+    if (is_drum(t))
+        return 1;
+    if (!bank_ready)
+        bank_resolve();
+    total = NBANK + up_count();
+    if (n >= total)
+        return 1;
+    e = preset_at(n, &k);
+    if (e == NENGINES)
+        return up_load_to(t, k);
+    if (e != t->eng_req)
+        set_engine_of(t, e);
+    apply_preset_to(t, k);
+    ui.force = 1;
+    return 0;
+}
+/* MIDI Program Change (2.6, after Felucca 1.5.1, PR #179 by @renebohne): seq.c queues it per track (the track its
+ * channel plays, GLO > MIDI); here, in the main loop (a flash read, a sound loaded): a synth track takes the n-th sound
+ * of the PRESETS list (0 the first factory sound, the user presets after the 153), the drum track kit n. A number past
+ * the end does nothing (no wrap) */
+static void pc_poll(void)
+{
+    uint32_t i;
+    for (i = 0; i < NTRK; i++) {
+        uint32_t r = pc_req[i], n;
+        char b[12];
+        if (!r)
+            continue;
+        pc_req[i] = 0;
+        n = r - 1u;
+        if (is_drum(&trk[i])) {
+            if (n >= DRUM_KITS)
+                continue;
+            trk[i].p[P_E0] = (int16_t)n;
+            if (&trk[i] == TSEL)
+                sync_reload = 1;
+        } else if (preset_go_to(&trk[i], n)) {
+            continue;
+        }
+        str_cpy(b, "T1 PROG ", sizeof b);
+        b[1] = (char)('1' + i);
+        fmt_int(b + 8, (int32_t)n);
+        ui_message(b);
+        ui.force = 1;
+    }
+}
 static void preset_go(uint32_t n)                    /* load list index n into the selected track */
 {
     uint32_t k, e = preset_at(n, &k);
@@ -488,4 +646,106 @@ static void track_select(uint32_t i)
     ui.bank = 0;
     sync_reload = 1;
     ui.force = 1;
+}
+
+/* ------------------------------------------------------- MIDI LEARN --- */
+/* MIDI LEARN (SLOOP 2.6, after Felucca 1.5 by Leo Kuroshita, Discussion #170; the map: seq.c ml_tab). GLO held +
+ * the black key F#3 turns it on and off. On: a knob turned on a track's page (the sound's pages, HOME, TRACKS' LEVEL
+ * and PAN) picks its parameter on the selected track as it edits it; the next CC that comes (any channel IN hears) is
+ * set to it, and stays until something else is learned on it or HOME > SYSTEM > LEARN CLEAR. Then turn the next knob.
+ * One CC sets one parameter, a parameter has one CC: learning one again replaces both. The settings keep the map */
+static struct { uint8_t on, pick, trk, id; } mlu;
+static uint32_t ml_code(uint32_t id) { return id >= P_E0 ? ML_E0 + id - P_E0 : id + 1u; }
+static void ml_put(uint32_t i, uint32_t e)       /* (the ISR reads the entry: never half of one) */
+{
+    fm1_irq_off();
+    ml_tab[i % ML_N] = (uint16_t)e;
+    fm1_irq_on();
+}
+static uint32_t ml_count(void)
+{
+    uint32_t i, n = 0;
+    for (i = 0; i < ML_N; i++)
+        n += (ml_tab[i] >> 9) != 0u;
+    return n;
+}
+/* cc -> parameter id of track k, in place of what either had; 0 = no room, 2 = a CC that is never learned */
+static uint32_t ml_learn(uint32_t cc, uint32_t k, uint32_t id)
+{
+    uint32_t i, e;
+    if (!ml_free_cc(cc) || k >= NTRK || id >= P_COUNT)
+        return 2;
+    for (i = 0; i < ML_N; i++)
+        if ((e = ml_tab[i]) >> 9 && ((e & 127u) == cc || ((e >> 9) == ml_code(id) && ((e >> 7) & 3u) == k)))
+            ml_put(i, 0);
+    for (i = 0; i < ML_N; i++)
+        if (!(ml_tab[i] >> 9)) {
+            ml_put(i, cc | k << 7 | ml_code(id) << 9);
+            return 1;
+        }
+    return 0;
+}
+static int ml_clear_all(void)                    /* HOME > SYSTEM > LEARN CLEAR; 1 = there were */
+{
+    uint32_t i, n = ml_count();
+    for (i = 0; i < ML_N; i++)
+        ml_put(i, 0);
+    if (n)
+        settings_later = 1;                      /* (saved when quiet) */
+    return n != 0u;
+}
+static void ml_toggle(void)                      /* GLO + F#3 */
+{
+    mlu.on = (uint8_t)!mlu.on;
+    mlu.pick = 0;
+    ml_arm = 0;
+    ml_heard = 0;
+    ui_message(mlu.on ? "LEARN: TURN A KNOB" : "LEARN DONE");
+    ui.force = 1;
+}
+/* a knob turned parameter id of track t: picked while learning (ui_input.c) */
+static void ml_knob(const track_t *t, uint32_t id)
+{
+    char b[16];
+    if (!mlu.on || id >= P_COUNT)
+        return;
+    if (!mlu.pick || mlu.id != id || mlu.trk != (uint8_t)trk_index(t)) {
+        mlu.trk = (uint8_t)trk_index(t);
+        mlu.id = (uint8_t)id;
+        b[0] = 'T';
+        b[1] = (char)('1' + mlu.trk);
+        b[2] = ' ';
+        str_cpy(b + 3, track_desc(t, id)->label, 9);
+        ui_say(b, ": SEND A CC");
+    }
+    mlu.pick = 1;
+    ml_heard = 0;
+    ml_arm = 1;
+}
+/* each frame: a CC heard for the picked parameter is learned */
+static void ml_poll(void)
+{
+    uint32_t cc = ml_heard, r;
+    char a[16], b[16];
+    if (!cc)
+        return;
+    ml_heard = 0;
+    if (!mlu.on || !mlu.pick)
+        return;
+    cc--;
+    r = ml_learn(cc, mlu.trk, mlu.id);
+    if (r != 1u) {
+        ui_message(r ? "CC NOT LEARNABLE" : "LEARN FULL");
+        return;
+    }
+    str_cpy(a, "CC", 4);
+    fmt_int(a + 2, (int32_t)cc);
+    str_cpy(a + str_len(a), " = T", 5);
+    b[0] = (char)('1' + mlu.trk);
+    b[1] = ' ';
+    str_cpy(b + 2, track_desc(&trk[mlu.trk % NTRK], mlu.id)->label, 9);
+    ui_say(a, b);
+    mlu.pick = 0;
+    ml_arm = 0;
+    settings_later = 1;                          /* (saved when quiet) */
 }

@@ -470,6 +470,7 @@
       <span id="mock" hidden data-t="mock"></span>
       <button id="connect" class="pri" data-t="connect" data-ic="port_usb_c"></button>
       <div class="links"><a class="dim" href="../installer/" data-t="installer"></a><button class="lang" id="lang"></button></div>
+      <!--DL--><a class="dim" id="offline" href="sloop-editor.html" download="sloop-editor-2.6.html" data-t="offline"></a><!--/DL-->
     </div>
   </aside>
 
@@ -706,8 +707,10 @@ const CMD = { INFO: 1, GET: 2, SET: 3, DUMP: 4, DESC: 5, STEP_GET: 6, STEP_SET: 
   FM6_GET: 68, FM6_PUT: 69, FM6_LIST: 70, FM6_ERASE: 71,    /* v9 (SLOOP 2.4): the FM6 engine's patches (Felucca 1.0's numbers) */
   DSYN_LIST: 72, DSYN_GET: 73, DSYN_PUT: 74, DSYN_STORE: 75, DSYN_PLAY: 76 };   /* v10 (SLOOP 2.5): the SYN drum kits */
 /* v7: the parameters a step can lock (firmware seq.c p_lockable: the sound, not the sequencer / arp / key / voice
-   mode); ids as core.h: LEVEL .. LFO dests, GATE, the sends, GLIDE, PAN, DETUNE, the SLICER, the engine's 8 */
-const lockable = (id) => id <= 16 || id === 32 || (id >= 33 && id <= 36) || id === 38 || id === 39 || id === 44 || (id >= 45 && id <= 48) || id === 50 || (id >= 53 && id <= 60);
+   mode); ids as core.h: LEVEL .. LFO dests, GATE, the sends, GLIDE, PAN, DETUNE, the SLICER, FILTER, the engine's 8;
+   from 2.6 (pe0 63) also the INSERT's A B C and MIX (54..57). pe0: the device's (the newest when none) */
+const lockable = (id, pe0 = typeof dev !== "undefined" && dev && dev.info ? dev.info.pe0 : 63) => id <= 16 || id === 32 || (id >= 33 && id <= 36) || id === 38 || id === 39
+  || id === 44 || (id >= 45 && id <= 48) || id === 50 || (pe0 >= 63 && id >= 54 && id <= 57) || (id >= pe0 && id <= pe0 + 7);
 const MICRO = { MIN: -32, MAX: 31 };                 /* a step's nudge in 1/64 of a step (- early, + late), sent + 64 */
 /* v8: a step's fill condition (firmware core.h FC_*): 0 normal, 1 plays only during a fill, 2 silent during one; 2 bits a
    step, 4 steps a byte (step i: byte i >> 2, bits 2 (i & 3)..), the 16 bytes sent pack7 */
@@ -1605,6 +1608,18 @@ function libraryFile(kind, patches, ctx) {
     }),
   };
 }
+/* a sound's values (p, the device or file layout: the common parameters, then the engine's 8 from pe0) in another
+   layout of n values, as the firmware maps user presets (up_params): new common parameters come just before the
+   engine's, so the common ones by position, the engine's 8 by their own place; what the source lacks is null */
+function patchByCount(p, pe0, n) {
+  const src = Number.isInteger(pe0) && pe0 >= 0 && pe0 + 8 <= p.length ? pe0 : p.length - 8;
+  if (!(n > 8) || src < 0 || (p.length === n && src === n - 8)) return p.slice(0, n);
+  const out = new Array(n).fill(null);
+  for (let i = 0; i < Math.min(src, n - 8); i++) out[i] = p[i];
+  for (let k = 0; k < 8; k++) out[n - 8 + k] = p[src + k] ?? null;
+  return out;
+}
+
 /* -> {patches, skipped, keys (the file's, for a library that has none yet)}; throws on a file it cannot read */
 function readLibraryFile(obj, ctx) {
   if (!obj || typeof obj !== "object") throw new Error("not JSON");
@@ -1621,7 +1636,7 @@ function readLibraryFile(obj, ctx) {
     const e = engIndex(obj.engineName, obj.engine);
     if (e < 0) return { patches: [], skipped: 1, keys: null };
     return { patches: [cleanPatch({ name: obj.presetName || obj.engineName || "PATCH", engine: e, engineName: obj.engineName,
-      p: obj.p.slice(0, ctx.keys ? ctx.keys.length : obj.p.length), pattern: Array.isArray(obj.steps) ? patternFromSteps(obj.steps) : null, tags: ["file"] })],
+      p: ctx.keys ? patchByCount(obj.p, obj.pE0, ctx.keys.length) : obj.p.slice(), pattern: Array.isArray(obj.steps) ? patternFromSteps(obj.steps) : null, tags: ["file"] })],
       skipped: 0, keys: null };
   }
   if (obj.format !== LIB.FORMAT) throw new Error("unknown format");
@@ -1689,7 +1704,7 @@ function b64dec(s) {
    6..7 the user preset banks, 32..35 the sample slots USR1..4 (35, USR4: SLOOP 2.4) */
 /* RESTORE: the objects in the order they are written back (banks first; 8 = the FM6 patch bank, firmware v9: a
    file without it restores fine, a v8 device gets no object 8 sent; 9 = the SYN drum kits, firmware v10, likewise) */
-const BK = { FORMAT: "sloop-backup", VERSION: 1, SAMPLES: [32, 33, 34, 35], RESTORE: [6, 7, 8, 9, 2, 3, 4, 5, 0, 1] };
+const BK = { FORMAT: "sloop-backup", VERSION: 1, SAMPLES: [32, 33, 34, 35], RESTORE: [6, 7, 8, 9, 10, 2, 3, 4, 5, 0, 1] };   /* 10: MIDI LEARN (2.6) */
 class BackupError extends Error { constructor(code, msg) { super(msg); this.code = code; } }
 /* read everything; progress(done, total bytes) */
 async function backupCapture(rq, info, progress = () => {}) {
@@ -1727,16 +1742,41 @@ function backupObjects(file) {
   return m;
 }
 /* write it back: banks, projects, the working project, the settings, then the samples */
+/* the project format of a backup object ("FUN6" .. as stored, low byte first: 6 ..), 0 not a project */
+const bkProjFormat = (d) => (d && d.length >= 4 && d[1] === 0x4E && d[2] === 0x55 && d[3] === 0x46 ? d[0] - 0x30 : 0);
+/* the newest project format a device reads, from its INFO: 2.6 (71 parameters) 6, 2.4 .. 2.5 (61) 5, older 4 */
+const bkDevFormat = (info) => (info.pcount >= 71 ? 6 : info.pcount >= 61 ? 5 : 4);
+/* "SLOOP 2.6" -> true when at least maj.min.patch */
+const bkFwAtLeast = (v, want) => {
+  const m = /(\d+)\.(\d+)(?:\.(\d+))?/.exec(String(v || ""));
+  if (!m) return false;
+  const a = [+m[1], +m[2], +(m[3] || 0)];
+  for (let i = 0; i < 3; i++) if (a[i] !== want[i]) return a[i] > want[i];
+  return true;
+};
 async function backupRestore(rq, file, progress = () => {}) {
   const m = backupObjects(file);
+  /* (2.6) projects newer than the device reads (a 2.6 backup into 2.5): stop before anything is written (it stopped at
+     the first project, the preset banks already replaced) */
+  const info = parse[CMD.INFO](await rq(req.info(), { timeout: 1000, retries: 2 }));
+  const newest = Math.max(0, ...[0, 2, 3, 4, 5].filter((id) => m.has(id)).map((id) => bkProjFormat(m.get(id))));
+  if (newest > bkDevFormat(info)) throw new BackupError("bkNewer", `${file.firmware || "?"} > ${info.version}`);
+  /* (2.6) a backup of a 2.6 FM-1 without object 10 had the MIDI settings at their defaults (nothing learned, channels
+     1 2 3, drums 10, OTHER SEL, BEND 2): restored as such, not left as the device has them now */
+  if (!m.has(10) && bkFwAtLeast(file.firmware, [2, 5, 1])) {
+    const d = new Uint8Array(40);
+    d.set([1, 2, 3, 10, 2], 32);
+    m.set(10, d);
+  }
   const total = [...m.values()].reduce((s, d) => s + d.length, 0) || 1;
   let done = 0;
   for (const id of BK.RESTORE) {
     if (!m.has(id)) continue;
     const d = m.get(id);
     let r = parse[CMD.BK_PUT](await rq(req.bkBegin(id, d.length, crc32(d)), { timeout: 1500, retries: 1 }));
-    if ((r.rc === 1 || r.rc === 5) && (id === 8 || id === 9)) continue;   /* a device without the FM6 bank (v8) / the SYN kits
-                                                       * (v9): skipped (its BK_PUT answers an unknown id's begin with 5) */
+    if ((r.rc === 1 || r.rc === 5) && (id === 8 || id === 9 || id === 10)) continue;   /* a device without the FM6 bank (v8) /
+                                                       * the SYN kits (v9) / MIDI LEARN (2.6): skipped (its BK_PUT answers
+                                                       * an unknown id's begin with 5) */
     if (r.rc) throw new BackupError("bkWrite", `begin ${id} rc ${r.rc}`);
     for (let off = 0; off < d.length; off += 256) {
       r = parse[CMD.BK_PUT](await rq(req.bkData(id, off, d.subarray(off, off + 256)), { timeout: 1500, retries: 1 }));
@@ -2075,9 +2115,12 @@ function mockSettings() {
   b.set([0x33, 0x52, 0x45, 0x50]);
   return ARR.encode(b, { loop: false, entries: [0, 1, 2, 3].map((scene) => ({ scene, bars: 4 })) });
 }
+/* backup object 10 at its default: nothing learned, CH1-3 = 1 2 3, drums 10, OTHER SEL, BEND 2 (a 32 / 36-byte one: the
+   map, the map and the channels) */
+const mlDefault = (b) => b.every((x, i) => i < 32 ? !x : i === 32 ? x === 1 : i === 33 ? x === 2 : i === 34 ? x === 3 : i === 35 ? x === 10 : i === 36 ? x === 2 : !x);
 function makeMockDevice(opt = {}) {
   const NONOFF = ["OFF", "ON"], NDIV = ["1/4", "1/8", "1/16", "1/32", "8T", "16T"], NGO = ["--", "GO"], NDASH = ["--"];
-  const NSDIV = [...NDIV, "1/2", "1BAR", "2BAR"], NDLY = [...NDIV, "1/8D", "1/16D"];   /* SLOOP 2.4: long steps, dotted delays */
+  const NSDIV = [...NDIV, "1/2", "1BAR", "2BAR"], NDLY = [...NDIV, "1/8D", "1/16D", "1/4D"];   /* SLOOP 2.4: long steps, dotted delays */
   const D = (label, fmt, min, max, def, names = null, unit = "") => ({ label, fmt, min, max, def, names, unit });
   const E = (label, names, def) => D(label, F.ENUM, 0, names.length - 1, def, names);
   const TP = [
@@ -2096,19 +2139,32 @@ function makeMockDevice(opt = {}) {
     E("SLCR", ["OFF", "GATE", "STUT"], 0), D("PAT", F.INT, 1, 16, 1), E("RATE", ["1/8", "1/16", "1/32", "8T", "16T", "32T"], 1), D("DEPTH", F.PCT, 0, 127, 127),
     E("CHORD", ["OFF", "TRIAD", "7TH", "9TH", "SUS4", "POWER"], 0),
     D("FILT", F.FILT, -64, 63, 0), D("STRUM", F.INT, -60, 60, 0), E("VLEAD", NONOFF, 0),
+    /* SLOOP 2.6 (after Felucca 1.4 / 1.5): INSERT, ANALOG's filter TYPE, ENV SYNC, LFO 2 */
+    E("INSRT", ["OFF", "SOFT", "HARD", "FOLD", "FUZZ", "CRUSH", "PHASR", "FLANG", "CHOR"], 0),
+    D("INS A", F.PCT, 0, 127, 64), D("INS B", F.PCT, 0, 127, 96), D("INS C", F.PCT, 0, 127, 96), D("MIX", F.PCT, 0, 127, 127),
+    E("TYPE", ["LP", "BP", "HP"], 0), E("ESYNC", NONOFF, 0),
+    E("SYNC", ["OFF", "4BAR", "2BAR", "1BAR", "1/2", "1/4", "1/8", "8T", "1/16", "16T", "1/32"], 0),
+    E("TRIG", ["NOTE", "FREE"], 0), E("POL", ["BI", "UNI"], 0),
   ];
   const GP = [
     D("BPM", F.BPM, 40, 240, 90), D("SWING", F.SWING, 0, 100, 0), E("CLICK", ["OFF", "REC", "ON"], 0), D("TUNE", F.INT, -50, 50, 0),
     E("TIME", NDLY, 1), D("FDBK", F.PCT, 0, 120, 60), D("COLR", F.PCT, 0, 127, 70), D("MIX", F.PCT, 0, 127, 90),
     D("SIZE", F.PCT, 0, 127, 90), D("DAMP", F.PCT, 0, 127, 60), D("CRT", F.LFOHZ, 0, 127, 40), D("CDP", F.PCT, 0, 127, 60),
-    E("MIDI", ["KEYS", "SEQ"], 0), E("SYNC", ["INT", "USB", "TRS"], 0), E("IN", ["NOTES", "CLOCK"], 0), D("CPU", F.INT, 0, 0, 0),
+    E("OUT", ["KEYS", "SEQ"], 0), E("SYNC", ["INT", "USB", "TRS"], 0), E("IN", ["NOTES", "CLOCK", ...Array.from({ length: 16 }, (_, k) => `CH ${k + 1}`)], 0), D("CPU", F.INT, 0, 0, 0),
     D("SLOT", F.INT, 1, 4, 1), E("NAME", NDASH, 0), E("LOAD", NGO, 0), E("SAVE", NGO, 0),
     E("ENG", ["ANALOG", "DIGITAL", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL",
       "GRAIN", "FM6", "PHYS", "NOISE"], 0), E("SET", NGO, 0),
     E("CLRSQ", NGO, 0), E("INIT", NGO, 0),
-    D("CH", F.INT, 0, 16, 10), D("LVL", F.INT, 0, 127, 100), D("REV", F.INT, 0, 127, 16),
+    E("CH4", ["OFF", ...Array.from({ length: 16 }, (_, i) => String(i + 1))], 10), D("LVL", F.INT, 0, 127, 100), D("REV", F.INT, 0, 127, 16),
     D("DUST", F.PCT, 0, 127, 0), D("DUCK", F.PCT, 0, 127, 0), D("FILT", F.FILT, -64, 63, 0),
     E("ROLL", ["1/8", "1/16", "1/32", "32T", "1/64"], 1), E("NEW", NGO, 0), D("DLY", F.INT, 0, 127, 0),
+    /* SLOOP 2.6: GLO > MIDI, each synth track's channel (OFF, 1..16) and the other channels (SEL / OFF) */
+    ...[1, 2, 3].map((k) => E("CH" + k, ["OFF", ...Array.from({ length: 16 }, (_, i) => String(i + 1))], k)), E("OTHER", ["SEL", "OFF"], 0),
+    /* GLO > TEXTURE (2.6): the bed under the mix */
+    E("SRC", ["OFF", "VINYL", "TAPE", "RAIN", "WIND", "RADIO", "ROOM", "USR1", "USR2", "USR3", "USR4"], 0), D("LEVEL", F.PCT, 0, 127, 64),
+    D("TONE", F.FILT, -64, 63, 0), D("MOVE", F.PCT, 0, 127, 40),
+    E("RATE", ["1BAR", "2BAR", "4BAR", "8BAR", "16BAR"], 2), E("WHEN", ["PLAY", "ALWAYS"], 0), E("DUCK", NONOFF, 0),
+    D("BEND", F.SEMI, 1, 12, 2),                    /* GLO > MIDI 2 (2.6): the pitch bend's range */
   ];
   /* the drum track's P_E0: its kit (drums.c DRUM_KIT_NAMES; 5 = 808, the power-on kit) */
   const KIT = E("KIT", ["ACOUSTIC", "DEEP", "TIGHT", "BRIGHT", "DUST", "808", "909", "606", "80S", "VINTAGE", "TRAP", "DRILL", "BOOMBAP", "LO-FI", "PHONK", "HOUSE", "D.HOUSE", "TECHNO", "MINIMAL", "ELECTRO", "DISCO", "GARAGE", "JUNGLE", "DUBSTEP", "DEMBOW", "AMAPIANO", "AFRO", "LATIN", "TRIBAL", "SYNTHWV", "CHIP", "ARCADE", "GLITCH", "INDUSTR", "HYPER", "AMBIENT", "JAZZ", "USR1", "USR2", "USR3", "USR4", "USR3+4", "SYN1", "SYN2", "SYN3", "SYN4"], 0);
@@ -2275,7 +2331,7 @@ function makeMockDevice(opt = {}) {
     [[60, 60, 61, 61, 62, 0, 63, 63, 64, 65, 65, 0, 66, 66, 66, 67], [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]],
     [[60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75], [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]],
   ];
-  const P_COUNT = 61, G_COUNT = 33, NSTEP = 64, P_E0 = 53, G_ENGSEL = 20, P_SLCR = 45, P_CHORD = 49;
+  const P_E0 = TP.length, P_COUNT = P_E0 + 8, G_COUNT = GP.length, NSTEP = 64, G_ENGSEL = 20, P_SLCR = 45, P_CHORD = 49;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   /* four tracks (firmware v3); engine / preset / p / step below are the selected track's */
   const NTRK = 4, TRK_DRUM = 3;
@@ -2295,6 +2351,7 @@ function makeMockDevice(opt = {}) {
     fm6bank: new Array(FM6_BANK).fill(null),         /* the FM6 patch bank (fm6_bank.c): packed records */
     settings: mockSettings(),                       /* v6: the settings object (2.5: a PER3 with a song order) */
     dsyn: null, dsynStored: null, dsynPlayed: [],  /* v10: the SYN kits (RAM, flash), the auditions heard */
+    ml: null,                                       /* 2.6: the MIDI LEARN map (seq.c ml_tab, 16 x 2 bytes), null: none */
     bkSnap: null, bkPut: null,
     watch: false, v4: false, lastReq: 0, playing: false,
   };
@@ -2459,7 +2516,7 @@ function makeMockDevice(opt = {}) {
         b(0);
         break;
       case CMD.INFO:
-        s(opt.legacy ? "FELUCCA 0.4 BETA (MOCK)" : opt.v3 ? "FELUCCA 0.8 (MOCK)" : "FELUCCA SLOOP 2.0 (MOCK)"); b(ENG.length); b(P_COUNT); b(G_COUNT); b(NSTEP); b(P_E0);
+        s(opt.legacy ? "FELUCCA 0.4 BETA (MOCK)" : opt.v3 ? "FELUCCA 0.8 (MOCK)" : "FELUCCA SLOOP 2.6 (MOCK)"); b(ENG.length); b(P_COUNT); b(G_COUNT); b(NSTEP); b(P_E0);
         ENG.forEach((e) => s(e.name));
         if (!opt.legacy) b(NTRK);
         if (v5) b(opt.noBackup ? 5 : opt.v7 ? 7 : opt.v8 ? 8 : opt.v9 ? 9 : 10);   /* v10: SYN kits (v9: FM6 patches, v8: fill conditions, v7: nudges and locks, v6: backup) */
@@ -2535,7 +2592,7 @@ function makeMockDevice(opt = {}) {
       case CMD.LOCK_SET: {
         if (a.length < 3 || a[0] >= NTRK) return null;
         const t = st.tracks[a[0]], step = a[1], param = a[2];
-        let rc = step >= NSTEP || param >= P_COUNT ? 1 : !lockable(param) ? 2 : 0;
+        let rc = step >= NSTEP || param >= P_COUNT ? 1 : !lockable(param, P_E0) ? 2 : 0;
         if (!rc) {
           const k = t.locks.findIndex((l) => l.step === step && l.param === param);
           if (a.length >= 5) {
@@ -2677,6 +2734,8 @@ function makeMockDevice(opt = {}) {
         st.bkSnap = new Map([[0, enc(project())], [1, st.settings.slice()], ...[0, 1, 2, 3].map((k) => [2 + k, st.slots[k] ? enc(st.slots[k]) : new Uint8Array(0)]),
           [6, bankOf(0)], [7, bankOf(1)], ...(v9 ? [[8, st.fm6bank.some(Boolean) ? FM6.bankObj(st.fm6bank) : new Uint8Array(0)]] : []),
           ...(v10 ? [[9, DSYN.bankEncode(dsynKits())]] : []),
+          ...(v10 && st.ml && !mlDefault(st.ml) ? [[10, st.ml.slice()]] : []),   /* MIDI LEARN (2.6): only when not the
+                                                                                    * default (editor.c, project.c midi_part_default) */
           ...st.smp.map((_, k) => [32 + k, st.smp[k].zones ? st.smp[k].flash.slice(0, SMP.DATA_OFF + st.smp[k].len) : new Uint8Array(0)])]);
         st.bkPut = null;
         b(0); b(st.bkSnap.size);
@@ -2696,7 +2755,7 @@ function makeMockDevice(opt = {}) {
         if (opt.noBackup || a.length < 2) return null;
         const op = a[0], id = a[1], r = new Reader(a.slice(2));
         let rc = 1;
-        if (op === 0 && a.length === 12 && [0, 1, 2, 3, 4, 5, 6, 7, ...(v9 ? [8] : []), ...(v10 ? [9] : [])].includes(id)) {
+        if (op === 0 && a.length === 12 && [0, 1, 2, 3, 4, 5, 6, 7, ...(v9 ? [8] : []), ...(v10 ? [9, 10] : [])].includes(id)) {
           const len = u35dec(r), crc = u35dec(r);
           if ((id >= 2 || len) && len <= 1 << 20) { st.bkPut = { id, len, crc, pos: 0, buf: new Uint8Array(len) }; st.bkSnap = null; rc = 0; }
         } else if (!st.bkPut || st.bkPut.id !== id) rc = 5;
@@ -2716,6 +2775,12 @@ function makeMockDevice(opt = {}) {
             }
             else if (id === 0) { const o = js(); st.tracks = o.tracks; st.sel = o.sel; st.g = o.g; }
             else if (id <= 5) st.slots[id - 2] = P.len ? js() : null;
+            else if (id === 10) {                           /* the MIDI part (2.6; editor.c: stopped only): the LEARN
+                                                               map (16 x 2 bytes), then GLO > MIDI's channels (4 bytes) */
+              if (P.len !== 32 && P.len !== 36 && P.len !== 40) throw 0;
+              if (st.playing) rc = 3;
+              else st.ml = P.buf.slice();
+            }
             else if (id === 9) {                            /* the SYN kits (with the settings: stopped only) */
               const k = DSYN.bankDecode(P.buf);
               if (!k) throw 0;
@@ -3369,6 +3434,22 @@ const DSYN = {
 const DSYN_MOCK_NAMES = ["808", "909", "606", "80S", "VINTAGE", "TRAP", "DRILL", "BOOMBAP", "LO-FI", "PHONK", "HOUSE", "D.HOUSE", "TECHNO", "MINIMAL", "ELECTRO", "DISCO", "GARAGE", "JUNGLE", "DUBSTEP", "DEMBOW", "AMAPIANO", "AFRO", "LATIN", "TRIBAL", "SYNTHWV", "CHIP", "ARCADE", "GLITCH", "INDUSTR", "HYPER", "AMBIENT", "JAZZ"];
 const DSYN_MOCK_KITS = "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";
 
+/* SET coalescing (userSet), per control key: last = when the user last changed it (touched()), sent = the value last
+   requested. A value equal to the last request is skipped only while that request is still pending (queued or in
+   flight): it carries it already. Once answered, the device may hold something else under the same key (another track
+   or sound under the controls, a knob turned on the FM-1), so the same value is sent again (2.6: setting DIV 1/8 on
+   one track, then 1/8 on another, sent nothing the second time). clear(): another track / sound / device */
+class SetGate {
+  constructor() { this.m = new Map(); }
+  get(k) { return this.m.get(k); }
+  user(k, v, pending, now) {
+    let st = this.m.get(k);
+    if (!st) this.m.set(k, (st = { last: 0, sent: null }));
+    st.last = now;
+    return !(pending && v === st.sent);
+  }
+  clear() { this.m.clear(); }
+}
 /*PROTO-END*/
 
 /* ===================================================================== UI === */
@@ -3486,6 +3567,7 @@ const TEXT = {
     loadedUser: "読み込みました: ", reloaded: "本体で音色が変わったので読み直しました", readingBank: "スロットを読み込み中",
     badEngine: "このファームウェアにないエンジンです: ", flashFail: "書き込みに失敗しました（rc {rc}）",
     installer: "SLOOP インストーラー",
+    offline: "エディタをダウンロード（オフライン用：Chrome / Edge で開く）",
     tabSeq: "シーケンサー", tabTracks: "トラック", tabSettings: "設定",
     navTrack: "トラック", navSounds: "サウンド", navDevice: "本体", tabKits: "ドラムキット", fm1: "FM-1",
     stepList: "ステップ一覧（音名を入力）", stepsOf: "{n} ステップ", fontCredit: "フォント: Terminus（SIL OFL 1.1）",
@@ -3518,6 +3600,7 @@ const TEXT = {
     bkRestoring: "復元中 ", bkRestored: "復元しました", bkConfirm: "FM-1 の今の内容をすべてこのバックアップで置き換えます。続けますか？",
     bkBad: "SLOOP のバックアップファイルではないか、壊れています: ", bkStop: "FM-1 の再生を止めてから、もう一度復元してください。",
     bkStale: "本体の内容が途中で変わりました。もう一度バックアップしてください: ", bkRead: "読み取りエラー: ", bkWrite: "書き込みエラー: ", bkRc4: "フラッシュがありません",
+    bkNewer: "新しい SLOOP のバックアップです。先に FM-1 をアップデートしてから復元してください（何も変更していません）: ",
     system: "システム", firmware: "ファームウェア", sync: "同期", tracksN: "トラック", stepsN: "ステップ数", enginesL: "エンジン",
     smpSlots: "サンプルスロット", userBank: "ユーザープリセット", none: "なし",
     fm6Title: "FM6 の音色（6 オペレーター）", fm6Help: "FM6 エンジンの音色をまるごと編集します。本体のノブ（EDIT の 8 つ）はこの音色の上にかかるマクロです。トラックへ送るとすぐ鳴り、PTCH を回すか別の音を読み込むまでそのトラックの音色になります（プロジェクトは PTCH だけを保存します）。バンク（B1〜B27）に保存すると PTCH で呼び出せます（本体を停止してから）。",
@@ -3684,6 +3767,7 @@ const TEXT = {
     loadedUser: "Loaded ", reloaded: "The sound changed on the device: read again", readingBank: "Reading the slots",
     badEngine: "This firmware has no such engine: ", flashFail: "Write failed (rc {rc})",
     installer: "SLOOP installer",
+    offline: "Download the editor (offline: open it in Chrome or Edge)",
     tabSeq: "Sequencer", tabTracks: "Tracks", tabSettings: "Settings",
     navTrack: "Track", navSounds: "Sounds", navDevice: "Device", tabKits: "Drum kit", fm1: "FM-1",
     stepList: "Step list (type note names)", stepsOf: "{n} steps", fontCredit: "Font: Terminus (SIL OFL 1.1)",
@@ -3716,6 +3800,7 @@ const TEXT = {
     bkRestoring: "Restoring ", bkRestored: "Restored", bkConfirm: "Replace everything on the FM-1 with this backup?",
     bkBad: "Not a SLOOP backup, or damaged: ", bkStop: "Stop the FM-1 (PLAY), then restore again.",
     bkStale: "The FM-1 changed during the backup; back up again: ", bkRead: "Read error: ", bkWrite: "Write error: ", bkRc4: "No flash",
+    bkNewer: "This backup comes from a newer SLOOP: update the FM-1 first, then restore. Nothing was changed: ",
     system: "System", firmware: "Firmware", sync: "Sync", tracksN: "Tracks", stepsN: "Steps", enginesL: "Engines",
     smpSlots: "Sample slots", userBank: "User presets", none: "none",
     fm6Title: "FM6 patch (six operators)", fm6Help: "Edit the whole patch of the FM6 engine. The device's knobs (the eight EDIT values) are macros on top of it. Sent to a track it plays at once and stays that track's patch until PTCH turns or another sound loads (a project keeps PTCH only); stored in the bank (B1..B27) it is a PTCH value (stop the device first).",
@@ -3926,7 +4011,7 @@ let busy = 0;          /* multi-request operations in progress: no polling */
 let dragging = null;   /* key of the slider being dragged */
 let wantConnected = false;
 const ctl = new Map(); /* key "s:id" -> {input, out, desc, scope, id, row} */
-const sets = new Map(); /* key -> {last: time of the user's last change, sent: the value last requested} */
+const sets = new SetGate(); /* key -> {last: time of the user's last change, sent: the value last requested} */
 let needReload = false; /* a RELOAD push came: re-read DESC, DUMP and steps when free */
 let lastDump = 0;      /* Date.now() of the last DUMP */
 /* the device also pushes RELOAD after loads the editor asked for (SET of G_ENGSEL, PRESET, PROJECT load,
@@ -3941,23 +4026,33 @@ function selfLoad() {
 const stepEdit = new Map(); /* index -> time of the last edit */
 
 /* parameter ids (firmware/src/core.h); used only when P_COUNT / G_COUNT match */
-const EXPECT = { pcount: 61, gcount: [32, 33], pe0: 53 };   /* gcount 33: 2.5's drum DLY (G_DRDLY) */
+/* pcount 71 / pe0 63: 2.6's INSERT, filter TYPE, ENV SYNC, LFO 2 (P_ITYPE 53 .. P_LPOL 62, after Felucca 1.4 / 1.5) */
+const EXPECT = { pcount: [61, 71], gcount: [32, 33, 45], pe0: [53, 63] };   /* gcount 33: 2.5's drum DLY (G_DRDLY); 45: 2.6's GLO > MIDI, TEXTURE, BEND */
 const P = { LEVEL: 0, SLEN: 29, CHORD: 49 };
-const LAYOUT = (pe0) => [
-  { t: "ENV", pages: [["ENV", 0, [1, 2, 3, 4]], ["ENV DEST", 0, [5, 6, 7, 8]]] },
-  { t: "LFO", pages: [["LFO", 0, [9, 10, 11, 12]], ["LFO DEST", 0, [13, 14, 15, 16]]] },
-  { t: "EDIT", engine: true, pages: [["EDIT 1", 0, [pe0, pe0 + 1, pe0 + 2, pe0 + 3]], ["EDIT 2", 0, [pe0 + 4, pe0 + 5, pe0 + 6, pe0 + 7]]] },
-  { t: "VOICE", pages: [["LEVEL", 0, [0]], ["VOICE", 0, [37, 38, 41, 42]], ["VOICE 2", 0, [43, 44, 39, 40]]] },
-  { t: "FX", pages: [["FX", 0, [33, 34, 35, 36]], ["FILTER", 0, [50]], ["SLICER", 0, [45, 46, 47, 48]], ["DLY", 1, [4, 5, 6, 7]], ["REV/CHO", 1, [8, 9, 10, 11]]] },
-  { t: "SEL", pages: [["SEL", 0, [25, 26, 27, 49]], ["SEL 2", 0, [28, 51, 52]]] },
-  { t: "ARP", pages: [["ARP", 0, [17, 18, 19, 20]], ["ARP 2", 0, [21, 22, 23, 24]]] },
-  { t: "SEQ PATTERN", tab: "seqgroups", pages: [["PATTERN", 0, [29, 30, 31, 32]]] },
-  { t: "GLOBAL", tab: "setgroups", pages: [["GLOBAL", 1, [0, 1, 2, 3]]] },
-  { t: "MASTER", tab: "setgroups", pages: [["MASTER", 1, [27, 28, 29, 30]]] },
-  { t: "DRUMS", tab: "setgroups", pages: [["DRUMS", 1, [24, 25, 26, 32]]] },
-];
+const LAYOUT = (pe0) => {
+  const v251 = pe0 >= 63;                         /* (2.6: the pages the device has for the new parameters) */
+  const opt = (yes, ...pages) => (yes ? pages : []);
+  return [
+    { t: "ENV", pages: [["ENV", 0, [1, 2, 3, 4]], ["ENV DEST", 0, [5, 6, 7, 8]], ...opt(v251, ["ENV SYNC", 0, [59]])] },
+    { t: "LFO", pages: [["LFO", 0, [9, 10, 11, 12]], ...opt(v251, ["LFO 2", 0, [60, 61, 62]]), ["LFO DEST", 0, [13, 14, 15, 16]]] },
+    { t: "EDIT", engine: true, pages: [["EDIT 1", 0, [pe0, pe0 + 1, pe0 + 2, pe0 + 3]], ["EDIT 2", 0, [pe0 + 4, pe0 + 5, pe0 + 6, pe0 + 7]],
+      ...opt(v251, ["FILTER", 0, [58], 0])] },     /* (4th: the engine it is shown with: ANALOG's filter TYPE) */
+    { t: "VOICE", pages: [["LEVEL", 0, [0]], ["VOICE", 0, [37, 38, 41, 42]], ["VOICE 2", 0, [43, 44, 39, 40]]] },
+    { t: "FX", pages: [["FX", 0, [33, 34, 35, 36]], ["FILTER", 0, [50]], ["SLICER", 0, [45, 46, 47, 48]],
+      ...opt(v251, ["INSERT", 0, [53, 54, 55, 56]], ["INSERT 2", 0, [57]]), ["DLY", 1, [4, 5, 6, 7]], ["REV/CHO", 1, [8, 9, 10, 11]]] },
+    { t: "SEL", pages: [["SEL", 0, [25, 26, 27, 49]], ["SEL 2", 0, [28, 51, 52]]] },
+    { t: "ARP", pages: [["ARP", 0, [17, 18, 19, 20]], ["ARP 2", 0, [21, 22, 23, 24]]] },
+    { t: "SEQ PATTERN", tab: "seqgroups", pages: [["PATTERN", 0, [29, 30, 31, 32]]] },
+    { t: "GLOBAL", tab: "setgroups", pages: [["GLOBAL", 1, [0, 1, 2, 3]]] },
+    { t: "MASTER", tab: "setgroups", pages: [["MASTER", 1, [27, 28, 29, 30]]] },
+    { t: "DRUMS", tab: "setgroups", pages: [["DRUMS", 1, [24, 25, 26, 32]]] },
+    ...opt(v251, { t: "MIDI", tab: "setgroups", pages: [["MIDI", 1, [33, 34, 35, 24]], ["MIDI 2", 1, [14, 36, 12, 44]]] }),   /* CH1 CH2 CH3 CH4 (drums);
+                                                     * IN OTHER OUT BEND (settings of the FM-1; IN and OUT: the FM-1 only, G_SKIP) */
+    ...opt(v251, { t: "TEXTURE", tab: "setgroups", pages: [["TEXTURE", 1, [37, 38, 39, 40]], ["TEXTURE 2", 1, [41, 42, 43]]] }),   /* the bed */
+  ];
+};
 /* globals that are actions or placeholders on the device: buttons instead, or hidden */
-const G_SKIP = new Set(["SLOT", "NAME", "LOAD", "SAVE", "ENG", "SET", "CLRSQ", "INIT", "MIDI", "SYNC", "ROUT", "IN", "CPU", "NEW"]);
+const G_SKIP = new Set(["SLOT", "NAME", "LOAD", "SAVE", "ENG", "SET", "CLRSQ", "INIT", "MIDI", "OUT", "SYNC", "ROUT", "IN", "CPU", "NEW"]);
 const key = (s, id) => s + ":" + id;
 const gEng = () => { const i = dev.gdesc.findIndex((d) => d && d.label === "ENG"); return i >= 0 ? i : 20; };
 const pSlen = () => { const i = dev.pdesc.findIndex((d) => d && d.fmt === F.STEPS); return i >= 0 ? i : P.SLEN; };
@@ -3999,6 +4094,7 @@ async function connect() {
     if (input.open) await input.open().catch(() => {});
     dev = { link, input, output, info: null, pdesc: [], gdesc: [], names: [], dump: null, steps: [], slotUsed: [null, null, null, null],
       keys: null, watch: false, bank: null };
+    sets.clear();                                    /* (another FM-1, maybe) */
     setLabel($("connect"), t("disconnect"));
     renderLive();
     await load(dev);
@@ -4238,13 +4334,15 @@ function buildGroups() {
   /* Sound: the selected track's parameters; Sequencer: its pattern settings; Settings: globals and drums */
   const groups = { groups: [], seqgroups: [], setgroups: [] };
   const { info } = dev;
-  if (info.pcount === EXPECT.pcount && EXPECT.gcount.includes(info.gcount) && info.pe0 === EXPECT.pe0) {
+  const known = EXPECT.pcount.indexOf(info.pcount);
+  if (known >= 0 && EXPECT.gcount.includes(info.gcount) && info.pe0 === EXPECT.pe0[known]) {
     for (const g of LAYOUT(info.pe0)) {
       /* a card per button of the device (ENV, LFO, EDIT ...), its pages as rows of four knobs, one colour per knob */
       const div = el("div", { class: "group" }, el("h2", { ic: HEAD_IC[g.t] },
         g.engine ? `EDIT ${info.engines[dev.dump.engine] || ""}` : g.t));
       let pages = 0;
-      for (const [title, s, ids] of g.pages) {
+      for (const [title, s, ids, onlyEng] of g.pages) {
+        if (onlyEng != null && dev.dump.engine !== onlyEng) continue;
         const rows = ids.map((id) => paramRow(s, id)).filter(Boolean);
         if (!rows.length) continue;
         const tt = g.engine && (dev.titles[dev.dump.engine] || [])[g.pages.findIndex((x) => x[0] === title)];
@@ -4357,13 +4455,15 @@ function showValue(k, v, force) {
     c.input.style.setProperty("--p", Math.max(p, z).toFixed(1) + "%");
   }
 }
+/* a SET of this control queued or in flight */
+function pendingSet(k) { return !!dev && (dev.link.hasQueued(k) || (!!dev.link.cur && dev.link.cur.key === k)); }
 /* the user is working on this control: polling and pushes must not move it */
 function touched(k) {
   const c = ctl.get(k), st = sets.get(k);
   if (dragging === k) return true;
   if (c && c.input.tagName === "SELECT" && document.activeElement === c.input) return true;
   if (st && performance.now() - st.last < 600) return true;
-  return !!dev && (dev.link.hasQueued(k) || (!!dev.link.cur && dev.link.cur.key === k));
+  return pendingSet(k);
 }
 
 window.addEventListener("pointerup", () => { if (dragging) { const k = dragging; dragging = null; const c = ctl.get(k); if (c) userSet(c.scope, c.id, +c.input.value, true); } });
@@ -4378,10 +4478,7 @@ function userSet(s, id, v, final) {
   showValue(k, v, false);
   mixFromDump();
   if (!s && id === pSlen()) lenChanged();            /* (2.5: the grid follows LEN at once) */
-  let st = sets.get(k);
-  if (!st) sets.set(k, (st = { last: 0, sent: null }));
-  st.last = performance.now();
-  if (v === st.sent) return;                        /* the last request already carries it */
+  if (!sets.user(k, v, pendingSet(k), performance.now())) return;   /* the pending request already carries it */
   sendSet(s, id, k);
 }
 async function sendSet(s, id, k) {
@@ -4415,6 +4512,8 @@ async function choosePreset(e, p) {
 }
 async function afterSoundChange(msg = "ready") {
   needReload = false;                               /* this re-reads everything a RELOAD asks for */
+  sets.clear();                                     /* another track / sound under the controls: a value equal to the one
+                                                       sent before is sent again, and they show the device's at once */
   dev.dump = await getDump();
   await rereadEngineDesc();
   updateBrowser();
@@ -6728,6 +6827,7 @@ $("savefile").addEventListener("click", () => {
   if (!dev) return;
   const engine = dev.dump.engine, preset = dev.dump.preset;
   const data = { format: "felucca-patch", version: 1, firmware: dev.info.version,
+    pCount: dev.info.pcount, pE0: dev.info.pe0,      /* (2.6: read by count on another version, patchByCount) */
     engineName: dev.info.engines[engine], presetName: (dev.names[engine] || [])[preset],
     engine, preset, p: dev.dump.p.slice(), g: dev.dump.g.slice(),
     steps: dev.steps.map((s) => ({ n: s.n, notes: s.notes.slice(), time: s.time, flags: s.flags, vel: s.vel })) };
@@ -6749,12 +6849,12 @@ $("file").addEventListener("change", async () => {
     await rq(req.preset(data.engine, data.preset));
     dev.dump = await getDump();
     await rereadEngineDesc();
-    const n = Math.min(data.p.length, dev.info.pcount);
+    const pv = patchByCount(data.p, data.pE0, dev.info.pcount), n = pv.length;   /* (a file of another version) */
     for (let i = 0; i < n; i++) {
       const d = dev.pdesc[i];
-      if (!visible(d) || !Number.isFinite(data.p[i])) continue;
+      if (!visible(d) || !Number.isFinite(pv[i])) continue;
       if (i % 8 === 0) sayK("applying", `${i}/${n}`);
-      await rq(req.set(0, i, data.p[i]));
+      await rq(req.set(0, i, pv[i]));
     }
     if (Array.isArray(data.steps)) {
       const m = Math.min(data.steps.length, dev.info.nstep);

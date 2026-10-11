@@ -34,13 +34,31 @@ static int32_t lfo_wave(track_t *t, uint32_t ph)
     }
 }
 
+/* LFO 2 (SLOOP 2.6, after Felucca 1.4 by Leo Kuroshita, #154; params.c N_LSYNC): with SYNC on, one cycle lasts the
+ * note value of the tempo, whatever RATE says: the phase advances 2^32 x CTL / cycle a block (two 32-bit divides; the
+ * 1-bit truncation of 0xFFFFFFFF drifts by less than a millionth of a cycle a cycle). OFF: RATE's table, as before.
+ * LSYNC_PULSES: a cycle in 24ths of a beat (4BAR .. 1/32) */
+static const uint16_t LSYNC_PULSES[11] = {0, 384, 192, 96, 48, 24, 12, 8, 6, 4, 3};
+static __attribute__((noinline)) uint32_t lfo_sync_inc(const track_t *t)   /* (not inlined: its divides stay out of
+                                                                           * the audio ISR's loop over the tracks) */
+{
+    uint32_t beat = (uint32_t)FS * 60u / (uint32_t)clamp(song.g[G_BPM], 20, 300), cyc, q, r;
+    cyc = beat * LSYNC_PULSES[(uint32_t)t->p[P_LSYNC] % NELEM(LSYNC_PULSES)] / 24u;
+    cyc = cyc ? cyc : 1u;
+    q = 0xFFFFFFFFu / cyc;
+    r = 0xFFFFFFFFu % cyc;
+    return q * CTL + (r * CTL + CTL) / cyc;
+}
+
 static void track_lfo_tick(track_t *t)
 {
     uint32_t old = t->lfo_ph;
-    t->lfo_ph += LFO_INC[t->p[P_LRATE] & 127];
+    t->lfo_ph += t->p[P_LSYNC] ? lfo_sync_inc(t) : LFO_INC[t->p[P_LRATE] & 127];
     if (t->lfo_ph < old)
         t->lfo_rnd = rng();
     t->lfo_val = lfo_wave(t, t->lfo_ph);
+    if (t->p[P_LPOL])                                   /* UNI: 0..+1 (the depths reach as far, one way only) */
+        t->lfo_val = (t->lfo_val + 32768) >> 1;
     if (t->lfo_fade < 32767) {
         int32_t step = (int32_t)(ENV_LIN[t->p[P_LFADE] & 127] >> 9);
         t->lfo_fade = t->p[P_LFADE] ? clamp(t->lfo_fade + (step ? step : 1), 0, 32767) : 32767;
@@ -390,7 +408,7 @@ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
     }
     if ((uint32_t)(t - trk) < NPART && note < 128u)
         note_hits[t - trk][note >> 5] |= 1u << (note & 31u);
-    if (t->xf_on || t->eng_req != t->engine) {          /* engine switch under way: after the fade */
+    if (t->xf_on || t->eng_req != t->engine || t->pold) {   /* engine switch / preset under way: after the fade */
         for (i = 0; i < t->xp_n && t->xp_note[i] != note; i++)
             ;
         if (i == t->xp_n && t->xp_n < 4u)
@@ -402,8 +420,9 @@ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
     }
     for (i = 0; i < NVOICE; i++)
         any |= t->v[i].gate;
-    if (!any) {                                        /* fresh phrase: LFO retrigger and fade */
-        t->lfo_ph = (uint32_t)t->p[P_LPHASE] << 25;
+    if (!any) {                                        /* fresh phrase: LFO retrigger (TRIG NOTE) and fade */
+        if (!t->p[P_LTRIG])
+            t->lfo_ph = (uint32_t)t->p[P_LPHASE] << 25;
         t->lfo_fade = 0;
     }
     if (mode == V_POLY) {
@@ -544,11 +563,27 @@ static void strum_block(uint32_t n)
  * parameters (pe_old: an engine never reads another engine's values, which index its tables); only
  * then the engine switches and the notes that came during the fade start on it. A part with nothing
  * sounding switches at once. */
-#define XF_BLOCKS 4u                                    /* 4 x 32 samples: 2.9 ms */
+#define XF_BLOCKS 8u                                    /* 8 x 32 samples: 5.8 ms (2.6, as Clipper: a bass fades
+                                                         * without a thump; 2.9 ms before) */
+/* SLOOP 2.6: a preset (factory or user) about to load on t: the sound as it is now kept for the fade (UI, before the
+ * new values; IRQ off). The voices sounding then fade out over XF_BLOCKS rendered with these values, the part's DIST,
+ * INSERT, level trim and sends included (fx.c mix_part), as for an engine switch: no jump of a filter, a drive or a
+ * release in the middle of a note (a click). A fade under way keeps the sound it started from */
+static void sound_change(track_t *t)
+{
+    if (!t->pold) {                                     /* (the ISR reads p_old only once pold is set: no IRQ-off
+                                                         * here, the caller's own IRQ-off section stays whole; an
+                                                         * engine fade without a preset takes it too, never an old
+                                                         * p_old) */
+        memcpy(t->p_old, t->p, sizeof t->p_old);
+        __asm__ volatile("" ::: "memory");
+        t->pold = 1;
+    }
+}
 static void engine_block(track_t *t)
 {
     uint32_t i, any = 0;
-    if (t->xf_on || t->eng_req != t->engine) {
+    if (t->xf_on || t->eng_req != t->engine || t->pold) {
         if (!t->xf_on) {
             for (i = 0; i < NVOICE; i++)
                 any |= t->v[i].active;
@@ -566,8 +601,12 @@ static void engine_block(track_t *t)
             v->stage = 0;
             v->env = v->env_out = 0;
         }
+        if (t->xf_on && t->eng_req == ENGI_FM6 && ((fm6_pend >> ((uint32_t)(t - trk) % NPART)) & 1u))
+            return;                                     /* (2.6) FM6: the new notes wait for the preset's patch
+                                                         * (eng_fm6.c fm6_poll, main loop): not a note of the old */
         t->engine = t->eng_req % NENGINES;
         t->xf_on = 0;
+        t->pold = 0;
         t->nmono = 0;
         t->mono_note = 0;
         {
@@ -581,6 +620,48 @@ static void engine_block(track_t *t)
         t->pe_old[i] = t->p[P_E0 + i];
 }
 
+/* ENV SYNC (SLOOP 2.6, after Felucca 1.5 by Leo Kuroshita, #175; P_ESYNC, params.c ESYNC_NAMES): ATK DEC REL as
+ * note values of the tempo. The part's three steps, made once a block before its voices (track_render; the parts
+ * render one at a time), as gen_tables.py makes ENV_LIN / ENV_EXP for a time in ms: the attack's linear step
+ * 2^24 CTL / T (rounded), the decay's and release's 1 - e^-x (x = 4.6 CTL / T: ~99 % of the way after T), here as
+ * x - x^2/2 + x^3/6 - x^4/24 (x <= 0.33 at the shortest, 1/64T at 240 BPM: under 0.04 % off). The coefficient is Q16 as
+ * ENV_EXP's: past ~2 s it is a few units, the time within half of one (4BAR at 90 BPM: 2.5 %). Value 0 (and a time
+ * below a block) takes the tables' 0, as with SYNC OFF. OFF: the tables' values, as before (looked up once a block here
+ * instead of once a voice in env_tick: the same numbers) */
+_Static_assert(CTL == 32, "esync_one: 4.6 CTL in Q16 is 9646899");
+static uint32_t esync_k[3];      /* ATK's step, DEC's and REL's coefficient (Q16): the part's, this block (env_tick) */
+static uint32_t esync_one(uint32_t quarter, int32_t v, uint32_t i)
+{
+    uint32_t u = ESYNC_UNITS[esync_idx(v)], T = quarter * u / 96u, x, x2, x3, x4;   /* T: samples */
+    if (T < CTL)
+        return i ? ENV_EXP[0] : ENV_LIN[0];
+    if (!i)
+        return ((1u << 24) * CTL + T / 2u) / T;
+    x = (9646899u + T / 2u) / T;                        /* 4.6 CTL (CTL 32), Q16, rounded */
+    if (x > 49152u)                                     /* (below ~200 samples: 0.75, the series 0.3 % low) */
+        x = 49152u;
+    x2 = x * x >> 16;
+    x3 = x2 * x >> 16;
+    x4 = x3 * x >> 16;
+    x = x - x2 / 2u + x3 / 6u - x4 / 24u;
+    return x < 1u ? 1u : x > 65535u ? 65535u : x;
+}
+static __attribute__((noinline)) void esync_coef(const track_t *t)   /* (not inlined: its divides stay out of the
+                                                                    * audio ISR's loop over the voices) */
+{
+    const int16_t *p = t->p;
+    if (p[P_ESYNC]) {
+        uint32_t q = (uint32_t)FS * 60u / (uint32_t)clamp(song.g[G_BPM], 20, 300);   /* a beat (a quarter), samples */
+        esync_k[0] = esync_one(q, p[P_ATK], 0);
+        esync_k[1] = esync_one(q, p[P_DEC], 1);
+        esync_k[2] = esync_one(q, p[P_REL], 2);
+    } else {                                            /* OFF: the tables, as always */
+        esync_k[0] = ENV_LIN[p[P_ATK] & 127];
+        esync_k[1] = ENV_EXP[p[P_DEC] & 127];
+        esync_k[2] = ENV_EXP[p[P_REL] & 127];
+    }
+}
+
 /* one control tick (CTL samples) of the amplitude envelope; returns Q15 */
 static int32_t env_tick(track_t *t, voice_t *v)
 {
@@ -588,17 +669,17 @@ static int32_t env_tick(track_t *t, voice_t *v)
     int32_t sus = (int32_t)p[P_SUS] << 17;              /* Q24 */
     switch (v->stage) {
     case 1:
-        v->env += (int32_t)ENV_LIN[p[P_ATK] & 127];
+        v->env += (int32_t)esync_k[0];                  /* ATK's step (esync_coef: the table's, or ENV SYNC's) */
         if (v->env >= (1 << 24)) {
             v->env = 1 << 24;
             v->stage = 2;
         }
         break;
     case 2:
-        v->env += mulq16(sus - v->env, ENV_EXP[p[P_DEC] & 127]);
+        v->env += mulq16(sus - v->env, esync_k[1]);
         break;
     case 3:
-        v->env -= mulq16(v->env, ENV_EXP[p[P_REL] & 127]);
+        v->env -= mulq16(v->env, esync_k[2]);
         if (v->env < (1 << 12)) {
             v->env = 0;
             v->stage = 0;
@@ -634,6 +715,7 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
     int32_t tune = song.g[G_TUNE] >= 0 ? song.g[G_TUNE] * 16 / 100 : -((-song.g[G_TUNE] * 16 + 99) / 100);
     int32_t tune_fine = (song.g[G_TUNE] * 16 - tune * 100) * 2367 / 16000;   /* rest, in 1/4096 (1 ct = 2.367) */
     uint32_t nr = 0, fade = t->xf_on && t->xf;
+    int32_t bendq;
     int16_t pe_new[8];
     for (i = 0; i < n; i++)
         out[i] = 0;
@@ -643,6 +725,10 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
             t->p[P_E0 + i] = t->pe_old[i];
         }
     track_lfo_tick(t);
+    esync_coef(t);                                      /* this block's envelope steps for env_tick (ENV SYNC) */
+    t->bend_s = (int16_t)(t->bend_s + ((t->bend - t->bend_s) >> 2) + (t->bend > t->bend_s) - (t->bend < t->bend_s));
+    bendq = ((int32_t)t->bend_s * clamp(song.g[G_BEND], 1, 12)) >> 1;   /* MIDI pitch bend (2.6): 1/4096 semitone,
+                                                                         * gliding (a quarter of the way a block) */
     if (e->block)                                       /* the engine's per-part work (DRAWBAR: bars, rotor) */
         e->block(t);
     for (i = 0; i < NVOICE; i++) {
@@ -672,7 +758,7 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
             m.envq15 = e->ownenv ? 0 : env;
             m.amp1 = e->ownenv ? env : mulq15(env, v->vel * 258);
             if (p[P_LD_AMP])
-                m.amp1 = mulq15(m.amp1, 32767 - mulq15((lfo + 32768) >> 1, p[P_LD_AMP] * 258));
+                m.amp1 = mulq15(m.amp1, 32767 - mulq15(p[P_LPOL] ? lfo : (lfo + 32768) >> 1, p[P_LD_AMP] * 258));
             if (fade)                                   /* linear to 0 over the fade */
                 m.amp1 = m.amp1 * (int32_t)(t->xf - 1u) / (int32_t)XF_BLOCKS;
             m.amp0 = v->env_out;
@@ -693,7 +779,7 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
             continue;                                   /* held at a silent sustain (SUS 0): nothing to render */
         {   /* the pitch in 1/4096 semitone: glide, LFO, the pitch envelope; the fraction goes into the increment */
             int32_t q = (v->pitch_cur << 8) + v->pitch_frac + ((lfo * p[P_LD_PIT] * 3) >> 7) +
-                        ((v->penv * p[P_ED_PIT] * 3) >> 7);
+                        ((v->penv * p[P_ED_PIT] * 3) >> 7) + bendq;
             pitch = (q >> 8) + tune;
             m.pitch16 = clamp(pitch, 0, 2047);
             m.inc = pitch_inc(m.pitch16);

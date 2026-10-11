@@ -42,6 +42,20 @@ int main(void)
     c.entry[0].bars = 65; assert(!arr_valid(&c, 15));
     c.entry[0].bars = 1; c.entry[0].scene = 4; assert(!arr_valid(&c, 15));
     c.entry[0].scene = 0; c.count = 17; assert(!arr_valid(&c, 15));
-    puts("arranger: order, repeats, stop, loop, tempo change, fractional timing and invalid scenes PASS");
+    {   /* 2.6: a section erased (SAVE > PROJECT > ERASE): the song's steps that played it out, the rest in order */
+        arr_config_t d;
+        arr_defaults(&d);
+        d.count = 5;
+        d.entry[0] = (arr_entry_t){0, 2}; d.entry[1] = (arr_entry_t){1, 4}; d.entry[2] = (arr_entry_t){0, 1};
+        d.entry[3] = (arr_entry_t){2, 8}; d.entry[4] = (arr_entry_t){1, 3};
+        assert(arr_drop_scene(&d, 1) == 1 && d.count == 3);
+        assert(d.entry[0].scene == 0 && d.entry[0].bars == 2 && d.entry[1].scene == 0 && d.entry[1].bars == 1 &&
+               d.entry[2].scene == 2 && d.entry[2].bars == 8);
+        assert(arr_valid(&d, 1u | 4u));            /* plays without the erased B */
+        assert(arr_drop_scene(&d, 3) == 0 && d.count == 3);   /* not in the song: unchanged */
+        d.count = 2; d.entry[0] = (arr_entry_t){3, 2}; d.entry[1] = (arr_entry_t){3, 4};
+        assert(arr_drop_scene(&d, 3) == 1 && d.count == 4 && d.entry[0].scene == 0 && d.entry[3].scene == 3);   /* none left: the default song */
+    }
+    puts("arranger: order, repeats, stop, loop, tempo change, fractional timing, invalid scenes, erased section PASS");
     return 0;
 }

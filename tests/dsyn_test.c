@@ -214,6 +214,28 @@ int main(void)
         }
         check(pk > 0 && pk < (1 << 24), "2000 random kits (any byte the editor could send): bounded, finite");
     }
+    {   /* 2.6 (a whistle on the kicks): the levels glide into the next block without a step. The kick of every
+         * factory kit (not the square-wave ones), alone: its curvature (third difference) across the block edges no bigger than inside the
+         * blocks (a step of up to 31 at every edge, before: 2 to 5 times) */
+        uint32_t kk, worst_k = 0;
+        double worst = 0;
+        for (kk = 0; kk < DS_NKITS; kk++) {
+            double edge = 0, in = 0;
+            uint32_t ne = 0, ni = 0, j;
+            if (DS_KITS[kk].s[0].wave == DW_SQUARE || DS_KITS[kk].s[0].wave == DW_BELL)
+                continue;                                   /* (square waves: their own edges everywhere) */
+            voice_render(outbuf[0], DS_KITS[kk].s, 0, 0);   /* (no crush: its hold is a step of its own) */
+            for (j = 10u * CTL; j < 110u * CTL; j++) {
+                double d3 = fabs((double)outbuf[0][j] - 3.0 * outbuf[0][j - 1] + 3.0 * outbuf[0][j - 2] - outbuf[0][j - 3]);
+                if (j % CTL < 3u) edge += d3, ne++;
+                else in += d3, ni++;
+            }
+            if (in > 0 && edge / ne / (in / ni) > worst)
+                worst = edge / ne / (in / ni), worst_k = kk;
+        }
+        printf("  kick, curvature at the block edges / inside: at most %.2f (%s)\n", worst, DS_KITS[worst_k].name);
+        check(worst < 1.6, "the kicks of the synthesised kits: no step at the block edges (no whistle at 1.4 / 2.8 kHz)");
+    }
     printf(fails ? "dsyn: FAILED\n" : "dsyn: all checks ok\n");
     return fails;
 }

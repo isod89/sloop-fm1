@@ -184,7 +184,13 @@ parameters (SLCR, PAT, RATE, DEPTH: ids 45..48) went in just before P_E0: P_COUN
 added CHORD (id 49): P_COUNT 58, P_E0 50 (and G_COUNT 32: DUST, DUCK, FILT, ROLL, NEW at 27..31). An
 editor takes them from `INFO`; older records load with the SLICER off and CHORD off. SLOOP 2.5 adds `G_DRDLY` (id 32,
 GLO > DRUMS DLY, the drums' delay send): G_COUNT 33 (a 2.4 device says 32; the editor takes both). A project keeps it in
-the byte after `sel` (format 5 unchanged; 0 in older projects).
+the byte after `sel` (format 5 unchanged; 0 in older projects). SLOOP 2.4 had grown P_COUNT to 61 (P_E0 53: TFLT, STRUM,
+VLEAD and the others before it). SLOOP 2.6 adds ten track parameters just before P_E0 (ids 53..62: the INSERT's TYPE, A, B,
+C, MIX; ANALOG's filter FTYPE; ESYNC; LFO 2's LSYNC, LTRIG, LPOL): P_COUNT 71, P_E0 63; and twelve globals (ids 33..44: CH1, CH2,
+CH3, OTHER for GLO > MIDI; SRC, LEVEL, TONE, MOVE, RATE, WHEN, DUCK for GLO > TEXTURE; BEND for GLO > MIDI 2):
+G_COUNT 45. An editor reads both from `INFO` and maps a patch file by its own count (61 or 71 values; `pCount`,
+`pE0` in the file). User preset records of 61 values load with the new parameters at their defaults. Backup object
+10 holds the MIDI LEARN map and the GLO > MIDI settings (40 bytes; listed only when not the default).
 
 ## v2: live sync
 
@@ -412,6 +418,14 @@ is put into range before a voice sees it.
 Backup object **9** is the four kits (`dsu_bank_t`, 1464 bytes: "DSU1", version 1, count 4, then per kit name 8,
 crush, src, 2 reserved, 16 x 22). Its commit answers rc 3 while the song plays. A device before v10 answers the
 begin of object 9 with rc 5: the editor skips it (as object 8 on a v8 device).
+
+Backup object **10** (SLOOP 2.6) is the MIDI part, 40 bytes: the MIDI LEARN map, 16 entries of 2 bytes (little-endian),
+each `cc | track << 7 | code << 9` (0: empty; code: a common parameter its id + 1, an engine parameter 120 + k for E k),
+then GLO > MIDI: CH1, CH2, CH3 (0 OFF, 1..16) and the drum channel | OTHER << 7, GLO > MIDI 2's BEND (1..12), 3 spare (a
+restore takes 32 and 36 bytes too: the map alone, the map and the channels). BK_LIST names it only while it is not the default (nothing learned, channels 1 2 3 10, OTHER SEL, BEND 2), so such a
+backup is one an older editor reads. Its commit checks every entry
+(a CC that learns, a parameter the firmware knows; the others become empty), writes it with the settings, and answers rc 3
+while the song plays. A device before 2.6 answers its begin with rc 5: the editor skips it.
 
 ## Notes for the editor
 

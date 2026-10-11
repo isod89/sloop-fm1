@@ -123,13 +123,15 @@ static int st_load(uint32_t obj, void *dst, uint32_t max)
     return (int)h.len;
 }
 
-/* an object in two parts, src then src2 (SLOOP 2.5: the settings and the SYN kits after them) */
-static int st_save2(uint32_t obj, const void *src, uint32_t len, const void *src2, uint32_t len2)
+/* an object in up to three parts, src then src2 then src3 (SLOOP 2.5: the settings and the SYN kits after them;
+ * 2.6: then the MIDI LEARN map) */
+static int st_save3(uint32_t obj, const void *src, uint32_t len, const void *src2, uint32_t len2, const void *src3,
+                    uint32_t len3)
 {
     uint32_t seq, base, off;
     int cur, rc;
     st_hdr_t h;
-    if (obj >= OBJ_COUNT || len + len2 > ST_PAYLOAD_MAX)
+    if (obj >= OBJ_COUNT || len + len2 + len3 > ST_PAYLOAD_MAX)
         return -1;
     cur = st_current(obj, &h);
     seq = cur < 0 ? 0u : h.seq;
@@ -139,6 +141,9 @@ static int st_save2(uint32_t obj, const void *src, uint32_t len, const void *src
     for (off = 0; off < len2; off++)
         st_buf[len + off] = ((const uint8_t *)src2)[off];
     len += len2;
+    for (off = 0; off < len3; off++)
+        st_buf[len + off] = ((const uint8_t *)src3)[off];
+    len += len3;
     if ((rc = st_erase(base)) != 0)
         return rc;
     for (off = 0; off < len; off += 256u) {
@@ -163,5 +168,9 @@ static int st_save2(uint32_t obj, const void *src, uint32_t len, const void *src
             return -7;
     }
     return 0;
+}
+static int st_save2(uint32_t obj, const void *src, uint32_t len, const void *src2, uint32_t len2)
+{
+    return st_save3(obj, src, len, src2, len2, 0, 0);
 }
 static int st_save(uint32_t obj, const void *src, uint32_t len) { return st_save2(obj, src, len, 0, 0); }

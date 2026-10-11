@@ -237,12 +237,11 @@ static int up_store(uint32_t k, const char *name)
  * PAN, MUTE: the TRACKS faders) and its pattern parameters (param_kept). LIVE: the pattern
  * stored in the record is not loaded: changing the sound never changes the sequence.
  * 0 ok, 1 empty (or the drum track is selected) */
-static int up_load(uint32_t k)
+static int up_load_to(track_t *t, uint32_t k)       /* user preset k into track t (2.6: any track, MIDI PC) */
 {
     const up_rec_t *r;
     int16_t v[P_COUNT];
     uint32_t i;
-    track_t *t = TSEL;
     if (!up_used(k) || is_drum(t))
         return 1;
     r = up_rec(k);
@@ -250,7 +249,8 @@ static int up_load(uint32_t k)
     for (i = 0; i < P_COUNT; i++)                       /* (LEN etc. of a kept pattern changed too, and */
         if (param_kept(i))                              /* a preset pattern then counted as edited) */
             v[i] = t->p[i];
-    panic_req |= (uint8_t)(1u << song.sel);
+    sound_change(t);                                    /* (2.6: what sounds fades out with the old sound, no click) */
+    panic_req |= (uint8_t)(1u << trk_index(t));
     fm1_irq_off();                                      /* the audio ISR must not see half a sound */
     t->eng_req = r->engine;
     for (i = 0; i < P_COUNT; i++)
@@ -259,10 +259,12 @@ static int up_load(uint32_t k)
     fm1_irq_on();
     fm6_track_loaded(t);                                /* FM6: a user preset holds the PTCH and the macros */
     t->user = (uint8_t)(k + 1u);
-    sync_reload = 1;
+    if (t == TSEL)
+        sync_reload = 1;
     ui.force = 1;
     return 0;
 }
+static int up_load(uint32_t k) { return up_load_to(TSEL, k); }   /* into the selected track */
 
 static uint32_t up_count(void)                 /* used slots */
 {

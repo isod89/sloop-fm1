@@ -7,6 +7,9 @@
   firmware/felucca-VER.fwsc   the package
   webapp/installer/index.html index_pkg.html with fm1pkg.js, fm1ota.js and the metadata inlined
   webapp/editor/index.html    editor.html (+ fukiai.ttf, FUKIAI-LICENSE.txt)
+  webapp/editor/sloop-editor.html  the editor in one file, for offline use (SLOOP 2.6): its icon font inlined,
+                              its links to the installer and the font licence online; opened from the disk in
+                              Chrome / Edge (file:// is a secure context: Web MIDI asks for permission)
   src/                        not touched
 
   web/make_site.py build/felucca-X.Y.fwsc X.Y OUT_DIR [--beta]
@@ -15,6 +18,7 @@
 The package identity (FM-1_9xx) is read from the package; the device reports it
 after the install.
 """
+import base64
 import hashlib
 import json
 import re
@@ -23,6 +27,22 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+ONLINE = "https://isod89.github.io/sloop-fm1/"                 # (the offline editor's links)
+
+
+def offline_editor(html):
+    """editor.html as one file for the disk: the icon font inlined, the download link out, the relative links online"""
+    font = base64.b64encode((HERE / "fukiai.ttf").read_bytes()).decode()
+    for a, b in (('url("fukiai.ttf")', 'url(data:font/ttf;base64,' + font + ')'),
+                 ('href="../installer/"', 'href="' + ONLINE + 'webapp/installer/" target="_blank" rel="noopener"'),
+                 ('href="FUKIAI-LICENSE.txt"', 'href="' + ONLINE + 'webapp/editor/FUKIAI-LICENSE.txt" target="_blank" rel="noopener"')):
+        if html.count(a) != 1:
+            raise SystemExit(f"editor.html must contain {a} once; update make_site.py")
+        html = html.replace(a, b)
+    html, n = re.subn(r"<!--DL-->.*?<!--/DL-->", "", html, flags=re.S)
+    if n != 1:
+        raise SystemExit("editor.html must contain <!--DL-->...<!--/DL--> once; update make_site.py")
+    return html
 BLOCKS, BLK, KEEP = 20, 0x30, 0x2F
 
 
@@ -72,9 +92,14 @@ def main(pkg, version, out):
     html = html.replace("<!--BANNER-->", banner)
     for old in list(fw.glob("felucca-*.fwsc")) + list(fw.glob("sloop-*.fwsc")):   # one package: the current one
         old.unlink()
-    (inst / "index.html").write_text(html, encoding="utf-8")
     shutil.copy(pkg, fw / name)
-    shutil.copy(HERE / "editor.html", ed / "index.html")
+    ed_html = (HERE / "editor.html").read_text(encoding="utf-8")
+    dl = f'download="sloop-editor-{re.sub(r"[^A-Za-z0-9.-]", "-", version)}.html"'
+    if ed_html.count('download="sloop-editor.html"') != 1 or html.count('download="sloop-editor.html"') != 1:
+        raise SystemExit('editor.html and index_pkg.html must link download="sloop-editor.html" once; update make_site.py')
+    (ed / "index.html").write_text(ed_html.replace('download="sloop-editor.html"', dl), encoding="utf-8")
+    (ed / "sloop-editor.html").write_text(offline_editor(ed_html), encoding="utf-8")
+    (inst / "index.html").write_text(html.replace('download="sloop-editor.html"', dl), encoding="utf-8")
     for f in ("fukiai.ttf", "FUKIAI-LICENSE.txt"):
         if (HERE / f).exists():
             shutil.copy(HERE / f, ed / f)

@@ -139,10 +139,11 @@ int main(void)
     for (i = 0; i < 53u; i++)
         r.p[i] = (int16_t)(2000 + i);
     up_params(&r, v, def);
-    ok = P_SLCR == 45 && P_SLDEPTH + 1 == P_CHORD && P_CHORD == 49 && P_TFLT == 50 && P_VLEAD == 52 && P_E0 == 53;
+    ok = P_SLCR == 45 && P_SLDEPTH + 1 == P_CHORD && P_CHORD == 49 && P_TFLT == 50 && P_VLEAD == 52 && P_ITYPE == 53 &&
+         P_E0 == 63;
     for (i = 0; i < 45u; i++)
         ok &= v[i] == (int16_t)(2000 + i);
-    for (i = P_SLCR; i <= P_VLEAD; i++)
+    for (i = P_SLCR; i < P_E0; i++)
         ok &= v[i] == def[i];
     for (i = 0; i < 8u; i++)
         ok &= v[P_E0 + i] == (int16_t)(2000 + 45 + i);
@@ -155,10 +156,24 @@ int main(void)
     ok = 1;
     for (i = 0; i < P_TFLT; i++)
         ok &= v[i] == (int16_t)(3000 + i);
-    ok &= v[P_TFLT] == def[P_TFLT] && v[P_STRUM] == def[P_STRUM] && v[P_VLEAD] == def[P_VLEAD];
+    for (i = P_TFLT; i < P_E0; i++)
+        ok &= v[i] == def[i];
     for (i = 0; i < 8u; i++)
         ok &= v[P_E0 + i] == (int16_t)(3000 + 50 + i);
-    bad += check("2.3 record (np 58): FILTER, STRUM, VLEAD defaults, CHORD and E0..E7 kept", ok);
+    bad += check("2.3 record (np 58): FILTER, STRUM, VLEAD and the 2.6 ten defaults, CHORD and E0..E7 kept", ok);
+    /* a record of SLOOP 2.4 .. 2.5 (P_COUNT 61, P_E0 53): the ten of 2.6 (INSERT, FTYPE, ESYNC, LFO 2) default */
+    r.np = 61;
+    for (i = 0; i < 61u; i++)
+        r.p[i] = (int16_t)(4000 + i);
+    up_params(&r, v, def);
+    ok = 1;
+    for (i = 0; i < P_ITYPE; i++)
+        ok &= v[i] == (int16_t)(4000 + i);
+    for (i = P_ITYPE; i < P_E0; i++)
+        ok &= v[i] == def[i];
+    for (i = 0; i < 8u; i++)
+        ok &= v[P_E0 + i] == (int16_t)(4000 + 53 + i);
+    bad += check("2.5 record (np 61): the 2.6 parameters (INSERT, FTYPE, ESYNC, LFO 2) default, the rest and E0..E7 kept", ok);
     /* a record of SLOOP 1.0 (P_COUNT 57, P_E0 49): CHORD (SLOOP 2.0) takes its default */
     r.np = 57;
     for (i = 0; i < 57u; i++)

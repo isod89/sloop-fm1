@@ -65,6 +65,11 @@ enum {                          /* per-track parameters */
     P_TFLT,                                    /* SLOOP 2.4: the track's filter, < 0 low-pass, > 0 high-pass (fx.c) */
     P_STRUM,                                   /* SLOOP 2.4: a chord's notes one after the other, ms each (> 0 down, < 0 up) */
     P_VLEAD,                                   /* SLOOP 2.4: chord mode, each chord voiced nearest the last (seq.c) */
+    /* SLOOP 2.6, after Felucca 1.5 / 1.4 (Leo Kuroshita). Projects (format 6) keep them in a byte each: 0..127 */
+    P_ITYPE, P_IA, P_IB, P_IC, P_IMIX,         /* the track's INSERT after DIST: TYPE, its three values, dry / wet (fx.c) */
+    P_FTYPE,                                   /* ANALOG's filter TYPE: LP (as before) / BP / HP (eng_analog.c) */
+    P_ESYNC,                                   /* ENV SYNC: ATK DEC REL as note values of the tempo (voice.c) */
+    P_LSYNC, P_LTRIG, P_LPOL,                  /* LFO 2: SYNC to the tempo, TRIG (NOTE / FREE), POL (BI / UNI) (voice.c) */
     P_E0, P_E1, P_E2, P_E3, P_E4, P_E5, P_E6, P_E7,
     P_COUNT
 };
@@ -82,6 +87,13 @@ enum {                          /* global parameters */
     G_ROLL,                     /* note repeat rate (ARP + key, seq.c) */
     G_NEWPRJ,                   /* TOOLS > NEW: a new project (GO) */
     G_DRDLY,                    /* SLOOP 2.5: the drums' delay send (GLO > DRUMS; a project keeps it in its own byte) */
+    G_CH1, G_CH2, G_CH3,        /* SLOOP 2.6: GLO > MIDI, the MIDI channel of synth tracks 1..3 (0 OFF, 1..16; in and out) */
+    G_CHOTH,                    /* .. and what the other channels play: 0 SEL (the selected track), 1 OFF. Settings of
+                                 * the FM-1 (with G_DRCH): not in a project (project.c, panel.c midi_set) */
+    G_TXSRC, G_TXLVL, G_TXTONE, G_TXMOVE,   /* SLOOP 2.6, GLO > TEXTURE: a looping bed under the mix (fx.c texture_*): */
+    G_TXRATE, G_TXWHEN, G_TXDUCK,           /* its source, level, tone, movement; its rate, when it plays, the DUCK pump.
+                                             * In a project (project.c: the spare bytes) */
+    G_BEND,                     /* SLOOP 2.6, GLO > MIDI 2: the pitch bend's range, 1..12 semitones (a setting of the FM-1) */
     G_COUNT
 };
 
@@ -232,6 +244,7 @@ typedef struct track {
     int16_t lk_base[NLOCK];
     int16_t lk_set[NLOCK];
     uint32_t seq_abs;            /* the step of the transport grid last played (seq.c trk_grid), SEQ_NONE */
+    int16_t bend, bend_s;        /* 2.6: MIDI pitch bend -8192..8191 (seq.c), and as it glides (voice.c, a block at a time) */
     uint16_t seq_idx;            /* its index in the pattern */
     uint8_t seq_den;             /* the DIV it was played on (a DIV change waits for the next step) */
     uint8_t arp_den;             /* the same for the arp's RATE */
@@ -266,11 +279,16 @@ typedef struct track {
     int32_t dist_hp, dist_lp1, dist_lp2;   /* DIST insert state (fx.c) */
     int32_t att;                 /* mute / solo fade: attenuation, Q15 (0 = heard; fx.c mix_part, drums_mix) */
     uint8_t dist_on;             /* DIST was on in the last block (its states restart when it comes on) */
-    uint8_t tail;                /* blocks to mix after the last voice (the DIST tail) */
+    uint8_t tail;                /* blocks to mix after the last voice (the DIST / INSERT tail) */
+    uint8_t ins_run;             /* 2.6: the INSERT runs (or fades out) (fx.c track_insert) */
     int16_t armp, aholdp;        /* P_AMODE / P_AHOLD as last seen by the ISR */
     /* engine switch (voice.c engine_block): the old engine's voices fade out, then it switches */
     uint8_t xf_on, xf;           /* fading; blocks of the fade still to render */
     int16_t pe_old[8];           /* P_E0..P_E7 of the sounding engine: the fade renders with these */
+    int16_t p_old[P_COUNT];      /* 2.6: the whole sound before a preset loaded (voice.c sound_change): the fade's */
+    uint8_t pold;                /* 1: a preset loaded, the sounding voices fade out with p_old first */
+    uint16_t ins_res;            /* 2.6: |the INSERT's last output| (fx.c: its tail runs until it is ~0) */
+    uint8_t ins_xt;              /* 2.6: the blocks it ran past its tail for that (at most 255) */
     uint8_t xp_n, xp_note[4], xp_vel[4];   /* note-ons during the fade, played on the new engine */
 } track_t;
 
@@ -314,12 +332,20 @@ static uint32_t div_units(uint32_t div)
 /* the delay's TIME in clock units (N_DLY order) */
 static uint32_t dly_units(uint32_t d)
 {
-    return d < NDIV_SHORT ? BEAT_U / DIV_DEN[d] : d == NDIV_SHORT ? BEAT_U * 3u / 4u : BEAT_U * 3u / 8u;
+    return d < NDIV_SHORT ? BEAT_U / DIV_DEN[d] : d == NDIV_SHORT ? BEAT_U * 3u / 4u : d == NDIV_SHORT + 1u ? BEAT_U * 3u / 8u
+                                                                                         : BEAT_U * 3u / 2u;   /* 1/4D (2.6) */
 }
 /* length of one step (N_SDIV order) in samples at the song tempo (rounded down) */
 static uint32_t div_samples(uint32_t div) { return div_units(div) / (uint32_t)song.g[G_BPM]; }
 /* length of the delay's TIME (N_DLY order) in samples at the song tempo (rounded down) */
 static uint32_t dly_samples(uint32_t d) { return dly_units(d) / (uint32_t)song.g[G_BPM]; }
+/* SLOOP 2.6, after Felucca 1.5.1: REV THROW / ECHO THROW (FX held + OCT- / OCT+, ui_input.c): while held, every
+ * track's send to the reverb / the delay goes full, gliding in and out (~12 ms); ECHO THROW also takes the delay's FDBK
+ * up to 70 % if it is lower. The song's values never change, nothing is saved or recorded. thr_req: bit 0 the reverb,
+ * bit 1 the echo (the UI); thr_rev, thr_dly: the glide now, Q15 (fx.c mix_block, a block at a time) */
+static volatile uint8_t thr_req;
+static int32_t thr_rev, thr_dly;
+static inline int32_t send_thr(int32_t s, int32_t g) { return g ? s + (((127 * 258 - s) * g) >> 15) : s; }   /* s 0..32766 */
 #define TSEL (&trk[song.sel])    /* the selected track */
 #define TDRUM (&trk[TRK_DRUM])
 static int is_drum(const track_t *t) { return t == TDRUM; }

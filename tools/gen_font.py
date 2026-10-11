@@ -4,13 +4,16 @@
 """Render the bitmap fonts to a C header (assets/fonts/):
   S  labels / units / status   Latin-1 32..255 at 1x
   L  large values / titles     32..95 (digits, signs, capitals), the same glyphs at 2x
-Terminus 8x16 (BDF, SIL OFL 1.1). TTF fonts also work through render()
+Terminus Bold 8x16 (BDF, SIL OFL 1.1). TTF fonts also work through render()
 (anti-aliased, tabular figures via the OpenType `tnum` feature).
 
 Glyph format: per glyph an advance width, a bitmap width and an offset; the
 bitmap starts FONT_PAD pixels left of the pen position (room for side
-bearings); rows top to bottom, 2 pixels per byte (high nibble first),
-alpha 0..15.
+bearings); rows top to bottom. A font whose pixels are all on or off (the
+Terminus pixel font) is stored at 1 bit a pixel (SLOOP 2.6: 5376 bytes
+instead of 21504), the glyph's rows one after the other, high bit first, each
+glyph from a whole byte, and marked bits = 1; an anti-aliased one (TTF) stays at
+2 pixels per byte (high nibble first), alpha 0..15, bits = 0 (gfx.c cv_text).
 """
 import sys
 from pathlib import Path
@@ -20,8 +23,10 @@ from PIL import Image, ImageDraw, ImageFont
 FONTS = Path(__file__).resolve().parents[1] / "assets" / "fonts"
 # (name, file, px, scale, pixel, first, last): pixel fonts are rendered without
 # anti-aliasing at their design size and enlarged by an integer factor
-SIZES = [("S", "ter-u16n.bdf", 16, 1, True, 32, 255),   # Latin-1 (Hügelton needs the umlaut)
-         ("L", "ter-u16n.bdf", 16, 2, True, 32, 95)]   # values / titles: digits, signs, capitals
+# SLOOP 2.6: Terminus Bold (the same 8 x 16 cell and advances as the regular one: no layout moves), drawn in
+# capitals only (gfx.c glyph); the regular ter-u16n.bdf stays for the web editor's font (gen_webfont.py)
+SIZES = [("S", "ter-u16b.bdf", 16, 1, True, 32, 255),   # Latin-1 (Hügelton needs the umlaut)
+         ("L", "ter-u16b.bdf", 16, 2, True, 32, 95)]   # values / titles: digits, signs, capitals
 PAD = 2
 
 
@@ -126,7 +131,7 @@ def main(out):
         if scale > 1 and pixel and base is not None:
             # SLOOP 2.4: a pixel font at 2x is the 1x font's own bitmaps, enlarged while drawing (gfx.c
             # cv_text): no second copy in flash (24 KB). Same glyphs, same pixels: checked here.
-            bname, bfirst, bh, bglyphs = base
+            bname, bfirst, bh, bglyphs, bone = base
             assert scale == 2 and first == bfirst and h == bh * 2, "L must be S at 2x, same first glyph"
             for (adv, bw, g), (badv, bbw, bg) in zip(glyphs, bglyphs):
                 assert adv == badv * 2 and bw == bbw * 2 and g == upscale(bg, bbw, bh, 2)
@@ -135,14 +140,25 @@ def main(out):
             lines.append(f"static const uint8_t FONT_{name}_BW[{len(glyphs)}] = {{" +
                          ", ".join(str(b) for _, b, _ in glyphs) + "};")
             lines.append(f"static const felucca_font_t FONT_{name} = {{ {h}, {PAD * scale}, {first}, {last}, 1, "
-                         f"FONT_{name}_ADV, FONT_{name}_BW, FONT_{bname}_OFF, FONT_{bname}_DATA }};")
+                         f"FONT_{name}_ADV, FONT_{name}_BW, FONT_{bname}_OFF, FONT_{bname}_DATA, {1 if bone else 0} }};")
             lines.append("")
             print(f"font {name}: {ttf} {px}px h {h}, digit adv {glyphs[ord('0') - first][0]}, "
                   f"the {bname} bitmaps at {scale}x (0 B)")
             continue
         data, offs = [], []
+        one = all(v in (0, 15) for _, _, g in glyphs for v in g)   # on / off only: 1 bit a pixel
         for adv, bw, g in glyphs:
             offs.append(len(data))
+            if one:
+                acc = 0
+                for i, v in enumerate(g + [0] * (-len(g) % 8)):
+                    acc = (acc << 1) | (v != 0)
+                    if i % 8 == 7:
+                        data.append(acc)
+                        acc = 0
+                unp = [15 if data[offs[-1] + i // 8] >> (7 - i % 8) & 1 else 0 for i in range(len(g))]
+                assert unp == g, "1-bit packing must give the glyph back"
+                continue
             for y in range(h):
                 row = g[y * bw:(y + 1) * bw] + [0]
                 for x in range(0, bw, 2):
@@ -158,10 +174,10 @@ def main(out):
         lines.append(f"static const uint8_t FONT_{name}_BW[{len(glyphs)}] = {{" +
                      ", ".join(str(b) for _, b, _ in glyphs) + "};")
         lines.append(f"static const felucca_font_t FONT_{name} = {{ {h}, {PAD * scale}, {first}, {last}, 0, "
-                     f"FONT_{name}_ADV, FONT_{name}_BW, FONT_{name}_OFF, FONT_{name}_DATA }};")
+                     f"FONT_{name}_ADV, FONT_{name}_BW, FONT_{name}_OFF, FONT_{name}_DATA, {1 if one else 0} }};")
         lines.append("")
         if scale == 1:
-            base = (name, first, h, glyphs)
+            base = (name, first, h, glyphs, one)
         print(f"font {name}: {ttf} {px}px h {h}, digit adv {glyphs[ord('0') - first][0]}, {len(data)} B")
     Path(out).write_text("\n".join(lines))
 
