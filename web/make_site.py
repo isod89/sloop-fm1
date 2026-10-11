@@ -10,6 +10,7 @@
   webapp/editor/sloop-editor.html  the editor in one file, for offline use (SLOOP 2.6): its icon font inlined,
                               its links to the installer and the font licence online; opened from the disk in
                               Chrome / Edge (file:// is a secure context: Web MIDI asks for permission)
+  webapp/live/                live/ (SLOOP live, the phone surface: a PWA, copied as it is)
   src/                        not touched
 
   web/make_site.py build/felucca-X.Y.fwsc X.Y OUT_DIR [--beta]
@@ -103,6 +104,10 @@ def main(pkg, version, out):
     for f in ("fukiai.ttf", "FUKIAI-LICENSE.txt"):
         if (HERE / f).exists():
             shutil.copy(HERE / f, ed / f)
+    live = out / "webapp" / "live"                 # SLOOP live (PWA): its own folder, so its service worker scope is its own
+    if live.exists():
+        shutil.rmtree(live)
+    shutil.copytree(HERE / "live", live, ignore=shutil.ignore_patterns("test_*.mjs", "README.md"))
     (out / "index.html").write_text(
         '<!doctype html><meta charset="utf-8"><title>SLOOP</title>'
         '<meta http-equiv="refresh" content="0; url=webapp/installer/">'

@@ -1,0 +1,480 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- SLOOP live: the touch partner for SLOOP on the M-VAVE FM-1. Plug the phone in while a beat plays: punch in
+     effects, ride the filter, launch and chain sections, flip presets and turn the engine's knobs, mix.
+     Protocol: ../EDITOR_PROTOCOL.md (v11 PERFORM). Installable (manifest + service worker). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="description" content="Punch-in effects, sections, sounds and the mix of SLOOP on the FM-1, from a phone">
+<title>SLOOP live</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  /* The FM-1 at night. Two materials: backlit keys (pads, sections, tracks, chips: a sheen from above, a lit edge,
+     a dark lip below; lit, they take the track colour and throw it as a glow) and the recessed glass of the
+     device's screen (tempo, preset name, the XY pad, the knob wells: inset, faint scanlines). Black, the four track
+     colours (sections A..D and tracks 1..4 wear them, as on the device), its Terminus pixel font at 16 and 32 px
+     only. Pads 1, 5, 9 and 13 carry the dim landmark the FM-1 keys glow with. Light comes on at once and fades
+     out; nothing animates on its own except a section waiting for the next bar. Everything a thumb needs is at
+     least 44 px. */
+  @font-face { font-family: "SLOOP Terminus"; src: url("terminus.ttf") format("truetype"); font-display: block; }
+  :root {
+    --bg: #000; --s1: #101015; --s2: #1d1d23; --s3: #3a3a42; --dim: #7a7a84; --fg2: #c8c8d0; --fg: #f4f4f6;
+    --red: #ff2c34; --t1: #287cff; --t2: #1ecc70; --t3: #ffc618; --t4: #ff621a;
+    --key: #15151b; --key-hi: #202028;
+    --font: "SLOOP Terminus", ui-monospace, Menlo, Consolas, monospace;
+    --gap: 6px; --side: max(12px, env(safe-area-inset-left));
+    --r-key: 8px; --r-chip: 6px; --r-panel: 12px;
+    /* a key: light from above, a lit top edge, a dark lip under it */
+    --sheen: linear-gradient(180deg, rgba(255, 255, 255, .085) 0%, rgba(255, 255, 255, .02) 38%, rgba(0, 0, 0, .22) 100%);
+    --edge: inset 0 1px 0 rgba(255, 255, 255, .07), inset 0 -2px 0 rgba(0, 0, 0, .45), 0 1px 2px rgba(0, 0, 0, .7);
+    /* the glass: sunk in, a hairline of light on the lower lip */
+    --glass: linear-gradient(180deg, #050507 0%, #0b0b10 100%);
+    --sunk: inset 0 2px 6px rgba(0, 0, 0, .85), inset 0 0 0 1px rgba(255, 255, 255, .04), 0 1px 0 rgba(255, 255, 255, .05);
+    --scan: repeating-linear-gradient(0deg, rgba(255, 255, 255, .018) 0 1px, transparent 1px 3px);
+    --out: cubic-bezier(.2, .8, .2, 1);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg2); }
+  body { font: 16px/20px var(--font); -webkit-font-smoothing: none; font-variant-numeric: tabular-nums; overscroll-behavior: none;
+         user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; display: flex; flex-direction: column;
+         padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+         background: radial-gradient(120% 70% at 50% -10%, #17171f 0%, #070709 55%, #000 100%) fixed, var(--bg); }
+  [hidden] { display: none !important; }
+  h1, h2, h3 { font-weight: 400; margin: 0; font-size: 16px; line-height: 20px; }
+  h2 { color: var(--fg); }
+  p { margin: 0; }
+  .dim { color: var(--dim); }
+  button { font: inherit; color: var(--fg); background: var(--key) var(--sheen); border: 0; border-radius: var(--r-chip); padding: 0; cursor: pointer;
+           touch-action: manipulation; text-align: inherit; box-shadow: var(--edge);
+           transition: background-color .22s var(--out), color .22s var(--out), box-shadow .22s var(--out), transform .08s ease-out, opacity .2s; }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { color: var(--s3); background: var(--s1); box-shadow: none; cursor: default; }
+  button:focus-visible, [role=slider]:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  input[type=text] { font: inherit; color: var(--fg); background: var(--glass); box-shadow: var(--sunk); border: 0; padding: 12px; width: 100%; border-radius: var(--r-chip); }
+  .row { display: grid; gap: var(--gap); }
+  .row.two { grid-template-columns: 1fr 1fr; }
+  .chip { padding: 0 12px; min-height: 36px; color: var(--fg2); }
+  .chip.big { min-height: 48px; }
+  .chip.wide { flex: 1; text-align: left; }
+  .chip[aria-pressed=true], .chip.on { background-color: var(--fg); color: #000; transition-duration: 0s;
+    box-shadow: var(--edge), 0 0 18px -4px rgba(255, 255, 255, .55); }
+  .chip.arm { box-shadow: var(--edge), inset 0 0 0 2px var(--fg); animation: breathe-w 1s ease-in-out infinite alternate; }
+  @keyframes breathe-w { to { box-shadow: var(--edge), inset 0 0 0 2px var(--fg), 0 0 16px -4px rgba(255, 255, 255, .6); } }
+  .chip.pri { background-color: var(--t1); color: #000; box-shadow: var(--edge), 0 4px 18px -8px var(--t1); }
+  .chip.pri:disabled { background: var(--s1); color: var(--s3); box-shadow: none; }
+  .label { display: flex; justify-content: space-between; align-items: center; gap: var(--gap); color: var(--dim); min-height: 36px; }
+
+  /* ---- the app frame: top bar, the tab, the tab bar ---- */
+  #app { flex: 1; display: flex; flex-direction: column; min-height: 0; width: 100%; margin: 0 auto; }
+  .top { display: grid; grid-template-columns: 56px auto 1fr auto auto; gap: var(--gap); padding: 8px var(--side) 6px; align-items: stretch; }
+  #play { height: 48px; display: grid; place-items: center; border-radius: var(--r-key); }
+  #play::before { content: ""; width: 18px; height: 20px; background: currentColor; clip-path: polygon(0 0, 100% 50%, 0 100%); transition: all .15s var(--out); }
+  #play.on { background-color: var(--fg); color: #000; transition-duration: 0s; box-shadow: var(--edge), 0 0 22px -4px rgba(255, 255, 255, .5); }
+  #play.on::before { width: 16px; height: 16px; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
+  #bpm { font-size: 32px; line-height: 32px; padding: 0 10px; background: var(--scan), var(--glass); box-shadow: var(--sunk); border-radius: var(--r-chip);
+         text-shadow: 0 0 10px rgba(255, 255, 255, .35); }
+  #bpm:active:not(:disabled) { transform: none; text-shadow: 0 0 14px rgba(255, 255, 255, .8); }
+  .pos { display: flex; flex-direction: column; justify-content: center; gap: 5px; min-width: 0; }
+  .beats { display: flex; gap: 5px; }
+  .beats i { width: 10px; height: 10px; border-radius: 2px; background: var(--s3); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .6);
+             transition: background-color .3s var(--out), box-shadow .3s var(--out); }
+  .beats i.on { background: var(--fg); box-shadow: 0 0 8px rgba(255, 255, 255, .8); transition-duration: 0s; }
+  .beats i:first-child.on { background: var(--red); box-shadow: 0 0 10px var(--red); }
+  #where { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .helpbtn { width: 44px; color: var(--fg2); text-align: center; font-size: 32px; line-height: 32px; }
+  .how { display: flex; flex-direction: column; gap: 6px; }
+  .how h3 { color: var(--fg); }
+  .how dl { margin: 0; display: grid; grid-template-columns: minmax(0, 9em) minmax(0, 1fr); gap: 6px 12px; }
+  .how dt { color: var(--fg2); }
+  .how dd { margin: 0; color: var(--dim); }
+  .guide { display: flex; align-items: center; justify-content: center; text-decoration: none; background-color: var(--t1); color: #000; margin: 6px 0; }
+  .nextd { border: 1px dashed var(--s3); border-radius: var(--r-chip); padding: 8px 10px; }
+  .nextd summary { cursor: pointer; color: var(--fg); display: flex; justify-content: space-between; gap: 8px; min-height: 28px; align-items: center; }
+  .nextd summary small { color: var(--dim); font-size: 16px; }
+  .nextd p { margin-top: 6px; }
+  .status { padding: 0 10px; color: var(--dim); display: flex; align-items: center; gap: 7px; }
+  .status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--s3); transition: background-color .3s, box-shadow .3s; }
+  .status.ok::before { background: var(--t2); box-shadow: 0 0 8px var(--t2); }
+  .status.wait::before { animation: wait 1.2s ease-in-out infinite alternate; }
+  @keyframes wait { to { background: var(--fg2); } }
+  .status.bad { color: var(--red); }
+  .status.bad::before { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  #banner { background: var(--s2); color: var(--fg); padding: 8px var(--side); border-bottom: 1px solid var(--s3); animation: drop .3s var(--out); }
+  .update { display: flex; align-items: center; gap: var(--gap); background: linear-gradient(90deg, var(--t1), #4b93ff); color: #000; padding: 6px var(--side); animation: drop .3s var(--out); }
+  .update span { flex: 1; }
+  .update .chip { background-color: #000; color: var(--fg); min-height: 40px; }
+  @keyframes drop { from { transform: translateY(-8px); opacity: 0; } }
+  #app.lost #tabs { opacity: .35; pointer-events: none; filter: saturate(.3); transition: opacity .4s, filter .4s; }
+  #app.standing #play, #app.standing #bpm, #app.standing .pos, #app.standing .tabbar { visibility: hidden; }
+  #tabs { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; transition: opacity .4s, filter .4s; }
+  .tab { padding: 4px var(--side) 16px; display: flex; flex-direction: column; gap: 10px; animation: tabin .22s var(--out); }
+  @keyframes tabin { from { opacity: 0; transform: translateY(6px); } }
+  .tabbar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; background: linear-gradient(180deg, rgba(0, 0, 0, 0), #000 30%);
+            padding: 6px var(--side) calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid rgba(255, 255, 255, .05); }
+  .tabbar button { height: 48px; color: var(--dim); text-align: center; position: relative; overflow: hidden; background-color: var(--s1); }
+  .tabbar button::after { content: ""; position: absolute; left: 18%; right: 18%; top: 0; height: 3px; border-radius: 0 0 3px 3px; background: var(--fg);
+                          box-shadow: 0 0 10px rgba(255, 255, 255, .7); transform: scaleX(0); opacity: 0; transition: transform .28s var(--out), opacity .2s; }
+  .tabbar button[aria-selected=true] { background-color: var(--key-hi); color: var(--fg); }
+  .tabbar button[aria-selected=true]::after { transform: scaleX(1); opacity: 1; }
+
+  /* ---- sections A..D: lit while playing, breathing while waiting for the next bar ---- */
+  .sections { grid-template-columns: repeat(4, 1fr); }
+  .sec { height: 52px; background-color: var(--key); color: var(--dim); position: relative; text-align: center; overflow: hidden; border-radius: var(--r-key);
+         box-shadow: var(--edge), inset 0 0 0 2px color-mix(in srgb, var(--c) 75%, transparent); }
+  .sec b { font-weight: 400; font-size: 32px; line-height: 32px; }
+  .sec small { position: absolute; right: 6px; bottom: 5px; font-size: 16px; line-height: 16px; }
+  .sec .prog { position: absolute; left: 0; bottom: 0; height: 4px; background: linear-gradient(90deg, rgba(0, 0, 0, .25), rgba(0, 0, 0, .6));
+               transition: width .14s linear; }
+  .sec.empty { box-shadow: var(--edge), inset 0 0 0 1px var(--s3); color: var(--s3); }
+  .sec.cur { background-color: var(--c); color: #000; transition-duration: 0s;
+             box-shadow: var(--edge), 0 0 22px -6px var(--c), 0 0 48px -14px var(--c); }
+  .sec.next { animation: next .5s ease-in-out infinite alternate; }
+  @keyframes next { to { background-color: color-mix(in srgb, var(--c) 70%, #000); color: #000; box-shadow: var(--edge), 0 0 20px -6px var(--c); } }
+  .sec.holding { box-shadow: var(--edge), inset 0 0 0 2px var(--fg), 0 0 18px -4px rgba(255, 255, 255, .6); }
+  .sections.big { grid-template-columns: 1fr 1fr; }
+  .sec.big { height: 92px; text-align: left; padding: 8px 10px; display: flex; flex-direction: column; justify-content: space-between; border-radius: var(--r-panel); }
+  .sec.big small { position: static; }
+  .sec.big .prog { height: 6px; }
+  .sections.picking .sec:not(.empty) { outline: 2px dashed var(--fg); outline-offset: -6px; }
+
+  /* ---- tracks: tap mutes, hold solos. The coloured strip on top is an LED: it goes dark when muted ---- */
+  .tracks { grid-template-columns: repeat(4, 1fr); }
+  .trk, .ttab { height: 56px; padding: 7px 7px 5px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; text-align: left;
+         box-shadow: var(--edge), inset 0 3px 0 var(--c), inset 0 16px 18px -16px var(--c); }
+  .trk span, .ttab span { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .2s; }
+  .trk b, .ttab b { font-weight: 400; }
+  .trk.muted { color: var(--s3); box-shadow: var(--edge), inset 0 3px 0 var(--s3); }
+  .trk.muted span { color: var(--s3); }
+  .trk.solo, .ttab.on { background-color: var(--c); color: #000; transition-duration: 0s; box-shadow: var(--edge), 0 0 20px -6px var(--c); }
+  .trk.solo span, .ttab.on span { color: #000; }
+  .trk.quiet { opacity: .4; }
+  .trk.holding { box-shadow: var(--edge), inset 0 0 0 2px var(--fg), 0 0 16px -4px rgba(255, 255, 255, .5); }
+
+  /* ---- live: pads and the XY pad share what is left ---- */
+  .tab.live { height: 100%; padding-bottom: 8px; }
+  .padwrap { flex: 3 1 0; min-height: min-content; display: flex; flex-direction: column; }
+  .pads { flex: 1; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 1fr; touch-action: none; }
+  .pad { color: var(--fg2); padding: 8px 7px 6px; display: flex; flex-direction: column; isolation: isolate;
+         justify-content: space-between; touch-action: none; position: relative; text-align: left; min-height: 48px; border-radius: var(--r-key);
+         box-shadow: var(--edge), inset 0 3px 0 color-mix(in srgb, var(--c) 85%, transparent), inset 0 22px 26px -22px color-mix(in srgb, var(--c) 55%, transparent);
+         transition: background-color .26s var(--out), color .26s var(--out), box-shadow .26s var(--out), transform .07s ease-out; }
+  .pad b { font-weight: 400; color: var(--dim); transition: color .26s var(--out); }
+  .pad.mark::after { content: ""; position: absolute; right: 8px; top: 9px; width: 6px; height: 6px; border-radius: 1px; background: var(--s3); }
+  .pad.on { background-color: var(--c); color: #000; transform: translateY(1px) scale(.985); transition-duration: 0s, 0s, 0s, .07s;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), inset 0 -2px 0 rgba(0, 0, 0, .25), 0 0 26px -6px var(--c), 0 0 60px -16px var(--c); }
+  .pad.on b { color: #000; transition-duration: 0s; }
+  .pad.on.mark::after { background: rgba(0, 0, 0, .35); }
+  /* the hit: a flash of white from where a finger lands, gone in a third of a second */
+  .pad::before { content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: -1; pointer-events: none; opacity: 0;
+                 background: radial-gradient(90% 80% at 50% 55%, rgba(255, 255, 255, .7), rgba(255, 255, 255, 0) 70%); }
+  .pad.on::before { animation: hit .34s ease-out; }
+  @keyframes hit { from { opacity: 1; } to { opacity: 0; } }
+  .pad.dev { box-shadow: var(--edge), inset 0 0 0 2px var(--c), 0 0 18px -6px var(--c); }
+  /* the FM-1 says hello: when it connects, a wave of light crosses the pads */
+  #app.boot .pad { animation: boot .7s ease-in-out calc(var(--i, 0) * 55ms + 80ms) both; }
+  @keyframes boot { 30% { background-color: var(--c); color: #000; box-shadow: var(--edge), 0 0 24px -6px var(--c); } }
+
+  .xywrap { flex: 2 1 0; min-height: 160px; display: flex; flex-direction: column; gap: var(--gap); }
+  .xywrap .label .chip { min-height: 44px; }
+  .xypad { flex: 1; min-height: 100px; position: relative; touch-action: none; overflow: hidden; border-radius: var(--r-panel);
+           background-color: #07070a;
+           background-image: var(--scan), linear-gradient(rgba(255, 255, 255, .045) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, .045) 1px, transparent 1px), var(--glass);
+           background-size: auto, 25% 25%, 25% 25%, auto; box-shadow: var(--sunk); transition: opacity .3s; }
+  .xypad .hx, .xypad .vy { position: absolute; background: rgba(255, 255, 255, .1); pointer-events: none; }
+  .xypad .hx { left: 0; right: 0; top: 50%; height: 1px; }
+  .xypad .vy { top: 0; bottom: 0; left: 50%; width: 1px; }
+  /* the dot springs back when let go; under a finger it follows at once and glows */
+  .xypad .dot { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; pointer-events: none;
+                background: radial-gradient(circle at 40% 35%, #fff, var(--fg2) 55%, #8a8a94);
+                box-shadow: 0 0 0 4px rgba(255, 255, 255, .06), 0 0 14px rgba(255, 255, 255, .25);
+                transition: left .32s var(--out), top .32s var(--out), width .18s var(--out), height .18s var(--out), margin .18s var(--out), box-shadow .18s; }
+  .xypad.touched .dot { width: 40px; height: 40px; margin: -20px 0 0 -20px; transition: width .12s var(--out), height .12s var(--out), margin .12s var(--out), box-shadow .12s;
+                        box-shadow: 0 0 0 8px rgba(255, 255, 255, .08), 0 0 28px 4px rgba(255, 255, 255, .45), 0 0 80px 10px rgba(120, 170, 255, .25); }
+  .xypad.off { opacity: .4; }
+  .xyread { position: absolute; left: 10px; top: 8px; color: var(--dim); white-space: pre-line; pointer-events: none; transition: color .2s; }
+  .xyread.right { left: auto; right: 10px; text-align: right; }
+  .xyread.low { top: auto; bottom: 8px; }
+  .xypad.touched .xyread { color: var(--fg); text-shadow: 0 0 8px rgba(255, 255, 255, .4); }
+
+  /* ---- faders: a lit column in the well ---- */
+  .fader { position: relative; background: var(--glass); box-shadow: var(--sunk); touch-action: none; cursor: pointer; border-radius: var(--r-chip); overflow: hidden; }
+  .fader .fill { position: absolute; background: linear-gradient(0deg, color-mix(in srgb, var(--c, var(--fg2)) 55%, #000), var(--c, var(--fg2)));
+                 box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06), 0 0 18px -4px var(--c, var(--fg2)); transition: width .09s linear, height .09s linear, left .09s linear; }
+  .fader .lab { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--fg); pointer-events: none; white-space: nowrap;
+                text-shadow: 1px 0 #000, -1px 0 #000, 0 1px #000, 0 -1px #000, 2px 0 #000, -2px 0 #000; }
+  .fader.h { height: 48px; }
+  .fader.h .fill { top: 0; bottom: 0; background: linear-gradient(90deg, color-mix(in srgb, var(--c, var(--fg2)) 55%, #000), var(--c, var(--fg2)));
+                   box-shadow: inset -2px 0 0 rgba(255, 255, 255, .45); }
+  .fader.h.center::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--s3); z-index: 1; }
+  .fader.v { height: 100%; min-height: 200px; border-radius: var(--r-key); }
+  .fader.v .fill { left: 0; right: 0; bottom: 0; box-shadow: inset 0 2px 0 rgba(255, 255, 255, .5), 0 0 24px -6px var(--c, var(--fg2)); }
+  .fader.v .lab { top: auto; bottom: 9px; transform: none; }
+
+  /* ---- arrange ---- */
+  .capture { min-height: 72px; padding: 10px 14px; background-color: var(--c); color: #000; display: flex; flex-direction: column; justify-content: center; gap: 4px;
+             border-radius: var(--r-panel); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), inset 0 -2px 0 rgba(0, 0, 0, .25), 0 8px 30px -12px var(--c); }
+  .capture b { font-weight: 400; font-size: 32px; line-height: 32px; }
+  .capture:disabled { background: var(--s1); color: var(--s3); box-shadow: none; }
+  .hint { color: var(--dim); }
+  .card { background: linear-gradient(180deg, #121218, #0b0b0f); padding: 12px; display: flex; flex-direction: column; gap: 10px; border-radius: var(--r-panel);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 0 0 1px rgba(255, 255, 255, .03); }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; min-height: 44px; align-items: center; }
+  .chipsec { width: 44px; height: 44px; background-color: var(--c); color: #000; font-size: 32px; line-height: 32px; text-align: center;
+             box-shadow: var(--edge), 0 0 14px -6px var(--c); animation: pop .22s var(--out); }
+  @keyframes pop { from { transform: scale(.6); opacity: 0; } }
+  .adds { grid-template-columns: repeat(4, 1fr); }
+  .add { height: 44px; color: var(--fg); box-shadow: var(--edge), inset 0 -3px 0 var(--c); text-align: center; }
+  .nexth { margin-top: 10px; color: var(--dim); }
+  .next { border: 1px dashed var(--s3); border-radius: var(--r-chip); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .next h3 { color: var(--fg); }
+  .next .decide { color: var(--dim); }
+
+  /* ---- sound ---- */
+  .ttabs { grid-template-columns: repeat(4, 1fr); }
+  .ttab { height: 52px; }
+  .pbar { display: grid; grid-template-columns: 56px 1fr 56px; gap: var(--gap); }
+  .step { font-size: 32px; line-height: 32px; text-align: center; min-height: 76px; border-radius: var(--r-key); }
+  .pmid { display: grid; grid-template-rows: auto 1fr; gap: 2px; min-width: 0; }
+  .engname { background: none; box-shadow: none; color: var(--dim); text-align: left; padding: 2px 4px; min-height: 28px; }
+  .pname { background: var(--scan), var(--glass); box-shadow: var(--sunk); color: var(--fg); font-size: 32px; line-height: 32px; padding: 6px 10px; text-align: left;
+           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 44px; text-shadow: 0 0 10px rgba(255, 255, 255, .3); }
+  .pname:active:not(:disabled) { transform: none; }
+  .acts { grid-template-columns: 1fr 1fr; }
+  .seg { display: flex; gap: 3px; overflow-x: auto; scrollbar-width: none; padding: 3px; background: var(--glass); box-shadow: var(--sunk); border-radius: calc(var(--r-chip) + 3px); }
+  .seg button { flex: 1 0 auto; min-height: 40px; padding: 0 12px; background: transparent; box-shadow: none; color: var(--dim); text-align: center; }
+  .seg button[aria-selected=true] { background: var(--key-hi) var(--sheen); color: var(--fg); box-shadow: var(--edge); }
+  .knobs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--gap); }
+  .knobs .wide { grid-column: 1 / -1; }
+  .knobs .rowt { grid-column: 1 / -1; color: var(--dim); min-height: 20px; }
+  .knob { display: grid; justify-items: center; align-content: start; gap: 5px; padding: 12px 2px 9px; touch-action: none; border-radius: var(--r-panel);
+          background: linear-gradient(180deg, #121218, #0c0c10); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
+          cursor: ns-resize; min-width: 0; transition: background-color .2s, box-shadow .2s; }
+  .knob.empty { background: transparent; box-shadow: none; cursor: default; }
+  .knob.active { background: linear-gradient(180deg, #1b1b22, #121217); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 0 0 1px color-mix(in srgb, var(--c) 40%, transparent); }
+  /* the ring sits in a sunk well around a domed cap; its arc is the value, and glows */
+  .ring { width: 58px; height: 58px; border-radius: 50%; position: relative; background: var(--glass); box-shadow: var(--sunk); }
+  .ring .arc { position: absolute; inset: 3px; border-radius: 50%;
+          background: conic-gradient(from 225deg, #2a2a31 0 var(--a, 0deg), var(--c) var(--a, 0deg) var(--b, 0deg), #2a2a31 var(--b, 0deg) 270deg, transparent 270deg);
+          -webkit-mask: radial-gradient(circle, transparent 60%, #000 62%); mask: radial-gradient(circle, transparent 60%, #000 62%);
+          filter: drop-shadow(0 0 3px color-mix(in srgb, var(--c) 70%, transparent)); }
+  .ring::after { content: ""; position: absolute; inset: 15px; border-radius: 50%;
+                 background: radial-gradient(circle at 38% 30%, #3b3b44, #1a1a20 60%, #0d0d11);
+                 box-shadow: 0 2px 4px rgba(0, 0, 0, .8), inset 0 1px 0 rgba(255, 255, 255, .12); transition: transform .2s var(--out); }
+  .knob.active .ring::after { transform: scale(.94); }
+  .kl { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .kv { color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+  /* ---- mix ---- */
+  .mixer { grid-template-columns: repeat(4, 1fr); }
+  .chan { display: grid; grid-template-rows: minmax(220px, 40vh) auto auto; gap: var(--gap); }
+  .chan .name { box-shadow: inset 0 3px 0 var(--c); padding-top: 7px; display: flex; gap: 6px; min-width: 0; }
+  .chan .name span { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chan .row.two { grid-template-columns: 1fr; }
+  .master { grid-template-columns: 1fr 1fr; }
+
+  /* ---- sheets, toast, first run, standby ---- */
+  .sheet-back { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: flex; align-items: flex-end; justify-content: center; z-index: 10;
+                -webkit-backdrop-filter: blur(6px) saturate(.8); backdrop-filter: blur(6px) saturate(.8); animation: fade .22s ease-out; }
+  .sheet { width: 100%; max-width: 640px; max-height: 82%; background: linear-gradient(180deg, #17171d, #0d0d11 120px); display: flex; flex-direction: column;
+           border-radius: 16px 16px 0 0; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 -20px 60px rgba(0, 0, 0, .7);
+           padding-bottom: env(safe-area-inset-bottom); animation: rise .32s var(--out); position: relative; }
+  .sheet::before { content: ""; position: absolute; left: 50%; top: 6px; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--s3); }
+  .sheet-back.closing { animation: fade .18s ease-in reverse forwards; }
+  .sheet-back.closing .sheet { animation: rise .2s ease-in reverse forwards; }
+  @keyframes fade { from { opacity: 0; } }
+  @keyframes rise { from { transform: translateY(40px); opacity: 0; } }
+  .sheet header { display: flex; justify-content: space-between; align-items: center; padding: 16px var(--side) 8px; }
+  .sheet .x { padding: 0 12px; min-height: 40px; }
+  .sheet .body { overflow-y: auto; padding: 4px var(--side) 16px; display: flex; flex-direction: column; gap: 8px; }
+  .list { display: flex; flex-direction: column; gap: 3px; }
+  .list.grid2 { display: grid; grid-template-columns: 1fr 1fr; }
+  .opt { min-height: 44px; padding: 8px 10px; background-color: var(--s2); color: var(--fg2); display: flex; justify-content: space-between; gap: 8px; text-align: left; }
+  .opt small { color: var(--dim); font-size: 16px; }
+  .opt[aria-pressed=true] { background-color: var(--fg); color: #000; box-shadow: var(--edge), 0 0 14px -4px rgba(255, 255, 255, .5); }
+  .opt[aria-pressed=true] small { color: rgba(0, 0, 0, .55); }
+  .opt > span:first-child { white-space: nowrap; }
+  .opt small { text-align: right; }
+  .pick2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pick { display: flex; flex-direction: column; gap: 3px; }
+  .pick h3 { color: var(--dim); margin-bottom: 4px; }
+  #toast { position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: rgba(244, 244, 246, .96); color: #000;
+           padding: 10px 16px; max-width: min(calc(100% - 32px), 520px); pointer-events: none; z-index: 20; border-radius: 10px;
+           box-shadow: 0 10px 40px rgba(0, 0, 0, .6), 0 0 0 1px rgba(255, 255, 255, .2); animation: toast .3s var(--out); }
+  @keyframes toast { from { transform: translate(-50%, 12px) scale(.96); opacity: 0; } }
+  .gate, .standby { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 20px; padding: 24px var(--side); max-width: 34em; width: 100%; margin: 0 auto; }
+  .gate { animation: tabin .5s var(--out); }
+  .gate h1 { font-size: 32px; line-height: 32px; color: var(--fg); text-shadow: 0 0 18px rgba(255, 255, 255, .3); }
+  /* the four track colours as a lit strip under the name */
+  .gate h1::after { content: ""; display: block; height: 4px; width: 128px; margin-top: 14px; border-radius: 2px;
+                    background: linear-gradient(90deg, var(--t1) 0 25%, var(--t2) 25% 50%, var(--t3) 50% 75%, var(--t4) 75%);
+                    box-shadow: 0 0 16px rgba(120, 160, 255, .35); }
+  .gate .go, .standby .go { display: flex; gap: var(--gap); flex-wrap: wrap; }
+  .gate .go button, .standby .go button { min-height: 52px; padding: 0 20px; border-radius: var(--r-key); }
+  .gate .go button.pri { background-color: var(--t1); color: #000; box-shadow: var(--edge), 0 6px 26px -8px var(--t1); }
+  .gate .go button:disabled { background: var(--s1); color: var(--s3); box-shadow: none; }
+  #gatemsg { color: var(--fg); min-height: 40px; }
+  #gatemsg.err { color: var(--red); }
+  .plug { width: 120px; height: 60px; position: relative; }
+  .plug i { position: absolute; border-radius: 3px; background: var(--fg2); }
+  .plug i:nth-child(1) { left: 0; top: 18px; width: 52px; height: 24px; background: linear-gradient(180deg, #e2e2e8, #9a9aa4); }
+  .plug i:nth-child(2) { left: 52px; top: 26px; width: 30px; height: 8px; background: var(--s3); animation: plug 1.6s var(--out) infinite; }
+  .plug i:nth-child(3) { right: 0; top: 10px; width: 30px; height: 40px; background: linear-gradient(180deg, #4b93ff, var(--t1)); box-shadow: 0 0 20px -4px var(--t1); }
+  @keyframes plug { 50% { width: 38px; background: var(--fg2); } }
+  #standbymsg { color: var(--fg); }
+
+  /* a mouse: keys brighten under the pointer */
+  @media (hover: hover) and (pointer: fine) {
+    :where(button:not(:disabled)):hover { background-color: var(--key-hi); }
+    .tabbar button:not([aria-selected=true]):hover { color: var(--fg2); background-color: var(--s2); }
+    .pad:not(:disabled):not(.on):hover, .sec:not(.cur):not(:disabled):hover, .trk:not(.solo):hover, .ttab:not(.on):hover { background-color: var(--key-hi); }
+    .chip[aria-pressed=true]:hover, .chip.on:hover, .opt[aria-pressed=true]:hover, #play.on:hover { background-color: #fff; }
+    .chip.pri:not(:disabled):hover, .gate .go button.pri:hover, .guide:hover { background-color: #4b93ff; }
+    .capture:not(:disabled):hover { filter: brightness(1.08); }
+    .knob:not(.empty):hover { background: linear-gradient(180deg, #17171e, #0f0f14); }
+    .seg button:not([aria-selected=true]):hover { background: rgba(255, 255, 255, .04); color: var(--fg2); }
+    .engname:hover { background: none; color: var(--fg2); }
+    #bpm:hover, .pname:hover { background: var(--scan), linear-gradient(180deg, #08080b, #101016); }
+  }
+  /* wider than a phone: the sheet floats above the bottom edge */
+  @media (min-width: 700px) {
+    .sheet-back { padding: 0 16px calc(20px + env(safe-area-inset-bottom)); }
+    .sheet { border-radius: 16px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 24px 80px rgba(0, 0, 0, .8), 0 0 0 1px rgba(255, 255, 255, .05); }
+  }
+  /* a big screen: the app stays a comfortable width, centred */
+  @media (min-width: 1800px) { #app { max-width: 1760px; } }
+
+  /* landscape phones and tablets: the tab bar joins the top bar, the live tab goes side by side */
+  @media (orientation: landscape) and (min-width: 640px) {
+    #app { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto minmax(0, 1fr); }
+    #app > .top { grid-column: 1; grid-row: 1; }
+    #app > .tabbar { grid-column: 2; grid-row: 1; padding: 8px var(--side) 6px 0; grid-template-columns: repeat(4, 88px); }
+    #app > #banner { grid-column: 1 / -1; grid-row: 2; }
+    #app > #update { grid-column: 1 / -1; grid-row: 3; }
+    #app > #tabs, #app > .standby { grid-column: 1 / -1; grid-row: 4; }
+    #app > .tabbar { background: none; border-top: 0; }
+    .tabbar button::after { top: auto; bottom: 0; border-radius: 3px 3px 0 0; }
+    .tab.live { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); grid-template-rows: auto auto minmax(0, 1fr); column-gap: 14px; }
+    .tab.live > .sections { grid-column: 1; grid-row: 1; }
+    .tab.live > .tracks { grid-column: 1; grid-row: 2; }
+    .tab.live > .xywrap { grid-column: 1; grid-row: 3; min-height: 0; }
+    .tab.live > .padwrap { grid-column: 2; grid-row: 1 / -1; min-height: 0; }
+    .tab.live .pad { min-height: 0; }
+    .knobs { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+    .knobs .rowt { display: none; }
+    .tab.sound { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); column-gap: 14px; align-content: start; }
+    .tab.sound > .ttabs, .tab.sound > .pbar, .tab.sound > .acts { grid-column: 1; align-self: start; }
+    .tab.sound > .seg, .tab.sound > .knobs { grid-column: 2; }
+    .tab.sound > .seg { grid-row: 1; }
+    .tab.sound > .knobs { grid-row: 2 / span 2; grid-template-columns: repeat(4, minmax(0, 1fr)); align-self: start; }
+    .tab.sound > div:last-child { grid-column: 1 / -1; }
+    .tab.sound .knobs .rowt { display: none; }
+    #toast { bottom: calc(16px + env(safe-area-inset-bottom)); }
+  }
+  @media (orientation: portrait) and (max-height: 700px) {
+    .tab { gap: 6px; }
+    .sec { height: 44px; }
+    .trk { height: 48px; }
+    .pad { min-height: 40px; padding: 4px 6px; }
+    .label { min-height: 30px; }
+    .xywrap { min-height: 140px; }
+  }
+  @media (orientation: landscape) and (max-height: 430px) {
+    .sec { height: 44px; }
+    .trk { height: 48px; }
+    .tab.live .sec small { display: none; }
+  }
+  /* ---- tablets: split. Live stays on screen; the other pane (Sound, Arrange, Mix) beside it in landscape, below
+     it in portrait. Each pane scrolls on its own; the pads never move. ---- */
+  #app.split #nav-live { display: none; }
+  #app.split .tabbar { grid-template-columns: repeat(3, 1fr); }
+  #app.split #tabs { display: grid; overflow: hidden; gap: 0; }
+  #app.split #tabs > .tab { overflow-y: auto; overscroll-behavior: contain; min-height: 0; height: 100%; }
+  #app.split #tabs > .tab:not(.live) { background: linear-gradient(180deg, rgba(255, 255, 255, .025), rgba(255, 255, 255, .01)); padding-top: 10px; }
+  #app.split .tab.live { display: grid; gap: 10px var(--gap); padding-bottom: 10px;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-areas: "sec sec" "trk trk" "pads xy"; }
+  #app.split .tab.live > .sections { grid-area: sec; }
+  #app.split .tab.live > .tracks { grid-area: trk; }
+  #app.split .tab.live > .padwrap { grid-area: pads; min-height: 0; }
+  #app.split .tab.live > .xywrap { grid-area: xy; min-height: 0; }
+  #app.split .tab.live .pad { min-height: 0; }
+  #app.split .tab.sound { display: flex; flex-direction: column; }
+  #app.split .tab.sound > * { align-self: stretch; }
+  #app.split .tab.live .xywrap .label { flex-wrap: wrap; }
+  #app.split .tab.live .xywrap .label .chip.wide { flex: 1 1 100%; }
+  #app.split .tab.live .xywrap .label .chip:not(.wide) { flex: 1 1 0; text-align: center; }
+  #app.split .tab.sound > .knobs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #app.split .knobs .rowt { display: block; }
+  #app.split .chan { grid-template-rows: minmax(160px, 24vh) auto auto; }
+  @media (orientation: landscape) {
+    #app.split #tabs { grid-template-columns: minmax(0, 1.4fr) minmax(380px, 1fr); }
+    #app.split #tabs > .tab:not(.live) { border-left: 1px solid rgba(255, 255, 255, .07); box-shadow: inset 12px 0 24px -18px #000; }
+  }
+  @media (orientation: portrait) {
+    #app.split #tabs { grid-template-rows: minmax(0, 1.25fr) minmax(0, 1fr); }
+    #app.split #tabs > .tab:not(.live) { border-top: 1px solid rgba(255, 255, 255, .07); box-shadow: inset 0 12px 24px -18px #000; }
+    #app.split .tab.live { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+      grid-template-areas: "sec trk" "pads xy"; }
+    #app.split .tab.live .xywrap { grid-template-rows: auto 1fr; }
+  }
+  /* reduced motion: light still comes and goes, nothing slides, pulses or sweeps */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition-property: background-color, color, opacity, box-shadow !important; }
+    .sec.next { box-shadow: var(--edge), inset 0 0 0 5px var(--c); }
+    .pad.on, button:active:not(:disabled) { transform: none; }
+  }
+</style>
+</head>
+<body>
+<section class="gate" id="gate" hidden>
+  <h1>SLOOP live</h1>
+  <p>Hold a pad for a punch-in effect, ride the filter, launch and chain sections, flip presets and turn the engine's knobs from the phone, while your hands stay on the FM-1.</p>
+  <p class="dim">Plug the FM-1 into the phone with a USB data cable (an OTG adapter on most phones). Chrome on Android, or Chrome and Edge on a computer. After the first time it connects by itself when you plug it in. The pads and sections need SLOOP with protocol v11.</p>
+  <div class="go">
+    <button class="pri" id="connect">Connect the FM-1</button>
+    <button id="demo">Try the demo</button>
+  </div>
+  <div id="gatemsg" role="status" aria-live="polite"></div>
+</section>
+
+<div id="app" hidden>
+  <header class="top">
+    <button id="play" aria-label="Play"></button>
+    <button id="bpm" aria-label="Tap tempo" title="Tap tempo"></button>
+    <div class="pos"><div class="beats" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div id="where" aria-live="off"></div></div>
+    <button id="help" class="helpbtn" aria-label="Help: how each tab is played, the guide, what could come next">?</button>
+    <button id="status" class="status" aria-label="Connection and settings">waiting</button>
+  </header>
+  <div id="banner" role="status" hidden></div>
+  <div id="update" class="update" role="status" hidden>
+    <span>A new version of SLOOP live is ready.</span>
+    <button id="updatebtn" class="chip">reload</button><button id="updatelater" class="chip">later</button>
+  </div>
+  <main id="tabs" hidden></main>
+  <section class="standby" id="standby" hidden>
+    <div class="plug" aria-hidden="true"><i></i><i></i><i></i></div>
+    <p id="standbymsg" role="status" aria-live="polite"></p>
+    <p class="dim">Poke out a beat on the FM-1 first if you like. When it shows up here, everything is ready.</p>
+    <div class="go"><button id="standbydemo">Try the demo meanwhile</button></div>
+  </section>
+  <nav class="tabbar" role="tablist" aria-label="Tabs">
+    <button id="nav-live" role="tab">live</button>
+    <button id="nav-arrange" role="tab">arrange</button>
+    <button id="nav-sound" role="tab">sound</button>
+    <button id="nav-mix" role="tab">mix</button>
+  </nav>
+</div>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
