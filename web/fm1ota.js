@@ -14,9 +14,7 @@ const IS_OTA = (id) => /^ota-/i.test(id.model);
 // the update loader of SLOOP / Felucca packages ("ota-FM-1_9XX"). A device left in the update mode of another
 // firmware (the stock updater's loader) is never written: its loader may lay the image out differently.
 export const OUR_LOADER = (id) => /^ota-FM-1_9\d\d$/i.test(id.text);
-// the MIDI ports the installer may probe (never other gear): the FM-1 under SLOOP / Felucca ("Felucca"), under
-// CLIPPER ("Clipper", its sister firmware), under a firmware named after itself ("SLOOP"), the update loaders, and
-// the names Windows / macOS give the stock firmware
+// the MIDI ports the editor may probe (never other gear), see fm1ota.js
 export const FM1_PORT = /fm-1|felucca|sloop|clipper|ota|composite|sinco|usb-midi/i;
 
 // errors carry a code the pages translate: notfound, model, stopped, noloader, lost, noreturn,
