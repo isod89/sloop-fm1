@@ -4813,9 +4813,7 @@ window.addEventListener("pagehide", () => { localAudio?.panic(); });
 renderPreviewKeys();
 
 /* -------------------------------------------------------------- state --- */
-/* the MIDI ports to probe: as fm1ota.js FM1_PORT (kept separate: this file has no imports, by design). Matches
-   more than "felucca" because Windows / macOS don't always give the FM-1's own name (composite device, generic
-   class driver, the "sinco" chipset name, ...) */
+/* the MIDI ports to probe, same regex as in fm1ota.js */
 const FM1_PORT = /fm-1|felucca|sloop|clipper|ota|composite|sinco|usb-midi/i;
 let access = null;     /* MIDIAccess */
 let dev = null;        /* {link, input, output, info, pdesc[], gdesc[], names[][], dump, steps[], slotUsed[],
