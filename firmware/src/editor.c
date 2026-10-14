@@ -423,10 +423,11 @@ static const uint8_t *ed_bk_obj(uint32_t id, uint32_t *len)   /* 0 = no such obj
             *len = sizeof proj_slot[0];
         return (const uint8_t *)&proj_slot[id - 2u];
     }
-    if (id == 6u || id == 7u) {
-        if (up_bank[id - 6u].magic == UP_BANK_MAGIC)
-            *len = sizeof up_bank[0];
-        return (const uint8_t *)&up_bank[id - 6u];
+    if (id == 6u || id == 7u) {                           /* a user preset bank, read where it is (upreset.c) */
+        const up_bank_t *bk = up_bank_xip[id - 6u];
+        if (bk)
+            *len = sizeof *bk;
+        return bk ? (const uint8_t *)bk : (const uint8_t *)&up_rec_none;
     }
     if (id == 8u) {                                       /* the FM6 patch bank, in flash (XIP) */
         if (fm6_bank_cur >= 0)
@@ -479,10 +480,7 @@ static uint32_t ed_bk_commit(void)
             return 2;
         if (!flash_ok || st_save(OBJ_UPRESET0 + id - 6u, raw, n))
             return 4;
-        memset(&up_bank[id - 6u], 0, sizeof up_bank[0]);
-        if (n)
-            memcpy(&up_bank[id - 6u], raw, n);
-        up_bank_check(id - 6u, (int)n);
+        up_bank_find(id - 6u);                            /* (the bank is read where it is now) */
         up_gen++;
         return 0;
     }

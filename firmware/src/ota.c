@@ -103,7 +103,9 @@ static uint32_t ota_unpack7(const uint8_t *in, uint32_t n, uint8_t *out, uint32_
 }
 
 static uint8_t ota_msg[8 + 32], ota_wire[2 + 48];
-static uint8_t ota_dec[OTA_FRAME_MAX];           /* decoded host message */
+#include "scratch.h"                             /* sloop-lab: the decoded host message, in the main loop's scratch */
+#define ota_dec (main_scratch.dec)
+_Static_assert(sizeof main_scratch.dec == OTA_FRAME_MAX, "the scratch holds a frame");
 
 static int ota_send_msg(uint32_t cmd, const uint8_t *body, uint32_t n)   /* n <= 32 */
 {
@@ -268,7 +270,12 @@ static int ota_ufw(uint8_t *hdr, uint32_t *fl_off, uint32_t *fl_len, uint32_t *o
 
 static int ota_stage(void)                       /* steps 1..6; 0 = host said success */
 {
+#ifdef OTA_STAGE_RAM                             /* sloop-lab: the firmware stages in the project buffer (felucca.c):
+                                                  * a session blocks the main loop, so nothing else needs it then */
+    uint8_t *hdr = OTA_STAGE_RAM, *b = hdr + 0x400, *mine = b + 512;
+#else
     static uint8_t hdr[0x400], b[512], mine[512];
+#endif
     uint32_t i, n, ota_off, ota_len, fl_off, fl_len, fl_crc, c, len, own, official;
     int rc;
     /* 1. UFW header + entry list */
@@ -349,7 +356,13 @@ static void ota_unstage(void)
 /* returns only when nothing was committed (refused, failed, or dry run) */
 static int ota_session(void)
 {
+#ifdef OTA_STAGE_RAM
+    uint8_t *parm = OTA_STAGE_RAM + 0x400 + 512 + 512;
+#define OTA_PARM_N 112u
+#else
     static uint8_t parm[112];
+#define OTA_PARM_N (sizeof parm)
+#endif
     uint8_t back[112];
     uint32_t i;
     int rc;
@@ -361,7 +374,7 @@ static int ota_session(void)
         return rc;
     }
     /* 5./7. UPDATA_PARM (update_mode_api_v2 layout), flash copy first */
-    for (i = 0; i < sizeof parm; i++)
+    for (i = 0; i < OTA_PARM_N; i++)
         parm[i] = 0;
     ota_wr16(parm + 2, 0x5A0Du);
     ota_wr16(parm + 4, 0x5A01u);
@@ -379,8 +392,8 @@ static int ota_session(void)
 #define FELUCCA_OTA_RAMONLY 0                       /* 1: RAM record only, no power-loss resume (a power
                                                      * cycle leaves a broken loader behind) */
 #endif
-    if (!FELUCCA_OTA_RAMONLY && (ota_prog(OTA_RES, parm, sizeof parm) || ota_fread(OTA_RES, back, sizeof back) ||
-        !ota_memeq(back, parm, sizeof parm))) {
+    if (!FELUCCA_OTA_RAMONLY && (ota_prog(OTA_RES, parm, OTA_PARM_N) || ota_fread(OTA_RES, back, sizeof back) ||
+        !ota_memeq(back, parm, OTA_PARM_N))) {
         ota_unstage();
         ota_show(9, -14);
         return -14;

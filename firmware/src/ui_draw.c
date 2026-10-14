@@ -617,9 +617,11 @@ static void draw_tracks(void)
 }
 
 /* oscilloscope of the output, triggered on a rising zero crossing */
+#include "scratch.h"                                /* sloop-lab: the snapshot in the main loop's shared scratch */
+_Static_assert(sizeof main_scratch.snap == SCOPE_N * sizeof(int16_t), "the scratch holds the snapshot");
 static void graph_scope(uint16_t c)
 {
-    static int16_t snap[SCOPE_N];
+    int16_t *snap = main_scratch.snap;
     uint32_t w = scope_w, i, trig = 0;
     int32_t py = 50, x, peak = 1500;
     for (i = 0; i < SCOPE_N; i++) {

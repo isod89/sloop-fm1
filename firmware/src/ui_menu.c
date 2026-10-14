@@ -1,18 +1,27 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* SLOOP menu (HOME held), in sections as the pages are (2.4): SCREEN (COLOR, ZOOM), LIGHTS (LIGHTS, KEYS, NOTES),
- * AUDIO (LOWCUT, USB AUDIO, USB SERIAL), SYSTEM (HARDWARE CALIBRATION, LEARN CLEAR (2.6), ABOUT). SELECT goes to the section
- * before / after (stopping at the ends), KNOB 1..3 set the section's settings in order (the knob's colour marks
+ * AUDIO (LOWCUT, USB AUDIO, USB SERIAL), SYSTEM (2ND CORE (dualcore), HARDWARE CALIBRATION, LEARN CLEAR (2.6), ABOUT).
+ * SELECT goes to the section before / after (stopping at the ends), KNOB 1..4 set the section's settings in order (the knob's colour marks
  * its row), PRESETS moves the cursor; OCT+ steps the cursor's setting round or opens it (CALIBRATION, ABOUT),
  * OCT- closes (from ABOUT: back to the section). */
 /* ------------------------------------------------------------ menu --- */
-enum { MI_COLOR, MI_ZOOM, MI_LIGHTS, MI_KEYS, MI_NOTES, MI_LOWCUT, MI_USB, MI_SERIAL, MI_PANEL, MI_LCLEAR, MI_ABOUT,
-       MI_COUNT };
+enum { MI_COLOR, MI_ZOOM, MI_LIGHTS, MI_KEYS, MI_NOTES, MI_LOWCUT, MI_USB, MI_SERIAL, MI_CPU1, MI_PANEL, MI_LCLEAR,
+       MI_ABOUT, MI_COUNT };
 static const char *const MI_NAME[MI_COUNT] = {"COLOR", "ZOOM", "LIGHTS", "KEYS", "NOTES", "SPEAKER LOWCUT", "USB AUDIO",
-                                              "USB SERIAL", "HARDWARE CALIBRATION", "MIDI LEARN CLEAR", "ABOUT"};
+                                              "USB SERIAL", "2ND CORE", "HARDWARE CALIBRATION", "MIDI LEARN CLEAR", "ABOUT"};
 enum { MS_SCREEN, MS_LIGHTS, MS_AUDIO, MS_SYSTEM, MS_COUNT };
 static const char *const MS_NAME[MS_COUNT] = {"SCREEN", "LIGHTS", "AUDIO", "SYSTEM"};   /* (AUDIO: and USB) */
-static const uint8_t MS_FIRST[MS_COUNT + 1] = {MI_COLOR, MI_LIGHTS, MI_LOWCUT, MI_PANEL, MI_COUNT};   /* rows of each */
+static const uint8_t MS_FIRST[MS_COUNT + 1] = {MI_COLOR, MI_LIGHTS, MI_LOWCUT, MI_CPU1, MI_COUNT};   /* rows of each */
+
+static int mi_cpu1_have(void)                      /* the second core is running (cpu1.c; the host tests have no cpu1.c) */
+{
+#if FELUCCA_CPU1
+    return cpu1_state == CPU1_OK;
+#else
+    return 0;
+#endif
+}
 static const char *const LIGHTS_NAME[LIGHTS_N] = {"OFF", "LOW", "MID", "HIGH"};   /* every button lit, the labels readable */
 static const char *const KEYS_NAME[KEYS_N] = {"OFF", "C KEYS", "WHITE KEYS", "ALL KEYS"};      /* keys lit too, at the LIGHTS level */
 #define MI_Y0 26                                   /* the first row, under the section tabs */
@@ -42,6 +51,9 @@ static const char *mi_value(uint32_t i, uint16_t *c)
     case MI_LOWCUT: return settings.lowcut ? "ON" : "OFF";
     case MI_USB: return usb_full ? "FULL" : "MASTER";
     case MI_SERIAL: return usb_serial ? "ON" : "OFF";
+    case MI_CPU1:                                     /* the render on both cores (fx.c); live, the sound is the same */
+        *c = mi_cpu1_have() ? C_HI : C_DIM;
+        return cpu1_off ? "OFF" : "ON";
     case MI_LCLEAR: {                                 /* (2.6) the CCs MIDI LEARN holds; OCT+ clears them */
         static char b[8];
         uint32_t n = ml_count();
@@ -64,7 +76,7 @@ static void draw_menu(void)
     uint32_t i, pass, sec = mi_sec(ui.menu_sel % MI_COUNT);
     uint32_t sig = ui.menu * 7u + ui.menu_sel * 131u + settings.palette * 1009u + settings.lowcut * 7919u +
                    settings.zoom * 104729u + lights_lvl * 1299709u + lights_keys * 15485863u + ml_count() * 2654435u +
-                   lights_notes * 32452843u + usb_full * 49979687u + usb_serial * 86028121u;
+                   lights_notes * 32452843u + usb_full * 49979687u + usb_serial * 86028121u + cpu1_off * 122949829u;
     if (!ui.force && sig == ui.menu_sig)
         return;
     ui.menu_sig = sig;
@@ -97,6 +109,9 @@ static void draw_menu(void)
             cv_text(4, 88, &FONT_S, "H\xDCGELTON INSTRUMENTS", C_HI);   /* Latin-1 U-umlaut */
             cv_text(4, 104, &FONT_S, "HUGELTON.COM", C_AMB);
             cv_text(4, 119, &FONT_S, "GPL-3.0, NO WARRANTY", C_HI);
+#if FELUCCA_CPU1                                    /* (the host tests include this file without cpu1.c) */
+            cv_text(236 - text_w(&FONT_S, cpu1_label()), 119, &FONT_S, cpu1_label(), C_AMB);   /* 2 CORES / 1 CORE (cpu1.c) */
+#endif
             cv_text(4, 132, &FONT_S, "GITHUB.COM/ISOD89/SLOOP-FM1", C_AMB);   /* (the source of this firmware) */
             cv_text(4, 146, &FONT_S, "FONT: TERMINUS (OFL)", C_DIM);
             cv_text(4, 159, &FONT_S, "SAMPLES: VERSILIAN (CC0)", C_DIM);
@@ -136,9 +151,14 @@ static void draw_menu(void)
                 }
                 if (i == MI_SERIAL && usb_serial != usb_cdc_now())
                     cv_text(xv + 8, y + 30, &FONT_S, "RESTART", C_AMB);   /* (usb.c: at the next start) */
+                if (i == MI_CPU1 && !mi_cpu1_have())
+                    cv_text(xv + 8, y + 30, &FONT_S, "NOT RUNNING", C_AMB);   /* (cpu1.c: ABOUT says 1 CORE) */
             }
-            cv_text(4, MI_Y0 + 3 * MI_DY + 6, &FONT_S, "SELECT SECTION  KNOB SETS", C_DIM);
-            cv_text(4, MI_Y0 + 3 * MI_DY + 22, &FONT_S, "OCT+ OK   OCT- CLOSE", C_DIM);   /* (rows .. 218) */
+            if (MS_FIRST[sec + 1u] - MS_FIRST[sec] <= 3u) {   /* (SYSTEM has four rows with 2ND CORE: its fourth
+                                                               * row, ABOUT, takes the help's place) */
+                cv_text(4, MI_Y0 + 3 * MI_DY + 6, &FONT_S, "SELECT SECTION  KNOB SETS", C_DIM);
+                cv_text(4, MI_Y0 + 3 * MI_DY + 22, &FONT_S, "OCT+ OK   OCT- CLOSE", C_DIM);   /* (rows .. 218) */
+            }
         }
         cv_oy = 0;
         cv_blit(0, H_HEAD + 1 + pass * 124u);
@@ -183,6 +203,10 @@ static void mi_set(uint32_t i, int32_t s)
         break;
     case MI_SERIAL:
         usb_serial = (uint8_t)(s > 0 ? 1u : s < 0 ? 0u : !usb_serial);
+        break;
+    case MI_CPU1:                                      /* right ON, left OFF; at once (the next block renders so) */
+        cpu1_off = (uint8_t)(s > 0 ? 0u : s < 0 ? 1u : !cpu1_off);
+        cpu1_units = cpu1_off ? 0 : -1;
         break;
     case MI_NOTES:
         lights_notes = (uint8_t)(s > 0 ? 1u : s < 0 ? 0u : !lights_notes);

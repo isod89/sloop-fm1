@@ -518,6 +518,7 @@ static union {
     project_v2_t v2;
     project_v1_t v1;
 } proj_tmp;
+static void *up_stage(void) { return &proj_tmp; }   /* upreset.c: a user preset bank staged for a write (sloop-lab) */
 static void proj_fetch(uint32_t slot)
 {
     project_t *q = &proj_slot[slot & 3u];

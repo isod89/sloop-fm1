@@ -710,11 +710,25 @@ int main(int argc, char **argv)
         encs[panel.enc[EN_SELECT]] = 5; frame();
         sec = mi_sec(ui.menu_sel);
         check(sec == MS_SYSTEM, "menu: SELECT stops at the last section, SYSTEM");
-        encs[panel.enc[EN_K2]] = 1; frame();
-        check(ui.menu == 1 && ui.menu_sel == MI_LCLEAR, "menu SYSTEM: KNOB 2 is MIDI LEARN CLEAR (2.6), nothing cleared by a turn");
-        ui.force = 1; frame(); ppm("menu-system");
+        encs[panel.enc[EN_K1]] = -1; frame();         /* (dualcore) row 1: 2ND CORE; the render split (fx.c cpu1_units) */
+        check(ui.menu_sel == MI_CPU1 && cpu1_off == 1u && cpu1_units == 0 && (lights_word() >> 26 & 1u),
+              "menu SYSTEM: KNOB 1 left: 2ND CORE OFF (every render unit on core 0), saved with the settings (bit 26)");
+        encs[panel.enc[EN_K1]] = 1; frame();
+        check(cpu1_off == 0u && cpu1_units == -1 && !(lights_word() >> 26 & 1u), "menu SYSTEM: KNOB 1 right: 2ND CORE ON (the firmware's share)");
+        tap(B_OCTUP);
+        check(cpu1_off == 1u && cpu1_units == 0 && ui.menu == 1, "menu SYSTEM: OCT+ on 2ND CORE toggles it, the menu stays");
+        lights_from_word(lights_word());
+        check(cpu1_off == 1u && cpu1_units == 0, "menu SYSTEM: 2ND CORE OFF read back from the settings word");
+        lights_from_word(0);
+        check(cpu1_off == 0u && cpu1_units == -1, "menu SYSTEM: a settings word from before the branch reads as 2ND CORE ON");
+        lights_from_word(1u << 21);
+        check(cpu1_off == 0u && cpu1_units == -1 && lights_min == 2u, "menu SYSTEM: bit 21 is 2.6's MIDI IN = CH 1 now, not 2ND CORE OFF");
+        lights_from_word(0);
         encs[panel.enc[EN_K3]] = 1; frame();
-        check(ui.menu == 1 && ui.menu_sel == MI_ABOUT, "menu SYSTEM: a knob does not open ABOUT, it moves the cursor");
+        check(ui.menu == 1 && ui.menu_sel == MI_LCLEAR, "menu SYSTEM: KNOB 3 is MIDI LEARN CLEAR (2.6; row 3 after 2ND CORE), nothing cleared by a turn");
+        ui.force = 1; frame(); ppm("menu-system");
+        encs[panel.enc[EN_K4]] = 1; frame();
+        check(ui.menu == 1 && ui.menu_sel == MI_ABOUT, "menu SYSTEM: a knob does not open ABOUT, it moves the cursor (row 4)");
         tap(B_OCTUP);
         check(ui.menu == 2, "menu SYSTEM: OCT+ on ABOUT opens it");
         tap(B_OCTDN);
@@ -1158,7 +1172,7 @@ int main(int argc, char **argv)
         trk[0].p[P_DIST] = 0;
         ui.menu = 1; ui.menu_sel = 0; ui.force = 1; frame();
         for (j = 0; j < 6u; j++) { encs[panel.enc[EN_SELECT]] = 1; frame(); }
-        encs[panel.enc[EN_K2]] = 1; frame();
+        encs[panel.enc[EN_K3]] = 1; frame();          /* (dualcore: row 3, after 2ND CORE) */
         tap(B_OCTUP);
         check(ui.menu_sel == MI_LCLEAR && ml_count() == 0u, "menu SYSTEM > MIDI LEARN CLEAR, OCT+: nothing learned any more");
         ui.menu = 0; ui.force = 1; go_home(); frames(16);

@@ -78,6 +78,20 @@ mkdir -p "$OUT/ub"
 run "no divide by zero (UBSan): UI fuzz, sequencer, projects, a minute of live use" \
     sh -c "'$OUT/ui_pages_ub' '$OUT/ub' >/dev/null && '$OUT/seq2_ub' >/dev/null && '$OUT/project_ub' >/dev/null && '$OUT/soak_ub' 1 >/dev/null && echo 'no divide by zero'"
 
+# the second core's host double (tests/cpu1_host.c, firmware/src/cpu1.h): inline, a thread, a slow thread, a lost
+# job; and the thread under ThreadSanitizer (the render's shared state shows up here once it uses core 1)
+$CC -w -Ifirmware/src -o "$OUT/cpu1_test" tests/cpu1_test.c
+run "second core, host double: inline, deferred to the wait (CORES=1)" env CORES=1 "$OUT/cpu1_test"
+run "second core, host double: a thread (CORES=2)" env CORES=2 "$OUT/cpu1_test"
+run "second core, host double: a thread with random delays (CORES=2 CHAOS=7)" env CORES=2 CHAOS=7 "$OUT/cpu1_test"
+run "second core, host double: a lost job, the hold and the fallback (CPU1_TIMEOUT_AT=777)" env CORES=2 CPU1_TIMEOUT_AT=777 "$OUT/cpu1_test"
+TSAN="${CC_UB:-cc} -O1 -g -w -fsanitize=thread -Ifirmware/src"
+if $TSAN -o "$OUT/cpu1_tsan" tests/cpu1_test.c 2>/dev/null; then
+    run "second core, host double under ThreadSanitizer (CORES=2 CHAOS=3)" env CORES=2 CHAOS=3 "$OUT/cpu1_tsan"
+else
+    echo "(cpu1 under TSan: this compiler has no ThreadSanitizer, skipped)"
+fi
+
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/soak_test" tests/soak_test.c -lm
 run "soak: ${SOAK_MIN:-10} minutes of random live use (bounded, no hanging voices, idle after stop)" "$OUT/soak_test" "${SOAK_MIN:-10}"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/stress_test" tests/stress_test.c -lm
@@ -141,6 +155,10 @@ run "regression: golden renders, health, voices, CPU budget" "$OUT/regress" test
 
 run "regression: target cost of the render loops" python3 tests/target_budget.py \
     build/felucca.dis tests/target_budget.txt
+# the render split over the two cores (fx.c mix_units): the golden renders and tests/mix_split_test.c (three
+# FORMANT, FM6 or PHYS parts, S&H LFOs, mutes, the drums through the SLICER and the FILTER, the metronome: every
+# split of the units against none) under every mode of the host double of core 1, and under ThreadSanitizer
+run "the render split over the two cores: every mode of the second core's host double (tests/cpu1_modes.sh)" sh tests/cpu1_modes.sh
 
 run "installer CLI (fm1_install.py) against a simulated FM-1" python3 tests/install_test.py
 run "the offline editor (one file, nothing next to it); the offline site (sw.js, manifest)" python3 tests/site_test.py

@@ -2,7 +2,10 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* User presets (editor protocol v2, cmds 16-21; the SAVE > USER page): 32
  * slots in two storage.c objects (OBJ_UPRESET0/1, 0xDC000..0xDFFFF), 16
- * records each, mirrored in RAM so browsing never reads flash. A record:
+ * records each. sloop-lab: no RAM mirror; the banks are read where they are, in the flash's plain
+ * XIP window (storage.c st_xip), as the samples and the FM6 bank already are; a write stages the
+ * bank in the project buffer (project.c up_stage) and goes through st_save (6,160 B of RAM back).
+ * The host test (UP_HOST) keeps the RAM banks. A record:
  * engine, name, the instrument parameters, a 16-step pattern.
  *
  * A bank whose magic, record size or slot count differ reads as empty; so
@@ -32,9 +35,19 @@ typedef struct {
 } up_bank_t;
 _Static_assert(sizeof(up_rec_t) == 192, "user preset record layout");
 _Static_assert(P_COUNT <= UP_PMAX && P_COUNT < 128, "user preset record: P_COUNT");
+#ifdef UP_HOST
 static up_bank_t up_bank[UP_SLOTS / UP_PER_BANK];
-
 static up_rec_t *up_rec(uint32_t k) { return &up_bank[k / UP_PER_BANK].r[k % UP_PER_BANK]; }
+#else
+static const up_bank_t *up_bank_xip[UP_SLOTS / UP_PER_BANK];   /* each bank's current copy in the window, 0 = none */
+static const up_rec_t up_rec_none;                              /* an empty slot (up_valid says no) */
+static const up_rec_t *up_rec(uint32_t k)
+{
+    const up_bank_t *bk = up_bank_xip[(k / UP_PER_BANK) % NELEM(up_bank_xip)];
+    return bk ? &bk->r[k % UP_PER_BANK] : &up_rec_none;
+}
+static void *up_stage(void);                                    /* project.c: the project buffer (main loop) */
+#endif
 
 static int up_valid(const up_rec_t *r)
 {
@@ -44,13 +57,29 @@ static int up_valid(const up_rec_t *r)
 
 static int up_used(uint32_t k) { return k < UP_SLOTS && up_valid(up_rec(k)); }
 
+static int up_bank_ok(const up_bank_t *bk, int len)   /* a bank of this layout, whole */
+{
+    return len == (int)sizeof *bk && bk->magic == UP_BANK_MAGIC && bk->rsize == sizeof(up_rec_t) &&
+           bk->nslot == UP_PER_BANK;
+}
+#ifdef UP_HOST
 static void up_bank_check(uint32_t b, int len)  /* after loading bank b (len bytes, -1 = none): wrong shape -> empty */
 {
     up_bank_t *bk = &up_bank[b];
-    if (len != (int)sizeof *bk || bk->magic != UP_BANK_MAGIC || bk->rsize != sizeof(up_rec_t) ||
-        bk->nslot != UP_PER_BANK)
+    if (!up_bank_ok(bk, len))
         memset(bk, 0, sizeof *bk);
 }
+#else
+static void up_bank_find(uint32_t b)            /* bank b's current copy in the XIP window, or none (after a save too) */
+{
+    const void *p = 0;
+    uint32_t len = 0;
+#if FELUCCA_FLASH
+    p = flash_ok ? st_xip(OBJ_UPRESET0 + b, &len) : 0;
+#endif
+    up_bank_xip[b % NELEM(up_bank_xip)] = p && up_bank_ok((const up_bank_t *)p, (int)len) ? (const up_bank_t *)p : 0;
+}
+#endif
 
 /* the record's values in today's P_* order (mapped by count, see above); def = the defaults */
 static void up_params(const up_rec_t *r, int16_t *out, const int16_t *def)
@@ -160,38 +189,42 @@ static void up_values(const up_rec_t *r, int16_t *v)   /* mapped and clamped for
         v[i] = (int16_t)clamp(v[i], up_desc(r->engine, i)->min, up_desc(r->engine, i)->max);
 }
 
-static void up_boot(void)                      /* persist_boot: the banks from flash */
+static void up_boot(void)                      /* persist_boot: the banks, where they are in the flash */
 {
-#if FELUCCA_FLASH
     uint32_t b;
     for (b = 0; b < UP_SLOTS / UP_PER_BANK; b++)
-        up_bank_check(b, flash_ok ? st_load(OBJ_UPRESET0 + b, &up_bank[b], sizeof up_bank[b]) : -1);
-#endif
+        up_bank_find(b);
 }
 
-/* record k = *r (0: erase), then the bank to flash: 0 ok, 2 flash error, 3 no flash (kept in RAM) */
+/* record k = *r (0: erase), then the bank to flash: 0 ok, 2 flash error, 3 no flash (nothing kept: there is no
+ * RAM mirror). The bank is staged in the project buffer: its current copy, or an empty one, with the record put */
 static int up_put(uint32_t k, const up_rec_t *r)
 {
-    up_bank_t *bk = &up_bank[k / UP_PER_BANK];
+    uint32_t b = (k / UP_PER_BANK) % NELEM(up_bank_xip), i;
+    up_bank_t *bk = (up_bank_t *)up_stage();
+    int rc = 3;
+    if (up_bank_xip[b])
+        memcpy(bk, up_bank_xip[b], sizeof *bk);
+    else
+        memset(bk, 0, sizeof *bk);
     bk->magic = UP_BANK_MAGIC;
     bk->rsize = sizeof(up_rec_t);
     bk->nslot = UP_PER_BANK;
     if (r)
-        *up_rec(k) = *r;
+        bk->r[k % UP_PER_BANK] = *r;
     else
-        memset(up_rec(k), 0, sizeof(up_rec_t));
-    if (!r) {
-        uint32_t i;
+        memset(&bk->r[k % UP_PER_BANK], 0, sizeof(up_rec_t));
+    if (!r)
         for (i = 0; i < NTRK; i++)
             if (trk[i].user == k + 1u)
                 trk[i].user = 0;
-    }
     up_gen++;
 #if FELUCCA_FLASH
     if (flash_ok)
-        return st_save(OBJ_UPRESET0 + k / UP_PER_BANK, bk, sizeof *bk) ? 2 : 0;
+        rc = st_save(OBJ_UPRESET0 + b, bk, sizeof *bk) ? 2 : 0;
 #endif
-    return 3;
+    up_bank_find(b);
+    return rc;
 }
 
 static void up_slot_label(char *b, uint32_t k)  /* "U07" */
@@ -316,7 +349,7 @@ static void up_ui(uint32_t op, uint32_t k)     /* 0 load, 1 erase, 2 save */
     }
     rc = op == 1u ? up_put(k, 0) : up_store(k, 0);
     if (rc == 3)
-        ui_message(op == 1u ? "ERASED (RAM)" : "SAVED (RAM)");
+        ui_message("NO FLASH");                        /* (no RAM mirror to keep it in) */
     else if (rc)
         ui_message(op == 1u ? "ERASE ERROR" : "SAVE ERROR");
     else

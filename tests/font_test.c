@@ -14,6 +14,8 @@
 #include <stdlib.h>
 static void lcd_sync(void) {}
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p) { (void)x; (void)y; (void)w; (void)h; (void)p; }
+#define __attribute__(x)         /* (as tests/hostsim.c: gfx.c puts its canvas in the pool section, which clang on
+                                 * macOS refuses for a host build; sloop-lab, 11/10/2026) */
 #include "../firmware/src/gfx.c"
 static int bad;
 static void check(int ok, const char *what) { printf("font: %-70s %s\n", what, ok ? "ok" : "FAIL"); bad += !ok; }

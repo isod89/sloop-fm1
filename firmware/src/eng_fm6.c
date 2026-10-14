@@ -32,6 +32,10 @@
 #include "felucca_fm6.h"         /* tools/gen_fm6_patches.py: FM6_INIT, FM6_FACTORY[] */
 
 #define FM6_POLY 6               /* engine_t.poly */
+typedef struct {                 /* a part's FM6 state: its engine arena (engines.c) */
+    fm6_note_t note[FM6_POLY];
+    int32_t bus[2][FM6_N];       /* fm6_core_render's modulator buses: the part's own, so parts render on both cores */
+} fm6_part_t;
 #define FM6_BANK_N 27u           /* patch bank slots (fm6_bank.c) */
 #define FM6_NSLOT (FM6_NFACTORY + FM6_BANK_N)   /* PTCH: F1..F8, B1..B27 */
 #define FM6_PACKED 128u
@@ -267,13 +271,18 @@ static void fm6_sync(const track_t *t)
 }
 
 /* --------------------------------------------------------------- voice --- */
+static fm6_part_t *fm6_part_of(track_t *t)
+{
+    return t < &trk[0] || t >= &trk[NPART] ? 0 : (fm6_part_t *)eng_arena_of(t, ENGI_FM6);
+}
 static fm6_note_t *fm6_note_of(track_t *t, voice_t *v)
 {
+    fm6_part_t *P = fm6_part_of(t);
     uint32_t i;
-    if (t < &trk[0] || t >= &trk[NPART])
+    if (!P)
         return 0;
     i = (uint32_t)(v - t->v);
-    return i < FM6_POLY ? &((fm6_note_t *)eng_arena_of(t, ENGI_FM6))[i] : 0;
+    return i < FM6_POLY ? &P->note[i] : 0;
 }
 
 static void fm6_note_on(track_t *t, voice_t *v)
@@ -315,6 +324,7 @@ static int fm6_done(track_t *t, voice_t *v)
 
 static void fm6_render(track_t *t, voice_t *v, int32_t *out, uint32_t len, const vmod_t *m)
 {
+    fm6_part_t *P = fm6_part_of(t);
     fm6_note_t *n = fm6_note_of(t, v);
     uint32_t tr = (uint32_t)(t - trk), i;
     const uint8_t *p;
@@ -327,7 +337,7 @@ static void fm6_render(track_t *t, voice_t *v, int32_t *out, uint32_t len, const
     lf = fm6_note_logfreq(m->pitch16 + (p[FP_TRNSP] - 24) * 16, m->fine);
     fb = clamp(fm6_eff[tr].fb + ((m->shape - (64 << 8)) >> 11), 0, 7);
     lvl = clamp(t->p[P_E2], -64, 63) * 24 + clamp(m->cutoff >> 8, -150, 150) * 16;   /* microsteps */
-    if (!fm6_note_compute(n, p, bus, fm6_lfo_v[tr], fm6_lfo_d[tr], lf, fm6_eff[tr].alg, fb, fm6_eff[tr].dt, lvl << 16))
+    if (!fm6_note_compute(n, p, bus, P->bus, fm6_lfo_v[tr], fm6_lfo_d[tr], lf, fm6_eff[tr].alg, fb, fm6_eff[tr].dt, lvl << 16))
         return;                                         /* every carrier below the threshold */
     /* the voice's amplitude ramp x VOICE_FS (one carrier at full: VOICE_FS / 2), six voices in unison ~ one */
     k = t->p[P_VOICE] == V_UNISON ? VOICE_FS * 2 / 5 : VOICE_FS;

@@ -31,7 +31,8 @@ static inline int32_t soft_knee(int32_t y, int32_t k)   /* linear up to k, then 
 
 typedef union {
     gr_part_t grain;
-    fm6_note_t fm6[FM6_POLY];
+    drw_part_t drawbar;                  /* eng_drawbar.c: the part's wheels, percussion and rotary (sloop-lab) */
+    fm6_part_t fm6;                      /* eng_fm6.c: six notes and the operator buses */
     uint32_t phys[PHYS_ARENA / 4u];      /* eng_phys.c: two SYMP slots or three small ones */
 } eng_arena_t;
 static eng_arena_t eng_arena[NPART] __attribute__((section(".pool")));
@@ -57,12 +58,31 @@ static void *eng_arena_of(const track_t *t, uint32_t eng)
     }
     return &eng_arena[p];
 }
+
+/* fx.c units_split: rendering t this block would draw rng() (libc.c), so t stays on core 0, where the draws
+ * keep their order: a sounding voice's slot is not on the part's MODEL (phys_render resets it with a draw).
+ * When the arena or the layout is not PHYS's yet, every slot starts over (phys_slot_of): taken as a draw */
+static int phys_render_draws(const track_t *t, int32_t model)   /* model: the MODEL this block renders with (fx.c) */
+{
+    uint32_t p = (uint32_t)(t - trk), md = (uint32_t)model % PM_COUNT, big = md == PM_SYMP, i;
+    uint32_t sz = big ? PHYS_SLOT_BIG : PHYS_SLOT_SMALL;
+    const uint8_t *a = (const uint8_t *)&eng_arena[p % NPART];
+    if (p >= NPART)
+        return 0;
+    if (eng_arena_own[p] != ENGI_PHYS + 1u || phys_lay[p] != big + 1u)
+        return 1;
+    for (i = 0; i < phys_poly(t); i++)
+        if (t->v[i].active && ((const phys_slot_t *)(a + i * sz))->model != md)
+            return 1;
+    return 0;
+}
 #if FELUCCA_SLICE
 #include "eng_slice.c"
 #endif
 
 static const engine_t *const ENGINES[NENGINES] = {&ENG_ANALOG, &ENG_DIGITAL, &ENG_PHASE, &ENG_LOFI, &ENG_SAMPLE,
-                                                    &ENG_FORMANT, &ENG_TRIO, &ENG_DRAWBAR, &ENG_GRAIN,
+                                                    &ENG_FORMANT, &ENG_TRIO, &ENG_DRAWBAR,   /* 7: ENGI_DRAWBAR (eng_drawbar.c) */
+                                                    &ENG_GRAIN,
                                                     &ENG_FM6,    /* 9 (ENGI_FM6): always; SLICE after it (core.h) */
                                                     &ENG_PHYS, &ENG_NOISE,
 #if FELUCCA_SLICE

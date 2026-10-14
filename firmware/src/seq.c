@@ -2143,21 +2143,32 @@ static track_t *midi_track(uint32_t ch)
 
 /* a channel that plays the selected track: its note-off goes to the track its note-on went to,
  * even when another track was selected in between (else that note would hang) */
-static uint8_t midi_sel_on[16][128];                  /* per channel and note: track + 1, 0 = none */
+static uint8_t midi_sel_on[16][64];                   /* per channel and note, a nibble: track + 1, 0 = none (sloop-lab:
+                                                       * 1 KB, not 2: the value is 0..NTRK) */
+static inline uint32_t midi_sel_get(uint32_t ch, uint32_t note)
+{
+    return (midi_sel_on[ch & 15u][(note & 127u) >> 1] >> (4u * (note & 1u))) & 15u;
+}
+static inline void midi_sel_set(uint32_t ch, uint32_t note, uint32_t v)
+{
+    uint8_t *b = &midi_sel_on[ch & 15u][(note & 127u) >> 1];
+    uint32_t sh = 4u * (note & 1u);
+    *b = (uint8_t)((*b & ~(15u << sh)) | ((v & 15u) << sh));
+}
 static track_t *midi_route(uint32_t ch, uint32_t note, int on)
 {
     track_t *t = midi_own(ch);
     if (t)
         return t;                                     /* a track's own channel (GLO > MIDI, GLO > DRUMS > CH) */
-    if (song.g[G_CHOTH] && (on || !midi_sel_on[ch & 15u][note & 127u]))
+    if (song.g[G_CHOTH] && (on || !midi_sel_get(ch, note)))
         return 0;                                     /* OTHER = OFF: nothing (a note-off only ends what a note-on of
                                                        * that channel started on the selected track, before) */
     t = TSEL;
     if (on)
-        midi_sel_on[ch & 15u][note & 127u] = (uint8_t)(song.sel + 1u);
-    else if (midi_sel_on[ch & 15u][note & 127u]) {
-        t = &trk[(midi_sel_on[ch & 15u][note & 127u] - 1u) % NTRK];
-        midi_sel_on[ch & 15u][note & 127u] = 0;
+        midi_sel_set(ch, note, song.sel + 1u);
+    else if (midi_sel_get(ch, note)) {
+        t = &trk[(midi_sel_get(ch, note) - 1u) % NTRK];
+        midi_sel_set(ch, note, 0);
     }
     return t;
 }
@@ -2571,11 +2582,11 @@ static void events_block(uint32_t n)
             if (st != 0x90u && st != 0x80u)
                 continue;
             if (st == 0x90u && d2) {
-                midi_sel_on[ch][d1] = (uint8_t)(song.sel + 1u);
+                midi_sel_set(ch, d1, song.sel + 1u);
                 t = TSEL;
             } else {                                  /* the note-off: the track its note-on went to */
-                t = midi_sel_on[ch][d1] ? &trk[(midi_sel_on[ch][d1] - 1u) % NTRK] : TSEL;
-                midi_sel_on[ch][d1] = 0;
+                t = midi_sel_get(ch, d1) ? &trk[(midi_sel_get(ch, d1) - 1u) % NTRK] : TSEL;
+                midi_sel_set(ch, d1, 0);
             }
         } else {
             if (st == 0xB0u) {                            /* a CC (IN = CLOCK: none) */

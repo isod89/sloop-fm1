@@ -16,7 +16,10 @@ static const char *const VIS_NAME[VIS_N] = {"OSCILLOSCOPE", "SPECTRUM", "SPECTRO
 #define VIS_SG_W 48u                                /* spectrogram: 48 columns of 5 px, 72 rows of 3 px */
 #define VIS_SG_H 72u
 static int16_t vis_re[VIS_FFT] __attribute__((section(".pool"))), vis_im[VIS_FFT] __attribute__((section(".pool")));
-static int16_t vis_l[VIS_FFT], vis_r[VIS_FFT];      /* this frame's scope snapshot */
+#include "scratch.h"                                /* sloop-lab: this frame's scope snapshot, in the shared scratch */
+#define vis_l (main_scratch.vis[0])
+#define vis_r (main_scratch.vis[1])
+_Static_assert(sizeof main_scratch.vis[0] == VIS_FFT * sizeof(int16_t), "the scratch holds the snapshot");
 static uint8_t vis_sg[VIS_SG_H][VIS_SG_W] __attribute__((section(".pool")));
 static uint8_t vis_lj[3][256][2];                   /* Lissajous: the last three frames' points */
 static struct {

@@ -62,7 +62,9 @@ static uint32_t st_sector(uint32_t obj, uint32_t copy)  /* flash offset of copy 
     return 0x97000u + (obj - OBJ_PROJECT0) * 2u * ST_SECTOR + copy * ST_SECTOR;
 }
 
-static uint8_t st_buf[ST_PAYLOAD_MAX] __attribute__((aligned(4)));
+#include "scratch.h"                          /* sloop-lab: the payload buffer is the main loop's shared scratch */
+#define st_buf (main_scratch.st)
+_Static_assert(sizeof main_scratch.st == ST_PAYLOAD_MAX, "the scratch holds a payload");
 
 static int st_head(uint32_t obj, uint32_t copy, st_hdr_t *h)   /* commit record valid: 0 */
 {
@@ -108,6 +110,30 @@ static int st_current(uint32_t obj, st_hdr_t *h)
     }
     return -1;
 }
+
+#ifdef ST_XIP_PTR                                  /* sloop-lab: the firmware (felucca.c); the host tests have no XIP */
+/* the current copy's payload where it is, in the flash's plain XIP window (fm1_flash.h fl_plain_window_init; the
+ * driver drops the cache lines it erases and programs, so a save is seen at once): its CRC is checked through the
+ * window, nothing is copied. 0 = no valid copy, else *len = the payload's length. The copy is the one st_current
+ * would take: the valid header with the highest seq, A on a tie, the other when its payload fails. */
+static const void *st_xip(uint32_t obj, uint32_t *len)
+{
+    st_hdr_t h[2];
+    int v[2], i, first;
+    v[0] = st_head(obj, 0, &h[0]) == 0;
+    v[1] = st_head(obj, 1, &h[1]) == 0;
+    first = v[1] && (!v[0] || h[1].seq > h[0].seq) ? 1 : 0;
+    for (i = 0; i < 2; i++) {
+        uint32_t c = (uint32_t)(first ^ i);
+        const uint8_t *p = ST_XIP_PTR(st_sector(obj, c) + ST_PAYLOAD_OFF);
+        if (v[c] && st_crc32(p, h[c].len) == h[c].crc) {
+            *len = h[c].len;
+            return p;
+        }
+    }
+    return 0;
+}
+#endif
 
 /* load object into dst (up to max bytes); returns the length, or -1 */
 static int st_load(uint32_t obj, void *dst, uint32_t max)
