@@ -279,7 +279,7 @@ Hold ARP and hold a key: it repeats on the grid at the **RATE** of KNOB 1 — 1/
 
 The 16 white keys are the 16 steps of the page; the lit ones play. The first four black keys (F#3, G#3, A#3, C#4) or **OCT− / OCT+** pick page 1–4 (steps 1–16, 17–32, 33–48, 49–64, up to the track's LENGTH).
 
-- **An empty step:** press its key — it is set at once. Drums: with the sound shown (KNOB 1 picks it, or the last pad you hit); synths: with the note or chord you played last (on the keys, or a MIDI keyboard from 2.6).
+- **An empty step:** press its key — it is set at once. Drums: with the sound shown (KNOB 1 picks it, or the last pad you hit); synths: with the note or chord you played last (on the keys, or a MIDI keyboard from 2.6). The title line shows that whole chord, low to high (*B3 E4 A5*); hold a step to see its notes there instead. A chord can span octaves: hold one key, change the octave with OCT− / OCT+, then add keys (up to 4 notes; a MONO track writes the first).
 - **A set step:** press and let go — it is cleared (with its nudge, locks and fill condition). Hold it and turn a knob instead — it is edited, and kept: **KNOB 1** sound (drums) / note (synths), **KNOB 2 LEVEL** (ghost, soft, norm, hard; on a synth step, 2.6: **VEL**, its velocity 1–127), **KNOB 3 RATCHET** (x1–x4), **KNOB 4 NUDGE**; **PRESETS** a parameter lock, **ALGORITHM** which parameter; **OCT+** its fill condition. Hold several step keys to edit them together. **OCT−** with a step held clears its nudge, locks and condition.
 - **No step held:** KNOB 1 the sound / note to set · KNOB 2 **DIV** (1/4 … 1/32, triplets, 1/2, a bar, two bars) · KNOB 3 **SWING** of the track · KNOB 4 **LENGTH** (1–64 steps; each track loops on its own length, polymeters stay in phase).
 

@@ -874,6 +874,49 @@ int main(int argc, char **argv)
         for (j = 0; j < NSTEP; j++) memset(&TDRUM->dstep[j], 0, sizeof(dstep_t));
         song.sel = 0; go_home(); frames(4);
     }
+    {   /* the SEQ layer shows the whole chord it writes, low to high: a chord over the octaves (a key held, OCT,
+         * more keys); a step held: that step's notes; locked (less room): without the octaves; a MONO track: the
+         * one note it writes; the drum track: no notes line */
+        track_t *t = &trk[1];
+        int16_t v0 = t->p[P_VOICE];
+        uint32_t s3 = key_of_white(2);
+        song.sel = 1; go_home(); frames(4);
+        t->p[P_VOICE] = V_POLY; song.octave = 0;
+        fm1_in.notes = 1u << 11; frame();                          /* E4 held */
+        tap(B_OCTUP);
+        fm1_in.notes |= 1u << 16; frame(); fm1_in.notes &= ~(1u << 16); frame();   /* A4, an octave up: A5 */
+        tap(B_OCTDN);
+        fm1_in.notes |= 1u << 6; frame(); fm1_in.notes = 0; frame();               /* B3 */
+        check(pen_n == 3u && pen_note[0] == 64u && pen_note[1] == 81u && pen_note[2] == 59u && song.octave == 0,
+              "E4 held, OCT+, A4, OCT-, B3: the pen E4 A5 B3 (a chord over three octaves)");
+        press(B_SEQ); frames(12);
+        check(!strcmp(layer_pen, "B3 E4 A5"), "SEQ layer: the whole chord on the screen, low to high (B3 E4 A5)");
+        key(s3);
+        check(t->step[2].n == 3u && t->step[2].note[0] == 64u && t->step[2].note[1] == 81u && t->step[2].note[2] == 59u,
+              "SEQ + step 3: the three notes written");
+        fm1_in.notes = 1u << s3; frame();
+        encs[panel.enc[EN_K1]] = 1; frames(2);
+        check(!strcmp(layer_pen, "C4 F4 A#5"), "step 3 held + KNOB 1: that step's notes shown as they move");
+        fm1_in.notes = 0; frames(2);
+        check(t->step[2].n == 3u && !strcmp(layer_pen, "B3 E4 A5"), "step 3 let go: kept, the pen shown again");
+        release(B_SEQ); frames(2);
+        fm1_in.notes = 1u << 8 | 1u << 10 | 1u << 13 | 1u << 17; frame(); fm1_in.notes = 0; frame();   /* C#4 D#4 F#4 A#4 */
+        press(B_SEQ); frames(12);
+        check(!strcmp(layer_pen, "C#4 D#4 F#4 A#4"), "four keys together: C#4 D#4 F#4 A#4");
+        tap(B_HOME); release(B_SEQ); frames(4);
+        check(ly_lock == LY_STEP && !strcmp(layer_pen, "C# D# F# A#"), "locked (the LOCK badge): without the octaves");
+        tap(B_SEQ); frames(4);
+        t->p[P_VOICE] = V_MONO;
+        press(B_SEQ); frames(12);
+        check(!strcmp(layer_pen, "C#4"), "a MONO track: the one note a step gets");
+        release(B_SEQ); frames(2);
+        song.sel = TRK_DRUM; go_home(); frames(2);
+        press(B_SEQ); frames(12);
+        check(!layer_pen[0], "the drum track: no notes line");
+        release(B_SEQ); frames(2);
+        t->p[P_VOICE] = v0; step_clear(&t->step[2]);
+        song.sel = 0; go_home(); frames(4);
+    }
     {   /* (2.4.1) the STEP page in chord mode: a key writes the whole chord it sounds (it wrote only the root, as
          * 2.3 did); with a CHORD+ modifier held, the changed chord; a single note without chord mode */
         uint32_t j, k5 = key_of_white(4), kmin = 1u;            /* key 5 = C4 (the I chord); F#3 (key index 1): minor */

@@ -648,16 +648,73 @@ static void punch_tiles_draw(const tile_t *tl, uint32_t *cache)
     }
 }
 
+/* the notes of the SEQ layer on a synth track, low to high, "E3 B3 A5" (without the octaves, "E B A", when
+ * that is wider than w pixels): the first step held, else the pen (the notes an empty step gets: step_down) */
+static void pen_chord_text(char *b, uint32_t sz, const track_t *t, uint32_t w)
+{
+    uint8_t nt[4];
+    uint32_t n = pen_n ? pen_n : 1u, i, j, oct;
+    if (n > 4u)
+        n = 4u;
+    for (i = 0; i < n; i++)
+        nt[i] = pen_n ? pen_note[i] : last_note;
+    if (t->p[P_VOICE] != V_POLY)
+        n = 1;                                            /* (MONO, LEG, UNI: the first note only) */
+    if (ui.step_held) {
+        const step_t *st;
+        for (i = 0; i < 16u && !((ui.step_held >> i) & 1u); i++)
+            ;
+        st = &t->step[(ui.step_page * 16u + i) % NSTEP];
+        if (step_on(st)) {
+            n = st->n < 4u ? st->n : 4u;
+            for (i = 0; i < n; i++)
+                nt[i] = st->note[i];
+        }
+    }
+    for (i = 1; i < n; i++)
+        for (j = i; j > 0 && nt[j - 1] > nt[j]; j--) {
+            uint8_t x = nt[j];
+            nt[j] = nt[j - 1];
+            nt[j - 1] = x;
+        }
+    for (oct = 1; ; oct = 0) {
+        b[0] = 0;
+        for (i = 0; i < n && str_len(b) + 6u < sz; i++) {
+            char nb[8];
+            note_name(nb, nt[i]);
+            if (!oct)
+                str_cpy(nb, N_NOTE[nt[i] % 12u], 4);
+            if (i)
+                str_cpy(b + str_len(b), " ", 2);
+            str_cpy(b + str_len(b), nb, 8);
+        }
+        if (!oct || text_w(&FONT_S, b) <= w)
+            return;
+    }
+}
+
+static char layer_pen[24];                               /* the notes line last drawn (the host tests read it too) */
 static void layer_title(const char *name, const char *sub, uint16_t col, uint32_t *cache)
 {
     uint32_t locked = ly_lock != LY_PLAY;
-    uint32_t sig = studio_hash(studio_hash(col, name), sub) + (ui.msg_t ? studio_hash(3u, ui.msg) : 0u) + locked * 7919u;
+    int32_t x = 4 + (int32_t)text_w(&FONT_L, name) + 10, right = 236;
+    char *pen = layer_pen;
+    uint32_t sig;
+    if (locked)
+        right -= (int32_t)text_w(&FONT_S, "LOCK") + 12;
+    pen[0] = 0;
+    if (ui.layer == LY_STEP && !is_drum(TSEL))           /* the chord an empty step gets, on the line above */
+        pen_chord_text(pen, sizeof layer_pen, TSEL, right > x ? (uint32_t)(right - x) : 0u);
+    sig = studio_hash(studio_hash(studio_hash(col, name), sub), pen) + (ui.msg_t ? studio_hash(3u, ui.msg) : 0u) +
+          locked * 7919u;
     if (!ui.force && sig == *cache)
         return;
     *cache = sig;
     cv_begin(240, 40, C_BLACK);
     cv_text(4, 2, &FONT_L, name, col);
-    cv_text(4 + text_w(&FONT_L, name) + 10, 18, &FONT_S, ui.msg_t ? ui.msg : sub, ui.msg_t ? C_WHITE : TE_G3);
+    if (pen[0])
+        cv_text(x, 2, &FONT_S, pen, C_WHITE);
+    cv_text(x, 18, &FONT_S, ui.msg_t ? ui.msg : sub, ui.msg_t ? C_WHITE : TE_G3);
     if (locked) {                                         /* locked open (HOME): any button lets it go */
         int32_t w = (int32_t)text_w(&FONT_S, "LOCK") + 8;
         cv_rect(236 - w, 4, w, 15, C_WHITE);

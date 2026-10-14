@@ -370,7 +370,7 @@ The 16 white keys are the 16 steps of the current page; the lit ones play.
 
 | Control | Does |
 | --- | --- |
-| **SEQ + empty step** | sets it at once — drums: with the sound shown (KNOB 1, or the last pad you hit); synths: with the note or chord you played last (on the keys, or a MIDI keyboard: 2.6) |
+| **SEQ + empty step** | sets it at once — drums: with the sound shown (KNOB 1, or the last pad you hit); synths: with the note or chord you played last (on the keys, or a MIDI keyboard: 2.6). The title line shows that whole chord, low to high (*B3 E4 A5*); with a step held, that step's notes. A chord can span octaves: hold one key, change the octave with OCT− / OCT+, add keys (up to 4 notes) |
 | **SEQ + set step (tap)** | clears it (with its nudge, locks and fill condition) |
 | **SEQ + several step keys held** | edit them together |
 | **SEQ + first four black keys** or **SEQ + OCT− / OCT+** (no step held) | the page: steps 1–16, 17–32, 33–48, 49–64 (up to the track's length) |
