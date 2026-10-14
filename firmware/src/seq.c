@@ -49,6 +49,8 @@ static int8_t kb_oct[27];                   /* the octave buttons when the key w
 static uint8_t last_note = 60;
 static uint8_t pen_n = 1, pen_note[4] = {60};   /* the last chord / note played: the SEQ layer writes it */
 static uint8_t pen_lane;                       /* the last drum lane played: the SEQ layer's lane */
+static uint8_t pen_lvl[NTRK];                  /* the level the SEQ layer writes on each track (LV_*): a drum hit's
+                                                * as played, or SEQ + a level key (ui_layers.c) */
 /* SLOOP 2.6: the MIDI keyboard's notes. mi_pen: the notes held on the selected track (its pen, as the keys: the notes
  * down together are a chord). step_in_q: every synth note-on / note-off from MIDI, note | on << 7 | track << 8, for the
  * STEP page's entry (ui_input.c midi_entry): the audio side writes, the UI reads; a full queue drops and says so */
@@ -1272,6 +1274,7 @@ static void drum_input(uint32_t lane, uint32_t lvl, uint32_t rat, int rec)
     track_t *t = TDRUM;
     lane &= 15u;
     pen_lane = (uint8_t)lane;
+    pen_lvl[TRK_DRUM] = (uint8_t)(lvl & 3u);
     arm_start(t);
     if (ft_on && ft_trk == TRK_DRUM)
         ft_note_on(lane, lvl);

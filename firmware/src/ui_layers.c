@@ -6,10 +6,10 @@
  *   EDIT  erase that sound / note (seq.c)  knobs: SHIFT  LENGTH x2 / half  TRANSPOSE   OCT- undo  OCT+ redo
  *   ARP   note repeat (seq.c roll)         knobs: RATE
  *   SEQ   steps 1..16 of the page          knobs: SOUND / NOTE  DIV  SWING  LENGTH;  a step key held:
- *         (black keys 1..4: pages)                SOUND / NOTE  LEVEL  RATCHET  NUDGE, PRESETS the value of a
- *                                                 parameter lock, ALGORITHM its parameter (the sound parameter
- *                                                 last touched first); OCT+ cycles the step's fill condition
- *                                                 (normal, fill only, no fill), OCT- clears its nudge, locks and
+ *         (black keys 1..4: pages;                SOUND / NOTE  LEVEL  RATCHET  NUDGE, PRESETS the value of a
+ *          5..8: the level steps are written      parameter lock, ALGORITHM its parameter (the sound parameter
+ *          at, ghost soft norm hard; a step       last touched first); OCT+ cycles the step's fill condition
+ *          at another: it takes it)               (normal, fill only, no fill), OCT- clears its nudge, locks and
  *                                                 condition
  *   SEL   any key: the key of the song     knobs: CHORD  SCALE  KEYS  TRANSPOSE
  *   GLO   keys 1..4 mute, 5..8 solo,       knobs: the levels of tracks 1..4
@@ -114,6 +114,63 @@ static int step_is_on(const track_t *t, uint32_t idx)
 {
     return is_drum(t) ? dstep_has(&t->dstep[idx], pen_lane) : step_on(&t->step[idx]);
 }
+/* the level keys of the SEQ layer, the black keys after the four of the pages: D#4 F#4 G#4 A#4 */
+static const uint8_t LVL_KEY[4] = {10, 13, 15, 17};
+static const uint8_t LVL_OF_KEY[4] = {LV_GHOST, LV_SOFT, LV_NORM, LV_HARD};
+static const char *const LVL_NAME[4] = {"norm", "ghost", "soft", "hard"};   /* (by LV_*) */
+/* a set step takes the pen's level (drums: the sound's; synth: every note); 0: it had it already */
+static int step_level_to_pen(track_t *t, uint32_t idx)
+{
+    uint32_t lv = pen_lvl[song.sel & 3u] & 3u;
+    if (is_drum(t)) {
+        dstep_t *d = &t->dstep[idx];
+        if (!dstep_has(d, pen_lane) || dstep_lvl(d, pen_lane) == lv)
+            return 0;
+        layer_undo_mark(t);
+        fm1_irq_off();
+        dstep_set(d, pen_lane, lv, dstep_rat(d, pen_lane));
+        fm1_irq_on();
+    } else {
+        step_t *s = &t->step[idx];
+        uint32_t i, m = 0, want = 0;
+        if (!step_on(s))
+            return 0;
+        for (i = 0; i < s->n && i < 4u; i++) {
+            m |= 3u << (2u * i);
+            want |= lv << (2u * i);
+        }
+        if ((s->lvl & m) == want)
+            return 0;
+        layer_undo_mark(t);
+        fm1_irq_off();
+        s->lvl = (uint8_t)((s->lvl & ~m) | want);
+        fm1_irq_on();
+    }
+    sync_reload = 1;
+    return 1;
+}
+/* SEQ + a level key: the level the steps are written at; the steps held take it (kept when let go); with none
+ * held, the drum track plays the sound at it */
+static void pen_level_key(uint32_t lv)
+{
+    track_t *t = TSEL;
+    uint32_t w;
+    pen_lvl[song.sel & 3u] = (uint8_t)lv;
+    if (!ui.step_held) {
+        if (is_drum(t))
+            audition_req(1u << pen_lane, lv << (2u * pen_lane));
+        return;
+    }
+    if (song.playing && arrangement_enabled) {
+        ui_message("STOP THE SONG FIRST");
+        return;
+    }
+    for (w = 0; w < 16u; w++) {
+        uint32_t idx = ui.step_page * 16u + w;
+        if ((ui.step_held >> w) & 1u && idx < trk_len(t) && step_level_to_pen(t, idx))
+            step_pend_off &= (uint16_t)~(1u << w);
+    }
+}
 static void step_down(uint32_t w)
 {
     track_t *t = TSEL;
@@ -125,19 +182,22 @@ static void step_down(uint32_t w)
         return;
     }
     if (step_is_on(t, idx)) {
-        step_pend_off |= (uint16_t)(1u << w);
+        if (!step_level_to_pen(t, idx))                  /* at another level: it takes the pen's; else it goes */
+            step_pend_off |= (uint16_t)(1u << w);
         return;
     }
     layer_undo_mark(t);
     fm1_irq_off();
     if (is_drum(t)) {
-        dstep_set(&t->dstep[idx], pen_lane, LV_NORM, 0);
+        dstep_set(&t->dstep[idx], pen_lane, pen_lvl[TRK_DRUM] & 3u, 0);
     } else {
         step_t *s = &t->step[idx];
-        uint32_t i, n = pen_n ? pen_n : 1u;
+        uint32_t i, n = pen_n ? pen_n : 1u, lv = pen_lvl[song.sel & 3u] & 3u;
         memset(s, 0, sizeof *s);
-        for (i = 0; i < n && i < 4u; i++)
+        for (i = 0; i < n && i < 4u; i++) {
             s->note[i] = pen_n ? pen_note[i] : last_note;
+            s->lvl |= (uint8_t)(lv << (2u * i));
+        }
         s->n = (uint8_t)(t->p[P_VOICE] == V_POLY ? n : 1u);
         s->time = ST_NOTE;
         s->vel = 100;
@@ -340,10 +400,14 @@ static void layer_key(uint32_t layer, uint32_t k, uint32_t down)
     }
     switch (layer) {
     case LY_STEP:
-        if (w < 0) {                                    /* the first four black keys: pages 1..4 */
+        if (w < 0) {                                    /* the first four black keys: pages 1..4; the next four: the level */
             static const int8_t PG[12] = {-1, 0, -1, 1, -1, 2, -1, -1, 3, -1, -1, -1};
+            uint32_t i;
             if (k < 12u && PG[k] >= 0 && (uint32_t)PG[k] * 16u < trk_len(TSEL))
                 ui.step_page = (uint8_t)PG[k];
+            for (i = 0; i < 4u; i++)
+                if (k == LVL_KEY[i])
+                    pen_level_key(LVL_OF_KEY[i]);
             return;
         }
         ui.step_held |= (uint16_t)(1u << w);
@@ -832,6 +896,8 @@ static void layer_screen_draw(void)
             str_cpy(sub, "page ", sizeof sub);
             str_cpy(sub + 5, p, 4);
         }
+        str_cpy(sub + str_len(sub), " \xb7 ", 4);       /* the level the steps are written at: "track 4 · ghost" */
+        str_cpy(sub + str_len(sub), LVL_NAME[pen_lvl[sel & 3u] & 3u], 6);
         lab[0] = is_drum(t) ? "sound" : "note";
         if (is_drum(t))
             str_cpy(v[0], LANE_SHORT[pen_lane], 8);

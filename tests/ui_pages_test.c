@@ -301,6 +301,57 @@ int main(int argc, char **argv)
     fm1_in.notes = 0; frame(); check(!roll[0].on, "key up: the roll ends");
     release(B_ARP);
 
+    {   /* the level the SEQ layer writes, without a knob: a drum hit's as played (OCT- ghost); SEQ + D#4 / F#4 /
+         * G#4 / A#4: ghost / soft / norm / hard (one per track); a set step at another level takes it, at the
+         * same it goes; a step held + a level key: its level, kept when let go */
+        static dstep_t d0[NSTEP];
+        static step_t s0[NSTEP];
+        uint32_t s2 = key_of_white(1), s3 = key_of_white(2), lv0[NTRK];
+        memcpy(d0, TDRUM->dstep, sizeof d0); memcpy(s0, trk[1].step, sizeof s0);
+        for (i = 0; i < NTRK; i++) lv0[i] = pen_lvl[i];
+        song.sel = TRK_DRUM; go_home(); frame();
+        fm1_in.buttons |= BT(B_OCTDN); key(7); fm1_in.buttons &= ~BT(B_OCTDN); frame();   /* C4, OCT- held: a ghost hat */
+        check(pen_lane == 4 && pen_lvl[TRK_DRUM] == LV_GHOST, "a ghost hat played (OCT- held): the SEQ layer writes ghost hats");
+        press(B_SEQ); frames(10);
+        check(strstr(sub_line(), "ghost") != 0 && (keys_lit() & (1u << 10)) != 0, "SEQ held: \"ghost\" on the sub line, D#4 lit");
+        key(s2);
+        check(dstep_has(&TDRUM->dstep[1], 4) && dstep_lvl(&TDRUM->dstep[1], 4) == LV_GHOST, "SEQ + step 2: a ghost hat");
+        key(15);                                                  /* G#4: norm */
+        check(pen_lvl[TRK_DRUM] == LV_NORM && strstr(sub_line(), "norm") != 0 && !(keys_lit() & (1u << 10)),
+              "SEQ + G#4: norm (no level key lit)");
+        key(s2);
+        check(dstep_has(&TDRUM->dstep[1], 4) && dstep_lvl(&TDRUM->dstep[1], 4) == LV_NORM, "step 2 again (ghost, the pen norm): norm, kept");
+        key(s2);
+        check(!dstep_has(&TDRUM->dstep[1], 4), "step 2 again (norm, as the pen): cleared");
+        key(17);                                                  /* A#4: hard */
+        key(s3);
+        check(dstep_lvl(&TDRUM->dstep[2], 4) == LV_HARD && (keys_lit() & (1u << 17)) != 0, "SEQ + A#4, step 3: a hard hat, A#4 lit");
+        fm1_in.notes = 1u << s3; frame();                         /* step 3 held + F#4: soft */
+        fm1_in.notes |= 1u << 13; frame(); fm1_in.notes &= ~(1u << 13); frame();
+        fm1_in.notes = 0; frame();
+        check(dstep_has(&TDRUM->dstep[2], 4) && dstep_lvl(&TDRUM->dstep[2], 4) == LV_SOFT && pen_lvl[TRK_DRUM] == LV_SOFT,
+              "step 3 held + F#4: soft, kept when let go (the pen soft too)");
+        release(B_SEQ); frames(2);
+        song.sel = 1; go_home(); frame();
+        key(7);
+        press(B_SEQ); frames(10);
+        check(pen_lvl[1] == LV_NORM && strstr(sub_line(), "norm") != 0, "track 2: its own level (norm)");
+        key(10);                                                  /* D#4: ghost */
+        key(s2);
+        check(step_on(&trk[1].step[1]) && (trk[1].step[1].lvl & 3u) == LV_GHOST && step_vel_shown(&trk[1].step[1]) == 42u,
+              "SEQ + D#4, step 2 (synth): its note ghost (velocity 42)");
+        check(pen_lvl[TRK_DRUM] == LV_SOFT, "the drum track's level unchanged (soft)");
+        key(15); key(s2);
+        check(step_on(&trk[1].step[1]) && (trk[1].step[1].lvl & 3u) == LV_NORM, "G#4, step 2 again: norm, kept");
+        key(s2);
+        check(!step_on(&trk[1].step[1]), "step 2 again: cleared");
+        ui.force = 1; frame(); ppm("layer-steps-level");
+        release(B_SEQ); frames(2);
+        memcpy(TDRUM->dstep, d0, sizeof d0); memcpy(trk[1].step, s0, sizeof s0);
+        for (i = 0; i < NTRK; i++) pen_lvl[i] = (uint8_t)lv0[i];
+        song.sel = TRK_DRUM; go_home(); frame();
+    }
+
     /* ---- SEL: the key of the song; GLO: mute, solo, tap */
     song.sel = 0; go_home(); frame();
     press(B_SCL); frames(10);

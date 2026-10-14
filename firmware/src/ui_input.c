@@ -120,6 +120,10 @@ static uint32_t keys_lit(void)
             if (on)
                 m |= 1u << key_of_white(i);
         }
+        if ((pen_lvl[song.sel & 3u] & 3u) != LV_NORM)  /* a level key lit: the steps are written ghost, soft or hard */
+            for (i = 0; i < 4u; i++)
+                if (LVL_OF_KEY[i] == (pen_lvl[song.sel & 3u] & 3u))
+                    m |= 1u << LVL_KEY[i];
         return m | fm1_in.notes;
     }
     case LY_SCALE:                                 /* the keys in the scale; the root blinks */

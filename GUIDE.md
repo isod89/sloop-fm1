@@ -198,7 +198,7 @@ The layers are **FX** (punch-in effects), **EDIT** (erase), **ARP** (note repeat
 
 ### Velocity and levels
 
-The FM-1's keys have no velocity: on the drum track every hit has one of four **levels** — **GHOST**, **SOFT**, **NORM** (as played), **HARD** — chosen with OCT− / OCT+ as you play, or later in the step sequencer. On synth tracks a step can carry an **accent** (STEP page, FLAG).
+The FM-1's keys have no velocity: on the drum track every hit has one of four **levels** — **GHOST**, **SOFT**, **NORM** (as played), **HARD** — chosen with OCT− / OCT+ as you play, or in the step sequencer (SEQ + D#4, F#4, G#4, A#4, no knob needed; or a step held + KNOB 2). On synth tracks a step can carry an **accent** (STEP page, FLAG).
 
 ---
 
@@ -374,6 +374,8 @@ The 16 white keys are the 16 steps of the current page; the lit ones play.
 | **SEQ + set step (tap)** | clears it (with its nudge, locks and fill condition) |
 | **SEQ + several step keys held** | edit them together |
 | **SEQ + first four black keys** or **SEQ + OCT− / OCT+** (no step held) | the page: steps 1–16, 17–32, 33–48, 49–64 (up to the track's length) |
+| **SEQ + the next four black keys** (D#4, F#4, G#4, A#4) | the **level** new steps are written at: **GHOST**, **SOFT**, **NORM**, **HARD**, each track its own (the title line shows it, *track 4 · ghost*; a level other than NORM lights its key). The drum track plays the sound at it. A drum hit you play sets it too (OCT− ghost, OCT+ hard, as played). With step keys held: they take that level, and are kept |
+| **SEQ + a set step at another level (tap)** | it takes the level (drums: that sound's; synths: every note of the step) instead of clearing; tap again to clear it |
 | **SEQ + KNOB 1** (no step held) | the **sound** (drums, you hear it) / **note** to set |
 | **SEQ + KNOB 2** | **DIV**: 1/4, 1/8, 1/16, 1/32, 8T, 16T, 1/2, 1BAR, 2BAR |
 | **SEQ + KNOB 3** | **SWING** of the track |
