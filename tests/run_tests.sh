@@ -69,6 +69,74 @@ run "after Felucca 1.4 / 1.5: INSERT, filter TYPE, ENV SYNC, LFO 2, drum mutes, 
 
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/ui_pages_test" tests/ui_pages_test.c -lm
 run "live UI: pages, layers (punch, steps, erase, roll, key, mix), holds, drums, REC, fuzz" "$OUT/ui_pages_test" "$OUT"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/pick_test" tests/pick_test.c -lm
+run "SMK-37 Pro pad sound picker: pages by kind, pads load, < >, drum kits" "$OUT/pick_test" "$OUT"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/fbank_test" tests/fbank_test.c -lm
+run "SMK-37 Pro FADER BANK screen: banks wrap, what each fader sets, closes by itself" "$OUT/fbank_test" "$OUT"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/k4led_test" tests/k4led_test.c -lm
+run "SMK-37 Pro: KNOB BANK lit on a PRESETS detent; which modes are a grid" "$OUT/k4led_test" "$OUT"
+$CC -O2 -w -Ifirmware/hal -o "$OUT/padgrid_test" tests/padgrid_test.c
+run "SMK-37 Pro pads: steps and tiles in reading order, notes low at the bottom, DRUM KIT / STEPS" "$OUT/padgrid_test"
+$CC -w -Ifirmware/src -o "$OUT/smk_vel_test" tests/smk_vel_test.c
+run "SMK-37 menu KEY VELOCITY: each mode -> the note's velocity, the drum level, the settings bits" "$OUT/smk_vel_test"
+# every key / pad velocity the app reads goes through KEY VELOCITY (smk_vel.h vel_apply): the keys and pads (seq.c key_vel),
+# the outer keys (smk_extkey_take); console.c shows the raw ones
+vel_applied() {
+    [ "$(grep -c 'fm1_in.key_vel' firmware/src/seq.c)" = 1 ] && grep -q 'vel_apply(vel_mode, fm1_in.key_vel' firmware/src/seq.c &&
+    [ "$(grep -c 'smk_extkey_take' firmware/src/seq.c)" = 1 ] && grep -q 'vel_apply(vel_mode, (uint32_t)e & 0xFFu)' firmware/src/seq.c &&
+    ! grep -n -e 'fm1_in.key_vel' -e 'smk_extkey_take' firmware/src/*.c | grep -v -e '^firmware/src/seq.c' -e '^firmware/src/console.c' &&
+    echo applied
+}
+run "SMK-37 menu KEY VELOCITY: applied wherever the app reads a key or pad velocity" vel_applied
+$CC -o "$OUT/smk_wheel_test" tests/smk_wheel_test.c
+run "SMK-37 wheels: BEND UP / DOWN, the calibration (full travel = full range, re-centre), back to 0 at rest" "$OUT/smk_wheel_test"
+$CC -O2 -w -DSMK_MIX=1 -Ibuild/gen -Ifirmware/src -o "$OUT/smk_mix_test" tests/smk_mix_test.c -lm
+run "SMK-37 LIMITER: SOFT leaves held chords alone at power-on, catches peaks, no clipping; CLASSIC as before" "$OUT/smk_mix_test"
+$CC -o "$OUT/smk_knobs_test" tests/smk_knobs_test.c
+run "SMK-37 KNOB LAYOUT: FM-1 / SMK, each knob one role, calibration per printed knob, labels" "$OUT/smk_knobs_test"
+$CC -o "$OUT/smk_midi_out_test" tests/smk_midi_out_test.c
+run "SMK-37 TRS MIDI OUT: the bytes, the ring, one byte at a time, OFF, no UART: no hang" "$OUT/smk_midi_out_test"
+# every USB MIDI out packet goes to the TRS jack too (usb.c midi_out_event, before the USB check), and the TIMER5 tick
+# drains it
+trs_fed() {
+    sed -n '/^static void midi_out_event/,/^}/p' firmware/src/usb.c | grep -q 'smo_put(pkt);' &&
+    [ "$(grep -c 'midi_out_q\[mo_w % MQ\] =' firmware/src/usb.c)" = 1 ] &&
+    sed -n '/^void fm1_timer5_irq/,/^}/p' firmware/src/main.c | grep -q 'smo_tick();' && echo fed
+}
+run "SMK-37 TRS MIDI OUT: fed from every USB MIDI out packet, drained by the TIMER5 tick" trs_fed
+# the pads' DRUM KIT records into the drum track whatever track is armed; SEQ PLAY / REC work in the HOME menu
+pads_rec_menu() {
+    sed -n '/^static void pad_drum(/,/^}/p' firmware/src/seq.c | grep -q 'rec_hit(TDRUM, lane, lvl, 0);' &&
+    sed -n '/^    if (ui.menu) {/,/^    }/p' firmware/src/ui_input.c | grep -q 'rec_toggle();' &&
+    sed -n '/^    if (ui.menu) {/,/^    }/p' firmware/src/ui_input.c | grep -q 'transport_req = song.playing ? 2 : 1;' && echo checked
+}
+run "SMK-37 pads: DRUM KIT hits recorded into the drum track; PLAY / REC work in the HOME menu" pads_rec_menu
+$CC -o "$OUT/smk_daw_test" tests/smk_daw_test.c
+run "SMK-37 DAW mode: the DEFAULT map, types, MIDI bytes (CC, notes, bend, MMC), knobs, toggles, rate, flash object" "$OUT/smk_daw_test"
+$CC -O2 -w -DSMK_MIX=1 -Ibuild/gen -Ifirmware/src -Ifirmware/hal -Itests -o "$OUT/daw_ui_test" tests/daw_ui_test.c -lm
+run "SMK-37 DAW mode on the UI: < + >, knobs / faders / buttons / wheels, banks, PATCH, the editor, the menu" "$OUT/daw_ui_test" "$OUT"
+# DAW mode, the audio context's part: the keys and pads go to seq.c daw_* (not the synth) while in DAW mode, the pads
+# whatever the layer (smk_input.h SMK_EXT_DAW), a release where its press went; the faders, the wheels, the volume knob
+# leave SLOOP alone; the store's own object (OBJ_DAW), saved with the settings
+daw_routed() {
+    sed -n '/^static void keyboard_block(void)/,/^}/p' firmware/src/seq.c | grep -q 'if (daw_isr) {' &&
+    sed -n '/^static void ext_keys_block(void)/,/^}/p' firmware/src/seq.c | grep -q 'daw_pad(k - SMK_EXT_DAW, v);' &&
+    sed -n '/^static void smk__padq(/,/^}/p' firmware/hal/smk_input.h | grep -q 'if (smk_pad_daw) {' &&
+    sed -n '/^static void smk_faders(void)/,/^}/p' firmware/src/main.c | grep -q 'if (daw_on) {' &&
+    sed -n '/^static void smk_wheels(void)/,/^}/p' firmware/src/main.c | grep -q 'daw_wheels(b, m);' &&
+    grep -q 'if (smk_master_hold)' firmware/hal/smk_input.h &&
+    sed -n '/^\(UI_SMALL \)*static void settings_save(void)/,/^}/p' firmware/src/project.c | grep -q 'daw_save();' && echo routed
+}
+run "SMK-37 DAW mode: keys, pads, faders, wheels and the volume knob routed; its settings kept" daw_routed
+# the stock firmware's mapping in USRFLASH: its end marker erased before the first erase there, at boot over our data
+$CC -DBOARD_SMK37=1 -Ifirmware/hal -o "$OUT/smk_stock_test" tests/smk_stock_test.c
+run "SMK-37 the way back to M-Vave: the stock mapping's marker released before the first USRFLASH erase, once" "$OUT/smk_stock_test"
+stock_hooked() {
+    sed -n '/^static int fl_erase4k_quiet(/,/^}/p' firmware/src/felucca.c | grep -q 'st_stock_touch(off);' &&
+    sed -n '/^\(UI_SMALL \)*static void persist_boot(void)/,/^}/p' firmware/src/project.c | grep -q 'st_stock_boot();' &&
+    [ "$(cat firmware/src/*.c | grep -c 'fl_erase4k_ram\|fl_erase4k(')" = 1 ] && echo hooked
+}
+run "SMK-37 every app erase goes through the stock marker's hook; the boot check runs" stock_hooked
 # no divide by 0 (the FM-1 runs with the div0 trap off, hal/fm1_irq.h: a real one would give a wrong value
 # silently): the UI fuzz, the sequencer, the projects and a minute of random live use, with UBSan
 UBSAN="${CC_UB:-cc} -O1 -w -fsanitize=integer-divide-by-zero -fno-sanitize-recover=integer-divide-by-zero -Ibuild/gen -Ifirmware/src -Ifirmware/hal"
@@ -138,6 +206,26 @@ head -c 200000 build/felucca.bin > "$OUT/old_app.bin"
 python3 tools/fm1pkg_make.py "$OUT/old_app.bin" build/loader/ota.bin "$OUT/old.fwsc" >/dev/null
 $CC -o "$OUT/ldr_test" tests/ldr_test.c
 run "update loader: other app -> this build" "$OUT/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
+
+# SMK-37 Pro (BOARD_SMK37): the flash map, the OTA staging and the loader windows on SMK-layout packages
+# (made here from the FM-1 binaries: only the layout and the protocol are under test)
+$CC -DBOARD_SMK37=1 -Ifirmware/hal -o "$OUT/smk_flash_test" tests/smk_flash_test.c
+run "SMK-37 Pro flash map: allow-lists never reach the head, BTIF/USRTRIM, USR, key_mac" "$OUT/smk_flash_test"
+python3 tools/fm1pkg_make.py --board smk37 build/felucca.bin build/loader/ota.bin "$OUT/smk_new.fwsc" >/dev/null
+python3 tools/fm1pkg_make.py --board smk37 "$OUT/old_app.bin" build/loader/ota.bin "$OUT/smk_old.fwsc" >/dev/null
+run "SMK-37 Pro package layout (fm1pkg_make --board smk37): PRCT 0x9D000, stock region table"     python3 tests/smk_pkg_test.py "$OUT/smk_new.fwsc"
+$CC -DBOARD_SMK37=1 -o "$OUT/ota_test_smk" tests/ota_test.c
+run "M-UPGRADE entry, SMK-37 Pro build (staging 0xBB000, parm ota-SMK-37 Pro_016)" "$OUT/ota_test_smk" "$OUT/smk_new.fwsc"
+for m in 1 2; do                         # the MODEL=elite / mke builds of ota.c
+    $CC -DBOARD_SMK37=1 -DT_MODEL=$m -o "$OUT/ota_test_smk_m$m" tests/ota_test.c
+    run "M-UPGRADE entry, SMK-37 model $m (1 Elite, 2 MKE-P37): identity and parm under its name" "$OUT/ota_test_smk_m$m" "$OUT/smk_new.fwsc"
+done
+for m in "elite:SMK-37 Elite_900" "mke:MKE-P37_900"; do
+    f="build/sloop-smk37-${m%%:*}.fwsc"
+    [ -f "$f" ] && run "SMK-37 ${m%%:*} build package: layout, identity ${m#*:}" python3 tests/smk_pkg_test.py "$f" "${m#*:}"
+done
+$CC -DBOARD_SMK37=1 -o "$OUT/ldr_test_smk" tests/ldr_test.c
+run "update loader, SMK-37 Pro: app area 0x4000-0x9CFFF, protected ranges untouched"     "$OUT/ldr_test_smk" "$OUT/smk_old.fwsc" "$OUT/smk_new.fwsc"
 
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/hostsim" tests/hostsim.c -lm
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/scale_test" tests/scale_test.c -lm

@@ -16,9 +16,11 @@ static uint32_t input_buttons, stop_at_retry;
 static jmp_buf exit_loop;
 #define FM1_TICKS_PER_US 24u
 #define FL_FAR(x) x
+#define FL_JEDEC_OK(id) ((id) == 0x856014u)   /* as firmware/hal/fm1_flash.h */
 #define C_BLACK 0
 #define C_WHITE 65535
 #define FONT_S font
+#define BRAND_RESCUE "SLOOP USB RESCUE"   /* (felucca.c) */
 static uint32_t fm1_ticks(void) { return ticks; }
 static void fm1_wdt_feed(void) { feeds++; }
 static void usb_poll(void) { polls++; }

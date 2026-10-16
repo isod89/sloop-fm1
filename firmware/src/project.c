@@ -762,20 +762,129 @@ static persist_t persist_saved;
 static void dsu_boot(void);
 #endif
 
+#if BOARD_SMK37 && FELUCCA_FLASH
+/* SMK-37: the wheels' calibration (HARDWARE CALIBRATION, smk_wheel.h) in an object of its own (storage.c OBJ_WCAL), so
+ * the settings object stays as SLOOP's; none, older data or out of range: the wheels calibrate themselves */
+static smk_wcal_t wcal_saved;
+static void wcal_boot(void)
+{
+    smk_wcal_t c;
+    if (st_load(OBJ_WCAL, &c, sizeof c) == (int)sizeof c && c.magic == SMK_WCAL_MAGIC)
+        wcal = c;                                  /* (each wheel's part checked where it is used) */
+    wcal_saved = wcal;
+}
+static void wcal_save(void)
+{
+    if (memcmp(&wcal, &wcal_saved, sizeof wcal) && st_save(OBJ_WCAL, &wcal, sizeof wcal) == 0)
+        wcal_saved = wcal;
+}
+/* SMK-37: DAW mode (MODE, CHANNEL, LOCAL, CC MAP, KNOBS, the USER map: smk_daw.h daw_store_t) in an object of its own
+ * (storage.c OBJ_DAW); none or older data: SYNTH, channel 1, LOCAL OFF, the DEFAULT map, ABSOLUTE */
+static daw_store_t daw_saved __attribute__((section(".pool")));
+static void daw_boot(void)
+{
+    int n = st_load(OBJ_DAW, &daw_saved, sizeof daw_saved);
+    if (n > 0)
+        daw_store_take((const uint8_t *)&daw_saved, (uint32_t)n);
+    daw_store_fill(&daw_saved);
+}
+static void daw_save(void)
+{
+    daw_store_t d;
+    daw_store_fill(&d);
+    if (memcmp(&d, &daw_saved, sizeof d) && st_save(OBJ_DAW, &d, sizeof d) == 0)
+        daw_saved = d;
+}
+/* SMK-37: the HOME menu's own settings (KEY VELOCITY, TRS MIDI OUT, BEND UP / DOWN, LIMITER, KNOB LAYOUT) in an object
+ * of their own (storage.c OBJ_SMKSET), so SLOOP's settings word and MIDI part stay SLOOP's. Earlier SMK-37 builds kept
+ * them in spare bits of those (the settings word's bits 28..31, the MIDI part's last three bytes): with no object yet,
+ * they are read from there once (smkset_boot) and written here from the next save on */
+#define SMKSET_MAGIC 0x54534B53u                   /* "SKST" */
+typedef struct {
+    uint32_t magic;
+    uint8_t vel, trs, bup, bdn, lim, klay, rsv[2];   /* bup / bdn: smk_wheel.h bend_*_byte */
+} smkset_t;
+static smkset_t smkset_saved;
+static uint8_t smkset_old_ml[3], smkset_old_have;  /* the MIDI part's last three bytes as read (midi_part_read) */
+static void smkset_fill(smkset_t *s)
+{
+    memset(s, 0, sizeof *s);
+    s->magic = SMKSET_MAGIC;
+    s->vel = (uint8_t)(vel_mode % VEL_N);
+    s->trs = (uint8_t)(trs_out != 0u);
+    s->bup = (uint8_t)bend_up_byte(bend_up);
+    s->bdn = (uint8_t)bend_dn_byte(bend_dn, bend_up);
+    s->lim = (uint8_t)(lim_classic != 0u);
+    s->klay = (uint8_t)(knob_layout != 0u);
+}
+static void smkset_boot(void)                      /* after the settings (persist_boot, dsu_boot) */
+{
+    smkset_t s;
+    if (st_load(OBJ_SMKSET, &s, sizeof s) == (int)sizeof s && s.magic == SMKSET_MAGIC) {
+        vel_mode = (uint8_t)(s.vel < VEL_N ? s.vel : VEL_DYNAMIC);
+        trs_out = (uint8_t)(s.trs != 0u);
+        bend_up = (uint8_t)bend_up_of_byte(s.bup);
+        bend_dn = (uint8_t)bend_dn_of_byte(s.bdn, bend_up);
+        lim_classic = (uint8_t)(s.lim & 1u);
+        knob_layout = (uint8_t)(s.klay & 1u);
+        knob_layout_apply();
+        smkset_fill(&smkset_saved);
+        return;
+    }
+    /* none: an earlier SMK-37 build's settings, or none at all (the defaults stay) */
+    if (persist_saved.magic == PERSIST_MAGIC) {
+        uint32_t w = persist_saved.lights;
+        vel_mode = (uint8_t)vel_of_word(w);        /* bits 28..30 (older data: DYNAMIC) */
+        trs_out = (uint8_t)!(w >> 31);             /* bit 31, 1 = OFF (older data: ON) */
+        usb_rate = 0, theme_on = 0, rec_quant_off = 0;   /* (SLOOP 2.7's settings in those bits: their defaults, AUTO,
+                                                          * palette, QUANT ON; the next save writes them) */
+        cpu1_off = 0, cpu1_units = -1, knob_accel_off = 0;   /* (bits 26, 27: spare in the 2.6-based SMK-37 builds, so
+                                                              * 2ND CORE ON, KNOB ACCEL ON, as 2.7 reads 2.6's word) */
+    }
+    if (smkset_old_have) {
+        bend_up = (uint8_t)bend_up_of_byte(smkset_old_ml[0]);             /* (0: the default) */
+        bend_dn = (uint8_t)bend_dn_of_byte(smkset_old_ml[1], bend_up);    /* (2.6.4: 0, its BEND RANGE both ways) */
+        lim_classic = (uint8_t)(smkset_old_ml[2] & 1u);                   /* (0: SOFT) */
+        knob_layout = (uint8_t)((smkset_old_ml[2] >> 1) & 1u);            /* (0: FM-1) */
+        knob_layout_apply();
+        fm1_irq_off();                             /* (SLOOP 2.7's GLO > MIDI 3 in those bytes: FX CH, DR MAP, CLK OUT,
+                                                    * REMOTE off, their defaults; the ISR reads them) */
+        midi_set[6] = midi_set[7] = midi_set[8] = midi_set[9] = 0;
+        song.g[G_FXCH] = song.g[G_DRMAP] = song.g[G_CLKOUT] = song.g[G_RMCH] = 0;
+        fm1_irq_on();
+    }
+    memset(&smkset_saved, 0, sizeof smkset_saved); /* (written at the next save) */
+}
+static void smkset_save(void)
+{
+    smkset_t s;
+    smkset_fill(&s);
+    if (memcmp(&s, &smkset_saved, sizeof s) && st_save(OBJ_SMKSET, &s, sizeof s) == 0)
+        smkset_saved = s;
+}
+#endif
+
 UI_SMALL static void persist_boot(void)                    /* before settings_init / panel_init */
 {
 #if FELUCCA_ARRANGER
     arr_defaults(&arrangement);
 #endif
+#if BOARD_SMK37
+    daw_reset_user();                              /* SMK-37: the USER map starts as the DEFAULT (flash: daw_boot) */
+#endif
 #if FELUCCA_FLASH
     persist_t p;
     uint32_t f = irq_save();
-    flash_ok = FL_FAR(fl_jedec_ram)() == 0x856014u;       /* the expected 1 MiB part, else stay RAM-only */
+    flash_ok = FL_JEDEC_OK(FL_FAR(fl_jedec_ram)());      /* the expected 1 MiB part, else stay RAM-only */
     irq_restore(f);
     if (!flash_ok)
         return;
-    fl_plain_window_init();                        /* flash above 0x93000 reads as plaintext through XIP
+    fl_plain_window_init();                        /* flash above 0x93000 (SMK 0x9D000) reads as plaintext through XIP
                                                     * (user sample sets are played from there) */
+    st_owner_check();                              /* SMK: never parse another ported firmware's store (storage.c) */
+#if BOARD_SMK37
+    st_stock_boot();                               /* SMK-37: the stock mapping's marker over our samples: released */
+#endif
     {
         uint32_t k;
         for (k = 0; k < SMP_USER_SLOTS; k++)
@@ -838,6 +947,11 @@ UI_SMALL static void persist_boot(void)                    /* before settings_in
             }
     }
     dsu_boot();                                    /* SLOOP 2.5: the SYN kits (after the settings) */
+#if BOARD_SMK37
+    wcal_boot();                                   /* SMK-37: the wheels' calibration */
+    daw_boot();                                    /* SMK-37: DAW mode */
+    smkset_boot();                                 /* SMK-37: the HOME menu's own settings */
+#endif
     up_boot();                                     /* user presets */
     fm6_bank_boot();                               /* the FM6 patch bank (fm6_bank.c) */
 #endif
@@ -851,7 +965,8 @@ UI_SMALL static int project_used(uint32_t slot) { return proj_ok(&proj_slot[slot
  * map (seq.c ml_tab, ML_N entries), only while something is learned; 2.5 reads an object with the map as one without
  * its SYN kits (their defaults), one without it as its own */
 /* the settings object's third part (2.6): the MIDI LEARN map (seq.c ml_tab, ML_N entries, 2 bytes each, low first),
- * then GLO > MIDI: CH1 CH2 CH3, the drum channel | OTHER << 7, GLO > MIDI 2's BEND, 3 spare. Written only while it is not
+ * then GLO > MIDI: CH1 CH2 CH3, the drum channel | OTHER << 7, GLO > MIDI 2's BEND, 3 spare (earlier SMK-37 builds:
+ * BEND UP, BEND DOWN, LIMITER | KNOB LAYOUT << 1; read until OBJ_SMKSET exists). Written only while it is not
  * the default (nothing learned, channels 1 2 3 10, OTHER SEL, BEND 2): else the object is exactly 2.5's. 2.6 test
  * builds wrote 32 (the map) or 36 bytes (and the channels) */
 #define MIDI_PART (2u * ML_N + 8u)
@@ -912,6 +1027,11 @@ UI_SMALL static void midi_part_read(const uint8_t *b, uint32_t n)
         song.g[G_CLKOUT] = midi_set[9];
         midi_set[8] = (uint8_t)(b[2u * ML_N + 7u] <= 16u ? b[2u * ML_N + 7u] : 0u);   /* (2.7) REMOTE */
         song.g[G_RMCH] = midi_set[8];
+#if BOARD_SMK37
+        /* earlier SMK-37 builds' BEND UP / DOWN, LIMITER | KNOB LAYOUT: for smkset_boot, while there is no OBJ_SMKSET */
+        smkset_old_ml[0] = b[2u * ML_N + 5u], smkset_old_ml[1] = b[2u * ML_N + 6u], smkset_old_ml[2] = b[2u * ML_N + 7u];
+        smkset_old_have = 1;
+#endif
     }
     fm1_irq_on();
 }
@@ -979,6 +1099,11 @@ UI_SMALL static void settings_save(void)
     if (!flash_ok)
         return;
     persist_fill(&p);
+#if BOARD_SMK37
+    wcal_save();
+    daw_save();
+    smkset_save();
+#endif
     {
         uint8_t mp[MIDI_PART];
         midi_part_fill(mp);

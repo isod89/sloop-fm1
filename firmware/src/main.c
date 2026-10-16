@@ -73,6 +73,9 @@ void fm1_timer5_irq(void)
     fm1_timer5_ack();
     felucca_dbg.timer_irqs++;
     fm1_input_tick();
+#if BOARD_SMK37
+    smo_tick();                                 /* TRS MIDI OUT: a byte when the last has gone (also nested) */
+#endif
     {   /* milliseconds from the 24 MHz TIMER4 (robust to a late tick) */
         static uint32_t last, acc;
         acc += t0 - last;
@@ -126,13 +129,91 @@ UI_SMALL static void hexs(char *b, uint32_t v)
     b[8] = 0;
 }
 
+#if BOARD_SMK37
+/* the SMK-37 Pro's 4 faders, tracks 1..4 (4 = drums), by FADER BANK (ui_input.c smk_fbank): A level, B the
+ * track's filter (P_TFLT: low-pass left, open in the middle, high-pass right), C reverb send, D delay send.
+ * A fader takes over only once it moves (also after a bank change), so nothing jumps. */
+static void smk_faders(void)
+{
+    static uint8_t last[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+    uint32_t i;
+    if (daw_on) {                                         /* DAW mode: the faders send MIDI (ui_daw.c); back from it */
+        smk_fbank_new = 1;                                /* each waits to move again */
+        return;
+    }
+    if (smk_fbank_new) {                                  /* a new bank: wait for each fader to move */
+        smk_fbank_new = 0;
+        for (i = 0; i < 4u; i++)
+            last[i] = 0xFF;
+    }
+    for (i = 0; i < 4u && i < NTRK; i++) {
+        uint32_t v = fm1_in.fader[i];
+        int16_t *pv;
+        if (last[i] == 0xFF || fm1_in.frames < 200u) {   /* (the first readings settle) */
+            last[i] = (uint8_t)v;
+            continue;
+        }
+        if (v == last[i])
+            continue;
+        last[i] = (uint8_t)v;
+        switch (smk_fbank) {
+        case 1:
+            trk[i].p[P_TFLT] = (int16_t)((int32_t)v - 64);
+            break;
+        case 2:
+            pv = i == TRK_DRUM ? &song.g[G_DRREV] : &trk[i].p[P_REV];
+            *pv = (int16_t)v;
+            break;
+        case 3:
+            pv = i == TRK_DRUM ? &song.g[G_DRDLY] : &trk[i].p[P_DLY];
+            *pv = (int16_t)v;
+            break;
+        default:
+            pv = i == TRK_DRUM ? &song.g[G_DRLVL] : &trk[i].p[P_LEVEL];
+            *pv = (int16_t)v;
+            break;
+        }
+        ui.force = 1;
+    }
+}
+
+/* the wheels (stock: mux C address 4 = pitch, 5 = mod; the travel is short: raw ~445..640 pitch, ~474..629 mod on a
+ * unit): smk_wheel.h, taught by HARDWARE CALIBRATION (wcal) or calibrating themselves; pitch BEND UP / DOWN semitones
+ * (bend_up, bend_dn), mod 0..127, up = more (voice.c perf_*) */
+static void smk_wheels(void)
+{
+    static smk_pw_t pw;
+    static smk_mw_t mw;
+    static uint8_t gen;
+    if (fm1_in.frames < 300u)                     /* (the readings settle) */
+        return;
+    if (gen != wcal_gen) {                        /* a new calibration: start over with it */
+        smk_pw_t zp = {0};
+        smk_mw_t zm = {0};
+        pw = zp;
+        mw = zm;
+        gen = wcal_gen;
+    }
+    if (daw_on) {                                 /* DAW mode: pitch bend +-8192 and the mod wheel to MIDI (ui_daw.c); the
+                                                   * internal sounds bend (BEND UP / DOWN) with LOCAL ON only */
+        int32_t b = smk_pw_bend(&pw, &wcal, fm1_in.wheel[0], fm1_ms, 2, 2), m = smk_mw_val(&mw, &wcal, fm1_in.wheel[1]);
+        daw_wheels(b, m);
+        perf_bend = daw_local ? (b > 0 ? b * (int32_t)bend_up : b * (int32_t)bend_dn) / 2 : 0;
+        perf_modw = daw_local ? m : 0;
+        return;
+    }
+    perf_bend = smk_pw_bend(&pw, &wcal, fm1_in.wheel[0], fm1_ms, bend_up, bend_dn);
+    perf_modw = smk_mw_val(&mw, &wcal, fm1_in.wheel[1]);
+}
+#endif
+
 UI_SMALL static void fm1_fault(const fm1_crash_t *c)
 {
     char b[12];
     uint32_t t0;
     fm1_audio_stop();
     lcd_fill(0, 0, 240, 240, RGB(160, 0, 0));
-    draw_text_box(0, 8, 240, &FONT_S, "FELUCCA CRASH", C_WHITE, 1);
+    draw_text_box(0, 8, 240, &FONT_S, BRAND_CRASH, C_WHITE, 1);
     hexs(b, c->vec);
     draw_text_box(10, 40, 220, &FONT_S, b, C_WHITE, 0);
     hexs(b, c->pc);
@@ -211,6 +292,10 @@ UI_SMALL static void fm1_main(void)
     felucca_dbg.prev_rst = fm1_boot.p3_rst;
     fm1_input_init();
     fm1_adc_init();
+#if BOARD_SMK37 && FELUCCA_FLASH
+    if (flash_ok)                                   /* the factory key / pad velocity curves (USRTRIM, read only) */
+        smk_trim_load(fm1_xip_ptr(SMK_TRIM_FLASH));
+#endif
     panel_init();
     felucca_init();
     cpu1_boot();                                        /* the second core: at power-on, before the audio and the
@@ -219,6 +304,9 @@ UI_SMALL static void fm1_main(void)
     audio_init();
 #if FELUCCA_CDC
     usb_cdc_on = usb_serial;                            /* menu USB SERIAL (persist_boot read it): before USB starts */
+#if defined(FELUCCA_CDC_ON) && FELUCCA_CDC_ON
+    usb_cdc_on = 1;                                     /* (bring-up builds: the console without the menu) */
+#endif
 #endif
 #if FELUCCA_UAC && FELUCCA_UAC_48K
     usb_rate_mode = usb_rate;                           /* menu USB RATE (2.7 beta), the same way */
@@ -227,11 +315,14 @@ UI_SMALL static void fm1_main(void)
 #if FELUCCA_UART
     uart_midi_init();
 #endif
+#if BOARD_SMK37
+    smk_uart1_tx_init();                                /* TRS MIDI OUT (PORTC, IOMAP RMW: before TIMER5) */
+#endif
     timer5_start();
     fm1_guard_lock_top();
     fm1_irq_enable_all();
     fm1_delay_ms(30);
-    if ((fm1_in.buttons & 3u) == 3u) {
+    if ((fm1_in.buttons & FM1_OCT_BOTH) == FM1_OCT_BOTH) {
         panel_setup();                        /* OCT- + OCT+ held at power-on */
         settings_save();
     }
@@ -265,7 +356,27 @@ UI_SMALL static void fm1_main(void)
                     else
                         k10 = (ed_master - 1u) * 1023u / 126u;
                 }
+#if BOARD_SMK37
+                {   /* the volume knob is endless here, with no position to see: a turn shows MASTER and its level in
+                     * the top bar */
+                    static int32_t shown = -1;
+                    if (shown >= 0 && a != shown && !smk_master_hold) {
+                        uint32_t p = (uint32_t)a * 100u / 1023u;
+                        char d[5] = {0}, *q = d;
+                        if (p >= 100u)
+                            *q++ = '1';
+                        if (p >= 10u)
+                            *q++ = (char)('0' + p / 10u % 10u);
+                        *q++ = (char)('0' + p % 10u);
+                        *q = '%';
+                        ui_say("MASTER ", d);
+                    }
+                    shown = a;
+                }
+                song.master_q12 = smk_master_q12(k10, lim_classic);   /* (HOME menu > AUDIO > LIMITER: its knob law, fx.c) */
+#else
                 song.master_q12 = (k10 * k10) >> 8;            /* 0 .. ~4096 */
+#endif
             }
         }
         {   /* OCT- + OCT+ held 5 s, stopped: enter UBOOT with RAM intact (debug / update); a countdown
@@ -336,6 +447,11 @@ UI_SMALL static void fm1_main(void)
         ui_input();
         felucca_dbg.stage = 2;
         ui_leds();
+#if BOARD_SMK37
+        smk_faders();
+        smk_wheels();
+        padled_flush();                                 /* the pads' colours, between LCD transfers */
+#endif
         ui_draw();
         felucca_dbg.stage = 8;
         autosave_tick();                                /* the working project into flash, when quiet */
@@ -345,6 +461,9 @@ UI_SMALL static void fm1_main(void)
         felucca_dbg.stage = 9;
         while (fm1_ms - m < 15u) {                               /* ~60 UI frames/s at most */
             ui_input();
+#if BOARD_SMK37
+            smk_wheels();                       /* (bends follow the wheel, not the screen) */
+#endif
 #if FELUCCA_OTA
             ed_service();                       /* editor replies without waiting for the next frame */
 #endif

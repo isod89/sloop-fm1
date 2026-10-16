@@ -25,6 +25,14 @@
  * left: A/B needs no two neighbours); the FM6 patch bank (fm6_bank.c, SLOOP 2.4): 0xE5000 / 0xE6000, the first
  * two sectors of the free 0xE5000..0xFBFFF after the update staging (FL_FM6, fm1_flash.h) */
 enum { OBJ_SETTINGS, OBJ_PROJECT0, OBJ_UPRESET0 = OBJ_PROJECT0 + 4, OBJ_AUTOSAVE = OBJ_UPRESET0 + 2, OBJ_FM6BANK, OBJ_COUNT };
+#if BOARD_SMK37
+#define OBJ_WCAL OBJ_COUNT                     /* SMK-37: the wheels' calibration (project.c), 0xB1000 / 0xB2000 */
+#define OBJ_DAW (OBJ_COUNT + 1)                /* SMK-37: DAW mode, its settings and USER map (project.c), 0xB3000 / 0xB4000 */
+#define OBJ_SMKSET (OBJ_COUNT + 2)             /* SMK-37: the HOME menu's SMK-37 settings (project.c), 0xB5000 / 0xB6000 */
+#define ST_NOBJ (OBJ_COUNT + 3)
+#else
+#define ST_NOBJ OBJ_COUNT
+#endif
 
 typedef struct {
     uint32_t magic;
@@ -52,6 +60,129 @@ static uint32_t st_crc32(const void *p, uint32_t n)   /* zlib CRC-32, 4 bits per
     return ~c;
 }
 
+#if BOARD_SMK37
+/* SMK-37 Pro (see the fm1-to-smk37 guide): every object in FL_DATA 0x9D000..0xBAFFF (the stock VM),
+ * A/B neighbours: projects 0x9D000..0xA4FFF, user preset banks 0xA5000..0xA8FFF, autosave 0xA9000 /
+ * 0xAA000, FM6 bank 0xAB000 / 0xAC000, settings 0xAD000 / 0xAE000; the owner tag 0xAF000; 0xB0000 left alone (the
+ * stock firmware's); the wheels' calibration 0xB1000 / 0xB2000 (OBJ_WCAL); DAW mode 0xB3000 / 0xB4000 (OBJ_DAW);
+ * the SMK-37 settings 0xB5000 / 0xB6000 (OBJ_SMKSET); 0xB7000..0xBAFFF spare. Never near BTIF / USRTRIM
+ * (0xC0000..0xC1FFF) or key_mac (0xFF000). */
+#define ST_SMK_BASE 0x9D000u
+#define ST_SMK_SECTORS (2u * OBJ_COUNT)
+#define ST_OWNER_OFF (ST_SMK_BASE + ST_SMK_SECTORS * ST_SECTOR)
+_Static_assert(ST_SMK_BASE + ST_SMK_SECTORS * ST_SECTOR <= 0xBB000u, "SMK store: past FL_DATA");
+_Static_assert(ST_OWNER_OFF + 8u * ST_SECTOR <= 0xBB000u, "SMK store: the owner tag, OBJ_WCAL, OBJ_DAW, OBJ_SMKSET past FL_DATA");
+UI_SMALL static uint32_t st_sector(uint32_t obj, uint32_t copy)  /* flash offset of copy A (0) / B (1) */
+{
+    static const uint8_t ORDER[OBJ_COUNT] = {
+        [OBJ_PROJECT0] = 0, [OBJ_PROJECT0 + 1] = 1, [OBJ_PROJECT0 + 2] = 2, [OBJ_PROJECT0 + 3] = 3,
+        [OBJ_UPRESET0] = 4, [OBJ_UPRESET0 + 1] = 5, [OBJ_AUTOSAVE] = 6, [OBJ_FM6BANK] = 7, [OBJ_SETTINGS] = 8};
+    if (obj == OBJ_WCAL || obj == OBJ_DAW || obj == OBJ_SMKSET)
+        return ST_OWNER_OFF + (2u + 2u * (obj - OBJ_WCAL) + (copy & 1u)) * ST_SECTOR;
+    return ST_SMK_BASE + (ORDER[obj % OBJ_COUNT] * 2u + (copy & 1u)) * ST_SECTOR;
+}
+
+/* The owner of the store. Several FM-1 firmwares are ported to the SMK-37 Pro with the same board layer and
+ * this same store area, each with its own object formats: a firmware must never parse another's data. The
+ * sector after the objects (0xAF000) holds "SMK37DATA" + the firmware family (FELUCCA_DATA_FAMILY, build.py).
+ * Ours: load as ever. None (erased): data written before the tag existed, by the SLOOP family only
+ * (FELUCCA_DATA_UNTAGGED_OK): keep it; anyone else clears it. Another family's: clear the objects (the other
+ * firmware's projects; its own backups are its business) and take the store. Samples (FL_SMP) validate
+ * themselves. Calibration, BT pairing and key_mac are outside FL_DATA: never touched. */
+#ifndef FELUCCA_DATA_FAMILY
+#define FELUCCA_DATA_FAMILY "SLOOP"
+#endif
+#ifndef FELUCCA_DATA_UNTAGGED_OK
+#define FELUCCA_DATA_UNTAGGED_OK 1
+#endif
+static uint8_t st_owner_cleared;                /* (the UI may say so) */
+UI_SMALL static void st_owner_check(void)
+{
+    static const char FAM[] = FELUCCA_DATA_FAMILY;
+    uint8_t tag[16], want[16];
+    uint32_t i, erased = 1, ours = 1, s;
+    for (i = 0; i < 16u; i++)
+        want[i] = i < 9u ? (uint8_t)"SMK37DATA"[i] : i - 9u < sizeof FAM - 1u ? (uint8_t)FAM[i - 9u] : 0u;
+    if (st_read(ST_OWNER_OFF, tag, 16))
+        return;
+    for (i = 0; i < 16u; i++) {
+        erased &= tag[i] == 0xFFu;
+        ours &= tag[i] == want[i];
+    }
+    if (ours)
+        return;
+    if (!erased || !FELUCCA_DATA_UNTAGGED_OK) {     /* another firmware's store: clear it */
+        for (s = 0; s < ST_SMK_SECTORS; s++)
+            st_erase(ST_SMK_BASE + s * ST_SECTOR);
+        st_erase(st_sector(OBJ_WCAL, 0));
+        st_erase(st_sector(OBJ_WCAL, 1));
+        st_erase(st_sector(OBJ_DAW, 0));
+        st_erase(st_sector(OBJ_DAW, 1));
+        st_erase(st_sector(OBJ_SMKSET, 0));
+        st_erase(st_sector(OBJ_SMKSET, 1));
+        st_owner_cleared = 1;
+    }
+    st_erase(ST_OWNER_OFF);
+    st_prog(ST_OWNER_OFF, want, 16);
+}
+
+/* The stock firmware's mapping in USRFLASH (fm1_flash_map.h FL_STOCKTAG): global settings at 0xC2000 (magic A3 3A),
+ * 8 presets at 0xC3000 + n * 0x5000 (a note per key from byte 5), the end marker "usrdata\0" at 0xEAFF8. While the
+ * marker is there the stock firmware loads the area as it is and never rebuilds it, so after a return to stock the
+ * user sample slots (USR1 0xC2000, USR2 0xD6000) would be its key, knob and fader mapping (every key one note). So the
+ * marker's sector is erased (the stock firmware then rebuilds its factory mapping at its next start): before SLOOP's
+ * first erase in USRFLASH (felucca.c fl_erase4k_quiet: st_stock_touch), at boot when the marker sits over data that
+ * is not the stock mapping (st_stock_boot), and on request (the web editor, editor_daw.c). An intact stock mapping
+ * stays as it is until a sample is stored there */
+static int st_stock_tagged(void)
+{
+    static const uint8_t TAG[8] = {'u', 's', 'r', 'd', 'a', 't', 'a', 0};
+    uint8_t t[8];
+    uint32_t i;
+    if (st_read(FL_STOCKTAG_OFF, t, 8))
+        return 0;
+    for (i = 0; i < 8u; i++)
+        if (t[i] != TAG[i])
+            return 0;
+    return 1;
+}
+static int st_stock_intact(void)                /* the marker over the stock layout (none of our samples there) */
+{
+    static const uint32_t PRESET[2] = {0xC3000u, 0xD7000u}, SLOT[2] = {0xC2000u, 0xD6000u};   /* presets 0, 4 */
+    uint8_t b[9];
+    uint32_t k, i;
+    if (!st_stock_tagged() || st_read(FL_SMP_LO, b, 2) || b[0] != 0xA3u || b[1] != 0x3Au)
+        return 0;
+    for (k = 0; k < 2u; k++) {
+        if (st_read(SLOT[k], b, 4) || (b[0] == 'F' && b[1] == 'S' && b[2] == 'M' && b[3] == 'P'))
+            return 0;                           /* a sample slot's header ("FSMP") */
+        if (st_read(PRESET[k], b, 9))
+            return 0;
+        for (i = 5; i < 9u; i++)
+            if (b[i] & 0x80u)
+                return 0;                       /* not a preset's key notes (erased, or a sample) */
+    }
+    return 1;
+}
+static int st_stock_release(void)               /* erase the marker's sector; 1 when it was there (later calls: 0) */
+{
+    if (!st_stock_tagged())
+        return 0;
+    st_erase(FL_STOCKTAG_LO);
+    return 1;
+}
+static void st_stock_touch(uint32_t off)        /* an erase at off: in USRFLASH, the marker first */
+{
+    if (off >= FL_SMP_LO && off < FL_SMP_HI)
+        st_stock_release();
+}
+static void st_stock_boot(void)                 /* the marker over data that is not the stock mapping: released */
+{
+    if (st_stock_tagged() && !st_stock_intact())
+        st_stock_release();
+}
+#else
+static void st_owner_check(void) {}
 UI_SMALL static uint32_t st_sector(uint32_t obj, uint32_t copy)  /* flash offset of copy A (0) / B (1) */
 {
     if (obj == OBJ_SETTINGS)
@@ -64,6 +195,7 @@ UI_SMALL static uint32_t st_sector(uint32_t obj, uint32_t copy)  /* flash offset
         return 0xDC000u + (obj - OBJ_UPRESET0) * 2u * ST_SECTOR + copy * ST_SECTOR;
     return 0x97000u + (obj - OBJ_PROJECT0) * 2u * ST_SECTOR + copy * ST_SECTOR;
 }
+#endif
 
 #include "scratch.h"                          /* sloop-lab: the payload buffer is the main loop's shared scratch */
 #define st_buf (main_scratch.st)
@@ -71,7 +203,7 @@ _Static_assert(sizeof main_scratch.st == ST_PAYLOAD_MAX, "the scratch holds a pa
 
 UI_SMALL static int st_head(uint32_t obj, uint32_t copy, st_hdr_t *h)   /* commit record valid: 0 */
 {
-    if (obj >= OBJ_COUNT || copy > 1u)
+    if (obj >= ST_NOBJ || copy > 1u)
         return -1;
     if (st_read(st_sector(obj, copy), h, sizeof *h))
         return -1;
@@ -180,7 +312,7 @@ UI_SMALL static int st_save3(uint32_t obj, const void *src, uint32_t len, const 
     uint32_t seq, base, off;
     int cur, rc;
     st_hdr_t h;
-    if (obj >= OBJ_COUNT || len + len2 + len3 > ST_PAYLOAD_MAX)
+    if (obj >= ST_NOBJ || len + len2 + len3 > ST_PAYLOAD_MAX)
         return -1;
     cur = st_current(obj, &h);
     seq = cur < 0 ? 0u : h.seq;

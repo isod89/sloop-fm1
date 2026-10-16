@@ -60,7 +60,17 @@ Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`):
 | `FELUCCA_OTA` | 1 | update entry (needs `FELUCCA_FLASH`) |
 | `FELUCCA_CDC` | 1 | USB serial console |
 | `FELUCCA_UAC` | 1 | USB audio input: the master output, 44.1 kHz stereo (after Felucca 1.0) |
-| `FELUCCA_UART` | 1 | TRS MIDI IN (the 3.5 mm jack) |
+| `FELUCCA_UART` | 1 (SMK-37: 0) | TRS MIDI IN (the 3.5 mm jack); must stay 0 on the SMK-37 (PH8 is a key row there) |
+
+Target board: `BOARD=smk37 ./build.sh` (or `./build.sh --board smk37`) builds for the M-Vave SMK-37 Pro:
+`-DBOARD_SMK37=1` for the app and the update loader, identity `SMK-37 Pro_900` (release `SMK-37 Pro_9XY`),
+the SMK flash layout (PRCT 0x9D000, the stock region table with USRTRIM / USRFLASH) and the package
+`build/sloop-smk37.fwsc`. The intermediate files (`build/felucca.bin`, `build/loader/ota.bin`, `build/felucca.dis`)
+are shared: build the FM-1 again before `tests/run_tests.sh`. The default stays the FM-1, byte for byte.
+The SMK-37 Elite and the MKE-P37 are the same keyboard under other model names, and M-Vave's updater only takes
+a unit's own model: `MODEL=elite` or `MODEL=mke` (with `BOARD=smk37`) builds under that name (identity
+`SMK-37 Elite_900` / `MKE-P37_900`, `build/sloop-smk37-elite.fwsc` / `-mke.fwsc`).
+The SMK-37 models, controls and install: [SMK37.md](SMK37.md).
 
 ## Samples
 

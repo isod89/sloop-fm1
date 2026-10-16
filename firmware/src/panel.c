@@ -11,9 +11,17 @@ enum { B_FX, B_SCL, B_ENV, B_LFO, B_EDIT, B_GLO, B_HOME, B_SAVE, B_ARP, B_SEQ, B
 enum { EN_SELECT, EN_ALGO, EN_PRESET, EN_K1, EN_K2, EN_K3, EN_K4, NE };
 static const char *const B_NAME[NB] = {"FX", "SEL", "ENV", "LFO", "EDIT", "GLO", "HOME", "SAVE",
                                         "ARP", "SEQ", "PLAY", "REC", "OCT-", "OCT+"};
+#if BOARD_SMK37
+#include "smk_knobs.h"                   /* the SMK-37's knobs as printed: HOME menu > SCREEN > KNOB LAYOUT, E_NAME */
+#else
 static const char *const E_NAME[NE] = {"SELECT", "ALGORITHM", "PRESETS", "KNOB 1", "KNOB 2",
                                         "KNOB 3", "KNOB 4"};
+#endif
+#if BOARD_SMK37
+#define PANEL_MAGIC 0x504E5334u          /* "PNS4" (SMK-37 Pro): bump when PANEL_DEFAULT changes */
+#else
 #define PANEL_MAGIC 0x50414E35u          /* "PAN5": bump when PANEL_DEFAULT changes */
+#endif
 
 typedef struct {
     uint32_t magic;
@@ -23,22 +31,58 @@ typedef struct {
 } panel_t;
 panel_t panel __attribute__((section(".noinit")));
 
+#if BOARD_SMK37
+/* SMK-37 Pro (smk_input.h button ids, confirmed on a unit; the printed SMK label -> the FM-1 function):
+ * FX = FX, SCALE = SEL, CHORD = ENV, NOTE REPEAT = LFO, PARA = EDIT, GLOBE = GLO, PATCH = HOME, BT = SAVE,
+ * ARP, SEQ as printed, SEQ PLAY = PLAY, SEQ REC = REC, OCTAVE- / + as printed. KNOB BANK, FADER BANK, < and >
+ * stay free. Knobs as the FM-1's top row: K1 = MASTER (smk_input.h: the FM-1's MASTER pot, as a virtual one),
+ * K2 = SELECT, K3 = ALGORITHM (track), K4 = PRESETS; K5..K8 = KNOB 1..4 (the screen's four dials); or the other way
+ * round (HOME menu > SCREEN > KNOB LAYOUT, knob_enc).
+ * HARDWARE CALIBRATION (OCT- + OCT+ at power-on) re-teaches all of it. */
+static const panel_t PANEL_DEFAULT = {
+    PANEL_MAGIC,
+    {14, 8, 9, 7, 13, 10, 12, 11, 6, 15, 16, 17, 4, 5},
+    {1, 2, 3, 4, 5, 6, 7},
+    {1, 1, 1, 1, 1, 1, 1},
+};
+#else
 static const panel_t PANEL_DEFAULT = {
     PANEL_MAGIC,
     {2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 0, 1},   /* PLAY = 12, REC = 13 */
     {0, 1, 6, 2, 3, 4, 5},                           /* SELECT = enc 0, ALGORITHM = enc 1, PRESETS = enc 6 */
     {1, 1, 1, 1, 1, 1, 1},
 };
+#endif
+
+#if BOARD_SMK37
+/* KNOB LAYOUT (smk_knobs.h): the encoder of a role and its direction, from the calibration's slot of the knob that has
+ * it now. The knobs are endless: a new layout takes over at once, there is nothing to pick up */
+static uint32_t knob_enc(uint32_t role, int32_t *dir)
+{
+    uint32_t k = knob_of(role);
+    *dir = k ? panel.dir[k - 1u] : 1;
+    return k ? panel.enc[k - 1u] % FM1_NENC : SMK_ENC_MASTER;
+}
+static void knob_layout_apply(void)              /* (the layout or the calibration changed) */
+{
+    int32_t d;
+    smk_master_enc = (uint8_t)knob_enc(EN_MASTER, &d);
+    smk_master_dir = (int8_t)(d < 0 ? -1 : 1);
+}
+#endif
 
 UI_SMALL static void panel_init(void)                     /* also after a flash load: ids are used as array indexes and shifts */
 {
     uint32_t i, ok = panel.magic == PANEL_MAGIC;
     for (i = 0; ok && i < NB; i++)
-        ok = panel.btn[i] < 14u;
+        ok = panel.btn[i] < FM1_NBTN;
     for (i = 0; ok && i < NE; i++)
-        ok = panel.enc[i] < 7u && (panel.dir[i] == 1 || panel.dir[i] == -1);
+        ok = panel.enc[i] < FM1_NENC && (panel.dir[i] == 1 || panel.dir[i] == -1);
     if (!ok)
         panel = PANEL_DEFAULT;
+#if BOARD_SMK37
+    knob_layout_apply();
+#endif
 }
 
 UI_SMALL static uint32_t panel_btn_of(uint32_t matrix_id)        /* label of a matrix button, NB if none */
@@ -62,7 +106,15 @@ UI_SMALL static int32_t panel_enc(uint32_t role)
     int32_t s;
     if ((enc_hold >> role) & 1u)
         return 0;
+#if BOARD_SMK37
+    {
+        int32_t d;
+        uint32_t e = knob_enc(role, &d);         /* (HOME menu > SCREEN > KNOB LAYOUT) */
+        s = fm1_enc_take(e) * d;
+    }
+#else
     s = fm1_enc_take(panel.enc[role]) * panel.dir[role];
+#endif
     if (s)
         ui_input_ms = fm1_ms;                      /* a knob turning is not idle either: autosave waits */
     return s;
@@ -100,7 +152,7 @@ UI_SMALL static uint32_t lights_word(void)
     return (uint32_t)lights_lvl | (uint32_t)lights_keys << 4 | (uint32_t)(lights_notes != 0u) << 8 |
            (uint32_t)(rec_tempo != 0u) << 9 | (uint32_t)(rec_count != 0u) << 10 | (uint32_t)(usb_full != 0u) << 11 |
            (uint32_t)(lights_sync % 3u) << 12 | (uint32_t)(lights_mout != 0u) << 14 | (uint32_t)(lights_min == 1u) << 15 |
-           (uint32_t)(usb_serial != 0u) << 16 | (uint32_t)(vis_style % 12u) << 17 |
+           (uint32_t)(usb_serial != 0u) << 16 | (uint32_t)(vis_style % VIS_STYLES) << 17 |
            (uint32_t)(lights_min >= 2u && lights_min <= 17u ? lights_min - 1u : 0u) << 21 |   /* 2.6: CH n (n 1..16; 0 none) */
            (uint32_t)(cpu1_off != 0u) << 26 |          /* 2ND CORE OFF (2.7: ON by default; 2.6 took 21..25) */
            (uint32_t)(knob_accel_off != 0u) << 27 |    /* KNOB ACCEL OFF (2.7; 0 = ON, as before 2.7) */
@@ -122,7 +174,7 @@ UI_SMALL static void lights_from_word(uint32_t w)
     if (((w >> 21) & 31u) >= 1u && ((w >> 21) & 31u) <= 16u)
         lights_min = (uint8_t)(((w >> 21) & 31u) + 1u);   /* 2.6: CH n (an older SLOOP reads NOTES) */
     usb_serial = (uint8_t)((w >> 16) & 1u);
-    vis_style = (uint8_t)(((w >> 17) & 15u) % 12u);   /* the visualiser (ui_vis.c); 0 in 2.3 = OSCILLOSCOPE */     /* menu USB SERIAL (usb.c usb_cdc_on, at the next start); 0 in 2.3 = OFF */
+    vis_style = (uint8_t)(((w >> 17) & 15u) % VIS_STYLES);   /* the visualiser (ui_vis.c); 0 in 2.3 = OSCILLOSCOPE */     /* menu USB SERIAL (usb.c usb_cdc_on, at the next start); 0 in 2.3 = OFF */
     cpu1_off = (uint8_t)((w >> 26) & 1u);       /* menu 2ND CORE (ui_menu.c); 2.7: bit 26 set = OFF, so any older settings
                                                  * word (2.6 and before: 0) reads as ON, the two-core SLOOP (an early 2.7 beta
                                                  * set it for ON: that FM-1 reads OFF once) */

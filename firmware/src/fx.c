@@ -60,6 +60,26 @@ static void track_dist(track_t *t, int32_t *b, uint32_t n)
  * needs, so a hot kick or bass is already turned down when it comes. Before, the gain caught up in ~4 samples and the
  * first ones went through the tanh knee at up to 4x: a crackle on the beats with the MASTER up (in headphones most) */
 #define LIM_T 18000
+#ifndef SMK_MIX
+#define SMK_MIX BOARD_SMK37                     /* (tests/smk_mix_test.c: on the host) */
+#endif
+#if SMK_MIX
+/* SMK-37: HOME menu > AUDIO > LIMITER. SOFT (the default): the threshold at full scale (LIM_T_SOFT, 6 dB above LIM_T;
+ * the knee rounds what passes KNEE and keeps it under full scale) and the MASTER knob gives the mix less level below
+ * its top (smk_master_q12: 9 dB less at its power-on 724), so a held chord fits under it instead of turning the whole
+ * mix down at every attack ("one note loud, a chord quieter"); the knob's top is as before, and louder peaks pass.
+ * CLASSIC: SLOOP's, LIM_T and the knob as the FM-1's pot. tests/smk_mix_test.c */
+#define LIM_T_SOFT 36000
+static uint8_t lim_classic;                     /* 0 SOFT, 1 CLASSIC (settings: project.c midi_part_fill) */
+#define LIM_TH (lim_classic ? LIM_T : LIM_T_SOFT)
+static uint32_t smk_master_q12(uint32_t k10, uint32_t classic)   /* the MASTER knob 0..1023 -> song.master_q12 */
+{
+    uint32_t q = (k10 * k10) >> 8;              /* (the FM-1's law: 0 .. ~4096) */
+    return classic ? q : (((q * q) >> 12) * k10) >> 10;   /* SOFT: (k / 1023)^5, the same at the top, -9 dB at 724 */
+}
+#else
+#define LIM_TH LIM_T
+#endif
 typedef struct {
     int32_t dl[CTL], dr[CTL];           /* the mix of the last block (the delay) */
     uint32_t w;                         /* its oldest sample (the next out) */
@@ -91,14 +111,14 @@ static void lim_block(lim_t *s, int32_t *l, int32_t *r, uint32_t n)
         s->hold = LIM_HOLD;
     if (s->hold)
         s->hold--;
-    else if (e > LIM_T)                                 /* the release (after the hold), a block at a time */
-        e -= (int32_t)((((int64_t)(e - LIM_T) * (int32_t)n) >> LIM_REL) + 1);
-    if (e < LIM_T)
-        e = LIM_T;
+    else if (e > LIM_TH)                                /* the release (after the hold), a block at a time */
+        e -= (int32_t)((((int64_t)(e - LIM_TH) * (int32_t)n) >> LIM_REL) + 1);
+    if (e < LIM_TH)
+        e = LIM_TH;
     if (pk > e)
         e = pk, s->hold = LIM_HOLD;
     s->env = e;
-    g1 = e > LIM_T ? (int32_t)(((uint32_t)LIM_T << 15) / (uint32_t)e) : 32768;
+    g1 = e > LIM_TH ? (int32_t)(((uint32_t)LIM_TH << 15) / (uint32_t)e) : 32768;
     s->g = g1;
     dg = (g1 - g0) / (int32_t)(n ? n : 1u);             /* (towards 0: the gain never above both ends' bound) */
     for (i = 0; i < n; i++) {
@@ -1244,7 +1264,7 @@ static void mix_block(int32_t *out, uint32_t n)
         }
         if (usb_full_now && !usb_was) {                 /* (a new recording: no old block in its delay) */
             memset(&lim_usb, 0, sizeof lim_usb);
-            lim_usb.env = LIM_T, lim_usb.g = 32768, lim_usb.hold = 0;
+            lim_usb.env = LIM_TH, lim_usb.g = 32768, lim_usb.hold = 0;
         }
         usb_was = usb_full_now;
         if (usb_full_now) {
