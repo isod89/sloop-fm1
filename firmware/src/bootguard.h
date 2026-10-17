@@ -24,8 +24,12 @@ static uint32_t bootguard_begin(bootguard_t *b)
     b->pending = b->failed >= 2u ? 2u : 1u;
     return b->pending == 2u ? BOOT_RECOVERY : BOOT_NORMAL;
 }
+#ifndef FM1_OCT_BOTH                  /* (host test without a HAL: the FM-1's OCT- = 0, OCT+ = 1) */
+#define FM1_BTN_OCT_DOWN 0
+#define FM1_OCT_BOTH 3u
+#endif
 static int bootguard_manual(uint32_t buttons)
 {
-    return (buttons & 3u) == 1u;     /* physical OCT- alone; both keep calibration */
+    return (buttons & FM1_OCT_BOTH) == 1u << FM1_BTN_OCT_DOWN;     /* physical OCT- alone; both keep calibration */
 }
 #endif

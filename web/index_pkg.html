@@ -118,6 +118,7 @@ const TEXT = {
     error: "エラー: ",
     denied: "MIDI（SysEx）の使用が許可されませんでした。アドレスバーのサイト設定で MIDI を許可して、もう一度押してください。",
     notfound: "FM-1 が見つかりません。USB ケーブル（データ通信用か）を確かめ、MIDI を使う他のアプリを閉じてから、もう一度押してください。",
+    other: "このキーボードは ChanceTheMaker の SMK ファームウェア（Felucca SMK、Sloop SMK、Melodee SMK、Doom）のどれかで動いています。それらは専用のアップデーターを持ち、自分のパッケージしか受け付けないため、ここからは上書きインストールできません。何も書き込んでいません。",
     model: "接続されている機器は FM-1 ではありません。",
     lost: "USB の接続が切れました。挿し直してもう一度押してください。",
     noloader: "書き込みモードの FM-1 が見つかりません。USB を挿し直してもう一度押してください（終わるまで書き込みモードのままです）。",
@@ -154,6 +155,7 @@ const TEXT = {
     error: "Error: ",
     denied: "MIDI (SysEx) access was not allowed. Allow MIDI in the site settings (address bar) and press Install again.",
     notfound: "FM-1 not found. Check the USB cable (a data cable), close other apps that use MIDI, and press Install again.",
+    other: "This keyboard runs one of ChanceTheMaker's SMK firmwares (Felucca SMK, Sloop SMK, Melodee SMK, Doom). They have their own updater, which takes only their packages, so these firmwares cannot be installed over them from here. Nothing was written.",
     model: "The connected device is not an FM-1.",
     lost: "The USB connection was lost. Replug it and press Install again.",
     noloader: "The FM-1 in update mode was not found. Replug the USB cable and press Install again (it stays in update mode until it is finished).",
@@ -252,7 +254,7 @@ const step = (k, a) => {
   if (k === "done") { $("bar").value = 100; sayK("done"); }
 };
 const failed = (e) => {
-  if (e && e.code && TEXT[lang][e.code]) sayK(e.code, e.detail || "");
+  if (e && e.code && TEXT[lang][e.code]) sayK(e.code, e.code === "other" ? "" : e.detail || "");
   else sayK("error", e && e.message);
   log(String(e && e.stack || e));
 };
@@ -268,9 +270,9 @@ $("go").addEventListener("click", async () => {
     const ota = await up.find((id) => /^ota-/i.test(id.model));
     if (ota) {
       ota.link.close();
-      sayK((await up.resume(image, step)) ? "done" : "stopped");
+      sayK((await up.resume(image, step, { package: meta.product, anyModel: true })) ? "done" : "stopped");
     } else {
-      await up.install(image, meta.product, step);
+      await up.install(image, meta.product, step, true);
     }
   } catch (e) { failed(e); }
   lockAll(false);
@@ -284,12 +286,18 @@ $("stock-file").addEventListener("change", async () => {
   stock = null;
   lockAll(writing);
   if (!f) return;
-  try { stock = await validateStockPackage(new Uint8Array(await f.arrayBuffer())); sayK("stockValid"); }
+  try {
+    stock = await validateStockPackage(new Uint8Array(await f.arrayBuffer()));
+    sayK("stockValid");
+    if (packageBoard(stock.image) !== "smk") $("status").textContent += " — " + FM1_STOCK_MSG;   // (the FM-1's layout)
+  }
   catch (e) { sayK("stockBad", e.message); }
   lockAll(writing);
 });
 $("stock-go").addEventListener("click", async () => {
   if (writing || !stock || !$("stock-saved").checked || !confirm(t("stockConfirm"))) return;
+  // not the SMK-37's layout (the FM-1's): only on a device the user says is an FM-1 (fm1ota.js boardRefusal)
+  const fm1Confirmed = packageBoard(stock.image) !== "smk" && confirm(FM1_CONFIRM_MSG + "\n\nOK: the device is an FM-1.");
   lockAll(true);
   let midi;
   try { midi = await navigator.requestMIDIAccess({ sysex: true }); }
@@ -300,9 +308,9 @@ $("stock-go").addEventListener("click", async () => {
     if (ota) {
       ota.link.close();
       if (OUR_LOADER(ota.id)) sayK("stockFinish");    /* SLOOP's loader: finish SLOOP first (Install) */
-      else sayK((await up.resume(stock.image, step, { product: stock.product })) ? "done" : "stopped");
+      else sayK((await up.resume(stock.image, step, { product: stock.product, fm1Confirmed })) ? "done" : "stopped");
     } else {
-      await up.install(stock.image, stock.product, step);
+      await up.install(stock.image, stock.product, step, false, { fm1Confirmed });
     }
   } catch (e) { failed(e); }
   lockAll(false);

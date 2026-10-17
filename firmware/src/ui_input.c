@@ -4,6 +4,24 @@
 /* ----------------------------------------------------------- LEDs --- */
 /* The LED picture is built off-line and copied one byte per column: clearing
  * and relighting would let the 10 kHz scan catch the dark gap and flicker. */
+#if BOARD_SMK37
+static uint8_t smk_fbank, smk_fbank_new;           /* FADER BANK: 0 level, 1 filter, 2 reverb, 3 delay (main.c smk_faders) */
+static uint8_t pad_steps;                          /* the pads on the PLAY layer: 0 DRUM KIT (the default), 1 STEPS;
+                                                    * KNOB BANK + FADER BANK (smk_input.h, seq.c pad_drum); not kept */
+/* SMK-37 Pro: one flag per id. Ids 0..18 are the button LEDs (smk_input.h), the note keys (no LEDs of
+ * their own) take LED_KEY0 + k; ui_leds shows white keys F3..G5 on the 16 RGB pads. */
+#define LED_BUF 64u
+#define LED_KEY0 32u
+#define LED_KEY(k) (LED_KEY0 + (k))
+static void led_pos_init(void) {}
+static void led_put(uint8_t *nl, uint32_t id, int on)
+{
+    if (id < LED_BUF && on)
+        nl[id] = 1;
+}
+#else
+#define LED_BUF FM1_NCOL
+#define LED_KEY(k) (14u + (k))
 static uint8_t led_pos[41];                        /* (col << 3) | row bit, 0xFF = none */
 
 UI_SMALL static void led_pos_init(void)
@@ -24,6 +42,7 @@ UI_SMALL static void led_put(uint8_t *nl, uint32_t id, int on)
     if (q != 0xFF && on)
         nl[q >> 3] |= (uint8_t)(1u << (q & 7u));
 }
+#endif
 
 static const uint8_t FAM_BTN[FAM_COUNT] = {B_HOME, B_ENV, B_LFO, B_FX, B_SCL, B_EDIT, B_GLO, B_SAVE,
                                            B_ARP, B_SEQ, B_HOME};   /* button of each page family (TRACKS: HOME) */
@@ -162,6 +181,10 @@ UI_SMALL static uint32_t keys_lit(void)
     m = fm1_in.notes;
     if (is_drum(t) || lights_notes)                /* the drum track: each hit lights its key; NOTES: the synths too */
         m |= keys_sounding(t);
+#if BOARD_SMK37
+    if (song.playing && ui.layer == LY_PLAY)       /* the pads: the playhead runs over the pattern */
+        m |= 1u << key_of_white(t->seq_idx % 16u);
+#endif
     return m;
 }
 
@@ -190,6 +213,21 @@ UI_SMALL static uint32_t keys_notes_dim(void)
  * 1, 5, 9, 13) while a layer is held, and on the drum track (its 16 sounds, 4 x 4 as on KIT) */
 UI_SMALL static uint32_t keys_guide(void)
 {
+#if BOARD_SMK37
+    if (ui.layer == LY_PLAY) {                     /* the pads, playing: the selected track's steps glow (this page or,
+                                                    * playing, the playhead's), as a groovebox shows its pattern */
+        track_t *t = TSEL;
+        uint32_t len = trk_len(t), b0 = (song.playing ? t->seq_idx / 16u : ui.step_page) * 16u, m = 0, i, on;
+        for (i = 0; i < 16u; i++) {
+            if (b0 + i >= len)
+                continue;
+            on = is_drum(t) ? dstep_mask(&t->dstep[b0 + i]) != 0u : step_on(&t->step[b0 + i]);
+            if (on)
+                m |= 1u << key_of_white(i);
+        }
+        return m;
+    }
+#endif
     if (ui.layer == LY_PLAY && !is_drum(TSEL))
         return 0u;
     return 1u << key_of_white(0) | 1u << key_of_white(4) | 1u << key_of_white(8) | 1u << key_of_white(12);
@@ -211,13 +249,20 @@ UI_SMALL static uint32_t lights_keys_mask(void)
 
 UI_SMALL static void ui_leds(void)
 {
-    uint8_t nl[FM1_NCOL] = {0}, dl[FM1_NCOL] = {0}, bl[FM1_NCOL] = {0};
+    uint8_t nl[LED_BUF] = {0}, dl[LED_BUF] = {0}, bl[LED_BUF] = {0};
     uint32_t k, c, keys, guide, back;
     static uint8_t ready;
     if (!ready) {
         led_pos_init();
         ready = 1;
     }
+#if BOARD_SMK37
+    if (daw_on) {                                  /* DAW mode: the buttons and pads as the map (ui_daw.c) */
+        daw_leds();
+        return;
+    }
+    smk_pad_daw = 0;
+#endif
     led_put(nl, panel.btn[ui.layer != LY_PLAY ? LAYER_BTN[ui.layer] : cur_btn()],
             ly_lock == LY_PLAY || ((fm1_ms / 300u) & 1u) != 0u || (fm1_in.buttons & ly_bit[ly_lock % LY_COUNT]) != 0u);   /* locked: blinks */
     led_put(nl, panel.btn[B_PLAY], play_led() || (song.playing && !song.rec && ft_on) ||
@@ -238,19 +283,132 @@ UI_SMALL static void ui_leds(void)
     guide = (keys_guide() | keys_notes_dim()) & ~keys;
     back = lights_keys_mask() & ~keys & ~guide;
     for (k = 0; k < 27u; k++) {
-        led_put(nl, 14u + k, (int)((keys >> k) & 1u));
-        led_put(dl, 14u + k, (int)((guide >> k) & 1u));
-        led_put(bl, 14u + k, (int)((back >> k) & 1u));
+        led_put(nl, LED_KEY(k), (int)((keys >> k) & 1u));
+        led_put(dl, LED_KEY(k), (int)((guide >> k) & 1u));
+        led_put(bl, LED_KEY(k), (int)((back >> k) & 1u));
     }
     if (lights_lvl)                                /* menu LIGHTS: every button glows, the lit ones stay full */
         for (k = 0; k < NB; k++)
             led_put(bl, panel.btn[k], 1);
+#if BOARD_SMK37
+    for (c = 0; c < SMK_NLED; c++)                 /* the buttons: on / off (no dim layers) */
+        fm1_led[c] = nl[c];
+    smk_pad_piano = ui.layer == LY_SCALE;          /* SCALE held: the pads are a little piano (smk_input.h) */
+    fm1_led[SMK_BTN_FADER_BANK] = fb_shown();      /* FADER BANK lit while its screen is up (one bank screen at a time) */
+    fm1_led[SMK_BTN_KNOB_BANK] = pick_pin || (int32_t)(fm1_ms - pick_k4_until) < 0;   /* KNOB BANK: picker pinned, PRESETS turning */
+    smk_pad_pick = (uint16_t)(pick_shown() ? 0xFFFFu : 0u);   /* (these pads: no notes) */
+    smk_pad_grid = (uint8_t)padgrid_on();          /* (steps and tiles: reading order) */
+    smk_pad_drums = (uint8_t)(!pad_steps && ui.layer == LY_PLAY && !smk_pad_grid);   /* the pads: DRUM KIT or STEPS */
+    smk_pad_steps = (uint8_t)(pad_steps && ui.layer == LY_PLAY && !smk_pad_grid);
+    if (!is_drum(TSEL) && TSEL->p[P_AMODE])        /* ARP lit while the selected track's arpeggiator runs */
+        fm1_led[panel.btn[B_ARP]] = 1;
+    if ((int32_t)(fm1_ms - bled_hold_until) < 0)   /* (console bled: only that LED) */
+        for (c = 0; c < SMK_NLED; c++)
+            fm1_led[c] = c == bled_id;
+    if ((int32_t)(fm1_ms - padled_hold_until) >= 0) {   /* the pads. Off is off: no glow layers */
+        static const uint8_t PAL[NTRK][3] = {{40, 124, 255}, {30, 204, 112}, {255, 198, 24}, {255, 98, 26}};   /* the screen's track colours (TE_COL) */
+        const uint8_t *col = PAL[song.sel % NTRK];
+        if (pick_shown())
+            pick_leds();
+        else
+        if (ui.layer == LY_SCALE) {                /* white and black keys lit white, the scale green, its root brighter */
+            uint32_t sk = scale_keys(0), rk = scale_keys(1);
+            for (c = 0; c < 16u; c++) {
+                int32_t n = SMK_PIANO_NOTE[c];
+                if (n < 0)
+                    padled_set(c, 0, 0, 0);
+                else if ((fm1_in.notes >> n) & 1u)
+                    padled_set(c, 90, 90, 90);
+                else if ((rk >> n) & 1u)
+                    padled_set(c, 0, 90, 0);
+                else if ((sk >> n) & 1u)
+                    padled_set(c, 0, 30, 0);
+                else
+                    padled_set(c, 6, 6, 6);
+            }
+        } else if (ui.layer == LY_SONG) {          /* SAVE held: slots A..D used green, free white; store armed red */
+            uint32_t ready = arrangement_ready();
+            for (c = 0; c < 16u; c++) {
+                uint32_t p = SMK_PAD_OF_KEY(c), i = c & 3u, used = (ready >> i) & 1u;
+                if (c < 8u) {
+                    int playing = c < 4u && live_sec == (int8_t)i && !arrangement_clock.running;
+                    if (c >= 4u && sec_armed == i + 1u)
+                        padled_set(p, 90, 0, 0);
+                    else if (used)
+                        padled_set(p, 0, playing ? 110 : 40, 0);
+                    else
+                        padled_set(p, 18, 18, 18);
+                } else if (c == 12u) {
+                    padled_set(p, 0, arrangement_enabled ? 70 : 15, arrangement_enabled ? 70 : 15);   /* loop / song */
+                } else if (c == 13u) {
+                    padled_set(p, srec ? 90 : 15, 0, 0);                                            /* SONG REC */
+                } else if (c == 15u) {
+                    padled_set(p, 18, 18, 18);                                                      /* song screen */
+                } else {
+                    padled_set(p, 0, 0, 0);
+                }
+            }
+        } else if (smk_pad_steps) {                /* STEPS: the page's steps, empty dim white, set in the track's colour
+                                                    * (drums: the sound a tap sets, pen_lane; other sounds there dimmer),
+                                                    * the playhead bright white (past the track's length: dark) */
+            track_t *t = TSEL;
+            uint32_t len = trk_len(t), b0, head = song.playing ? t->seq_idx : 0xFFFFu;
+            if (ui.step_page * 16u >= len)
+                ui.step_page = 0;                  /* (a shorter track selected: its first page) */
+            b0 = ui.step_page * 16u;
+            for (c = 0; c < 16u; c++) {
+                uint32_t idx = b0 + c;
+                if (idx >= len)
+                    padled_set(c, 0, 0, 0);
+                else if (idx == head)
+                    padled_set(c, 200, 200, 200);
+                else if (is_drum(t) ? dstep_has(&t->dstep[idx], pen_lane) : step_on(&t->step[idx]))
+                    padled_set(c, col[0], col[1], col[2]);
+                else if (is_drum(t) && dstep_mask(&t->dstep[idx]))
+                    padled_set(c, (uint8_t)(col[0] * 3u >> 3), (uint8_t)(col[1] * 3u >> 3), (uint8_t)(col[2] * 3u >> 3));
+                else
+                    padled_set(c, 40, 40, 40);
+            }
+        } else if (smk_pad_drums) {                /* DRUM KIT: the kit in the drum track's colour, a pad a sound: lit
+                                                    * while it sounds or is held, the others dim (never dark) */
+            const uint8_t *dc = PAL[TRK_DRUM % NTRK];
+            uint32_t snd = keys_sounding(TDRUM);
+            for (c = 0; c < 16u; c++) {
+                if (((snd >> key_of_white(c)) & 1u) || ((pad_drum_on >> c) & 1u))
+                    padled_set(SMK_PAD_OF_WHITE(c), dc[0], dc[1], dc[2]);
+                else
+                    padled_set(SMK_PAD_OF_WHITE(c), (uint8_t)(dc[0] * 3u >> 3), (uint8_t)(dc[1] * 3u >> 3), (uint8_t)(dc[2] * 3u >> 3));
+            }
+        } else {                                   /* the track's colour: lit bright; playing, its steps normal */
+            if (ui.layer == LY_PLAY && !kb_grid) { /* playing: the steps in reading order, the notes low at the bottom */
+                uint32_t nt = fm1_in.notes | (is_drum(TSEL) || lights_notes ? keys_sounding(TSEL) : 0u), g = keys_guide();
+                uint32_t head = song.playing ? TSEL->seq_idx % 16u : 16u, sh;
+                if (is_drum(TSEL))                 /* outer-key drums: no pad light */
+                    for (c = 0; c < 16u; c++)
+                        if ((int32_t)(fm1_ms - ext_quiet[c]) < 0)
+                            nt &= ~(1u << key_of_white(c));
+                for (c = 0; c < 16u; c++) {        /* c: pad = step */
+                    sh = c == head || (nt >> key_of_white(SMK_WHITE_OF_PAD(c))) & 1u ? 1u : (g >> key_of_white(c)) & 1u ? 3u : 8u;
+                    padled_set(c, (uint8_t)(col[0] >> sh), (uint8_t)(col[1] >> sh), (uint8_t)(col[2] >> sh));
+                }
+            } else
+            for (c = 0; c < 16u; c++) {
+                uint32_t id = LED_KEY(key_of_white(c)), sh = nl[id] ? 1u : (ui.layer == LY_PLAY && dl[id]) ? 3u : 0u;
+                if (sh)
+                    padled_set(SMK_PAD_OF_KEY(c), (uint8_t)(col[0] >> sh), (uint8_t)(col[1] >> sh), (uint8_t)(col[2] >> sh));
+                else
+                    padled_set(SMK_PAD_OF_KEY(c), 0, 0, 0);
+            }
+        }
+    }
+#else
     for (c = 0; c < FM1_NCOL; c++) {
         fm1_led[c] = nl[c];
         fm1_led_dim[c] = dl[c];
         fm1_led_bg[c] = (uint8_t)(bl[c] & ~nl[c]);
     }
     fm1_led_bg_ns = LIGHTS_NS[lights_lvl % LIGHTS_N];
+#endif
 }
 
 /* ---------------------------------------------------------- input --- */
@@ -797,6 +955,13 @@ UI_SMALL static int layers_input(uint32_t note_edges, uint32_t *pressed, uint32_
             if ((e >> 8) == KB_GRID) {                    /* the DRUMS grid page: a step key */
                 if (((e >> 7) & 1u) && grid_keys_on())
                     grid_key(e & 31u);
+#if BOARD_SMK37
+            } else if ((e >> 8) == KB_PADSTEP) {          /* SMK-37 pads, STEPS: a step of the page, as SEQ's keys */
+                if ((e >> 7) & 1u)
+                    step_down(e & 15u);
+                else
+                    step_up(e & 15u);
+#endif
             } else if (!((e >> 7) & 1u)) {
                 layer_key(e >> 8, e & 31u, 0);
             }
@@ -994,9 +1159,88 @@ UI_SMALL static void remote_poll(void)
 UI_SMALL static void ui_input(void)
 {
     uint32_t pressed = fm1_input_edges(0), notes = fm1_input_note_edges(), now = fm1_ticks(), id, b, k;
+#if BOARD_SMK37
+    daw_switch(&pressed);                                         /* < + > together: SYNTH <-> DAW (ui_daw.c) */
+    if (daw_on) {                                                 /* DAW mode: every control sends MIDI */
+        daw_input(pressed, now);
+        return;
+    }
+    if (pressed & (1u << SMK_BTN_LEFT | 1u << SMK_BTN_RIGHT)) {   /* < >: SEQ held: the step pages; the visualiser:
+                                                                * its style; else the pages, as SELECT (never the tempo) */
+        int32_t d = (pressed >> SMK_BTN_RIGHT) & 1u ? 1 : -1;
+        if (pick_shown())
+            pick_turn(d);
+        else if (fb_shown())                              /* the FADER BANK screen: the banks */
+            fb_set(smk_fbank + (d > 0 ? 1u : 3u));
+        else
+        if (ui.layer == LY_STEP || smk_pad_steps) {      /* (the pads' STEPS too) */
+            uint32_t pages = (trk_len(TSEL) + 15u) / 16u;
+            ui.step_page = (uint8_t)((ui.step_page + pages + (uint32_t)d) % (pages ? pages : 1u));
+        } else if (vis_shown()) {
+            vis_select(d);
+        } else {
+            page_walk(d);
+        }
+        ui.force = 1;
+    }
+    {   /* KNOB BANK + FADER BANK (the stock firmware's PAD BANK): the pads DRUM KIT <-> STEPS. The second pressed while
+         * the first is held (or both at once); the first one's screen goes again. Once a press, 180 ms apart at least */
+        static uint32_t pd_t;
+        static uint8_t pd_fbank;
+        uint32_t kb = 1u << SMK_BTN_KNOB_BANK, fbk = 1u << SMK_BTN_FADER_BANK;
+        if ((pressed & (kb | fbk)) && (fm1_in.buttons & (kb | fbk)) == (kb | fbk)) {
+            pressed &= ~(kb | fbk);
+            if (fm1_ms - pd_t >= 180u) {
+                pd_t = fm1_ms;
+                pad_steps = (uint8_t)!pad_steps;
+                pick_close();
+                if (fb_shown())
+                    smk_fbank = pd_fbank;                       /* (the bank as before the FADER BANK press) */
+                fb_close();
+                ui_message(pad_steps ? "PADS: STEPS" : "PADS: DRUM KIT");
+                ui.force = 1;
+            }
+        } else if (pressed & fbk) {
+            pd_fbank = smk_fbank;
+        }
+    }
+    if (pressed & 1u << SMK_BTN_FADER_BANK) {                   /* FADER BANK: its screen; pressed again the next bank */
+        pick_close();                                           /* (the pad picker goes: one screen at a time) */
+        fb_set(smk_fbank + (fb_shown() ? 1u : 0u));
+    }
+    fb_expire();                                                /* (it closes by itself) */
+    if (fb_shown()) {                                           /* SELECT (K2, or K6) turns the bank there */
+        int32_t t = panel_enc(EN_SELECT);
+        if (t)
+            fb_set(smk_fbank + (t > 0 ? 1u : 3u));
+    }
+#endif
     uint32_t home = btn_hold(&ui.home_t0, B_HOME, now, 1);
     int32_t s;
     int layered;
+#if BOARD_SMK37
+    if (pressed & 1u << SMK_BTN_KNOB_BANK) {            /* KNOB BANK: pins the pad picker open / closes it */
+        fb_close();                                     /* (the FADER BANK screen goes: one at a time) */
+        pick_pin_toggle();
+        ui.force = 1;
+    }
+    {
+        uint32_t h = smk_pick_take(), p;                /* the pads hit while it was up: their sounds */
+        for (p = 0; h && p < SMK_NPAD; p++)
+            if ((h >> p) & 1u && pick_shown())
+                pick_select(p);                         /* reading order, as the screen */
+    }
+    if (home == BT_TAP && (fb_shown() || pick_shown())) {   /* PATCH tapped: closes the FADER BANK screen / picker */
+        if (fb_shown())
+            fb_close();
+        else
+            pick_close();
+        home = BT_NONE;
+    }
+#elif BOARD_SMK37
+    if (pressed & 1u << SMK_BTN_KNOB_BANK)              /* KNOB BANK: the menu, as holding HOME (PATCH) */
+        home = BT_HOLD;
+#endif
     enc_hold = 0;                                       /* (panel.c: every knob readable again this pass) */
     if (pressed || notes)
         ui_input_ms = fm1_ms;
@@ -1023,6 +1267,21 @@ UI_SMALL static void ui_input(void)
     if (ui.menu) {                                      /* HOME / REC taps do nothing here */
         punch.hold = 0;
         thr_req = 0;
+#if BOARD_SMK37
+        /* SMK-37: SEQ PLAY and SEQ REC keep working while the menu is up (no menu row uses them): start / stop,
+         * record arm / off, as on the pages (REC's hold to clear a track: on the pages only) */
+        if ((pressed >> panel.btn[B_REC]) & 1u)
+            rec_toggle();
+        if ((pressed >> panel.btn[B_PLAY]) & 1u) {
+#if FELUCCA_ARRANGER
+            if (!song.playing && arrangement_enabled && !arr_valid(&arrangement, arrangement_ready()))
+                ui_message("EMPTY SECTION: REC");
+            else
+#endif
+            if (!ft_owns_press())
+                transport_req = song.playing ? 2 : 1;
+        }
+#endif
         if (!ui.home_t0)
             menu_input(pressed);
         return;
@@ -1083,7 +1342,7 @@ UI_SMALL static void ui_input(void)
         }
     }
     cursor_fix();                                       /* LEN may have changed (knob, editor, load) */
-    for (id = 0; id < 14u; id++) {
+    for (id = 0; id < FM1_NBTN; id++) {
         if (!((pressed >> id) & 1u))
             continue;
         b = panel_btn_of(id);
@@ -1131,6 +1390,9 @@ UI_SMALL static void ui_input(void)
             TDRUM->p[P_E0] = (int16_t)clamp(TDRUM->p[P_E0] + s, 0, DRUM_KITS - 1);
         else if (total)
             preset_go((uint32_t)(((int32_t)cur + s % (int32_t)total + (int32_t)total) % (int32_t)total));
+#if BOARD_SMK37
+        pick_open_tmp();                                /* the pad picker, a few seconds, at this sound's page */
+#endif
     }
     if ((s = panel_enc(EN_ALGO)) != 0 && !ft_on)     /* ALGORITHM: the selected track, on every page (not in a take) */
         track_select((uint32_t)clamp((int32_t)song.sel + (s > 0 ? 1 : -1), 0, NTRK - 1));
@@ -1173,13 +1435,85 @@ UI_SMALL static void ui_input(void)
 /* ---------------------------------------------------- panel setup --- */
 /* 30 s without input: give up and keep the old table (a stuck key cannot hang the boot) */
 #define SETUP_IDLE_MS 30000u
+#if BOARD_SMK37
+/* the wheels (smk_wheel.h), after the buttons and knobs: one step a screen, the reading shown, OCT+ (as just taught)
+ * takes it. A step at an end counts the furthest reading of the whole step (a wheel let go a moment early still
+ * reached its end); a step at rest samples 0.3 s after OCT+ (its noise sets the dead band). 1: OCT+, 0: 30 s idle */
+static int wheel_step(uint32_t ch, const char *wheel, const char *where, int rest, int32_t *lo, int32_t *hi)
+{
+    uint32_t t0 = fm1_ms, shown = 0, ok = 1u << panel.btn[B_OCTUP];
+    char b[8];
+    lcd_fill(0, 60, 240, 130, C_BLACK);
+    draw_text_box(0, 70, 240, &FONT_S, wheel, C_GRAY, 1);
+    draw_text_box(0, 92, 240, &FONT_L, where, C_WHITE, 1);
+    draw_text_box(0, 160, 240, &FONT_S, "THEN PRESS OCT+", C_GRAY, 1);
+    *lo = 1023, *hi = 0;
+    fm1_input_edges(0);
+    for (;;) {
+        int32_t v = fm1_in.wheel[ch];
+        fm1_wdt_feed();
+        if (v < *lo)
+            *lo = v;
+        if (v > *hi)
+            *hi = v;
+        if (fm1_input_edges(0) & ok)
+            break;
+        if (fm1_ms - t0 > SETUP_IDLE_MS)
+            return 0;
+        if (fm1_ms - shown >= 100u) {                   /* the reading, ten times a second */
+            shown = fm1_ms;
+            fmt_int(b, v);
+            draw_text_box(0, 128, 240, &FONT_S, b, C_AMB, 1);
+        }
+    }
+    if (rest) {                                         /* at rest: the readings after OCT+ */
+        *lo = 1023, *hi = 0;
+        for (t0 = fm1_ms; fm1_ms - t0 < 300u;) {
+            int32_t v = fm1_in.wheel[ch];
+            fm1_wdt_feed();
+            if (v < *lo)
+                *lo = v;
+            if (v > *hi)
+                *hi = v;
+        }
+    }
+    return 1;
+}
+static void wheel_setup(void)
+{
+    int32_t rlo, rhi, lo, hi, dlo, dhi;
+    smk_wcal_t c = wcal;
+    const char *msg = 0;
+    uint32_t t0 = fm1_ms;
+    while (fm1_in.frames < 300u && fm1_ms - t0 < 2000u)   /* (the readings settle) */
+        fm1_wdt_feed();
+    if (!wheel_step(0, "PITCH WHEEL", "LET IT REST", 1, &rlo, &rhi) ||
+        !wheel_step(0, "PITCH WHEEL", "FULL DOWN", 0, &dlo, &dhi) || !wheel_step(0, "PITCH WHEEL", "FULL UP", 0, &lo, &hi))
+        msg = "WHEELS NOT CHANGED";
+    else if (!smk_wcal_pitch(&c, rlo, rhi, dlo, hi))
+        msg = "PITCH: TOO LITTLE TRAVEL";
+    if (!msg && (!wheel_step(1, "MOD WHEEL", "AT THE BOTTOM", 1, &rlo, &rhi) ||
+                 !wheel_step(1, "MOD WHEEL", "FULL UP", 0, &lo, &hi)))
+        msg = "MOD WHEEL NOT CHANGED";
+    else if (!msg && !smk_wcal_mod(&c, rlo, rhi, lo))
+        msg = "MOD: TOO LITTLE TRAVEL";
+    wcal = c;                                           /* (what was taught: the pitch wheel even if the mod was not) */
+    wcal_gen++;
+    if (msg)
+        ui_message(msg);
+}
+#endif
 UI_SMALL static void panel_setup(void)
 {
     uint32_t i, used = 0, t0 = fm1_ms;
     const panel_t old = panel;
     lcd_fill(0, 0, 240, 240, C_BLACK);
     draw_text_box(0, 10, 240, &FONT_S, "HARDWARE CALIBRATION", C_WHITE, 1);
+#if BOARD_SMK37
+    draw_text_box(0, 30, 240, &FONT_S, "BUTTONS, KNOBS, WHEELS", C_GRAY, 1);
+#else
     draw_text_box(0, 30, 240, &FONT_S, "TEACH EACH BUTTON AND KNOB", C_GRAY, 1);
+#endif
     while (fm1_in.buttons) {                             /* wait for OCT-/OCT+ release */
         fm1_wdt_feed();
         if (fm1_ms - t0 > SETUP_IDLE_MS)
@@ -1197,7 +1531,7 @@ UI_SMALL static void panel_setup(void)
             if (fm1_ms - t0 > SETUP_IDLE_MS)
                 goto timeout;
         }
-        for (id = 0; id < 14u; id++)
+        for (id = 0; id < FM1_NBTN; id++)
             if (((p & ~used) >> id) & 1u)
                 break;
         panel.btn[i] = (uint8_t)id;
@@ -1209,17 +1543,17 @@ UI_SMALL static void panel_setup(void)
         int32_t st = 0;
         draw_text_box(0, 80, 240, &FONT_S, "TURN RIGHT", C_GRAY, 1);
         draw_text_box(0, 100, 240, &FONT_L, E_NAME[i], C_WHITE, 1);
-        for (e = 0; e < 7u; e++)
+        for (e = 0; e < FM1_NENC; e++)
             fm1_enc_take(e);
         t0 = fm1_ms;
         for (;;) {
             fm1_wdt_feed();
             if (fm1_ms - t0 > SETUP_IDLE_MS)
                 goto timeout;
-            for (e = 0; e < 7u; e++)
+            for (e = 0; e < FM1_NENC; e++)
                 if (!((used >> e) & 1u) && (st = fm1_enc_take(e)) != 0)
                     break;
-            if (e < 7u)
+            if (e < FM1_NENC)
                 break;
         }
         panel.enc[i] = (uint8_t)e;
@@ -1229,6 +1563,10 @@ UI_SMALL static void panel_setup(void)
         fm1_enc_take(e);
     }
     panel.magic = PANEL_MAGIC;
+#if BOARD_SMK37
+    knob_layout_apply();                                /* (the MASTER knob, as taught) */
+    wheel_setup();
+#endif
     lcd_fill(0, 0, 240, 240, C_BLACK);
     layers_init();
     ui.force = 1;

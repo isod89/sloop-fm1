@@ -268,6 +268,7 @@ Nothing to download or compile. Your projects, user presets, samples and setting
 
 - **Python:** the `.fwsc` of a [release](../../releases) with `python tools/fm1_install.py sloop-2.4.fwsc` (needs `pip install mido python-rtmidi`).
 - **Build it yourself:** see [Building and tests](#building-and-tests); on Windows, `INSTALL-SLOOP.bat` builds SLOOP and opens the installer locally.
+- **M-Vave SMK-37:** see [SMK-37 instructions](SMK37.md).
 
 ### Going back
 

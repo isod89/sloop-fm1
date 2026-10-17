@@ -35,28 +35,7 @@ static inline void *fl_far(void *p) { void *volatile q = p; return q; }
 #define T4_CNT          REG32(0x10804u)            /* TIMER4, 24 MHz free-running */
 
 #define FL_XIP(off)     FM1_XIP(off)              /* fm1_xip.h */
-#define FL_DATA_LO      0x00097000u                /* Felucca main store */
-#define FL_DATA_HI      0x000E0000u
-#define FL_GLOB_LO      0x000FC000u                /* Felucca superblock / globals */
-#define FL_GLOB_HI      0x000FF000u
-#define FL_OTA_LO       0x000E0000u                /* M-UPGRADE loader staging, ota.c */
-#define FL_OTA_HI       0x000E5000u
-#define FL_FM6_LO       0x000E5000u                /* the FM6 patch bank (fm6_bank.c), A / B sectors; SLOOP 2.4 */
-#define FL_FM6_HI       0x000E7000u
-#define FL_USR4_LO      0x000E7000u                /* the user sample slot USR4 (eng_sample.c), 80 KiB; SLOOP 2.4 */
-#define FL_USR4_HI      0x000FB000u                /* (0xFB000..0xFBFFF stays free) */
-/* [off, off + n) inside [lo, hi), without wrapping: off + n can overflow, and
- * the 1 MiB part ignores the high address bits, so a wrapped range lands low. */
-#define FL_IN(off, n, lo, hi) ((uint32_t)(off) >= (lo) && (uint32_t)(off) <= (hi) && \
-                               (uint32_t)(n) <= (hi) - (uint32_t)(off))
-/* Felucca's own store (projects, user samples; settings; the FM6 bank) */
-#define FL_STORE_OK(off, n) (FL_IN(off, n, FL_DATA_LO, FL_DATA_HI) || FL_IN(off, n, FL_GLOB_LO, FL_GLOB_HI) || \
-                             FL_IN(off, n, FL_FM6_LO, FL_FM6_HI) || FL_IN(off, n, FL_USR4_LO, FL_USR4_HI))
-/* Where the RAM driver may erase / program. The app build allows only its own
- * data regions; the update loader (firmware/loader) defines its own window. */
-#ifndef FL_RANGE_OK
-#define FL_RANGE_OK(off, n) (FL_STORE_OK(off, n) || FL_IN(off, n, FL_OTA_LO, FL_OTA_HI))
-#endif
+#include "fm1_flash_map.h"                  /* FL_IN, FL_STORE_OK, FL_RANGE_OK, FL_GUARD, FL_JEDEC_OK; per board */
 
 typedef struct { uint32_t sfc_con, spi_con; } fl_saved_t;
 
@@ -148,7 +127,7 @@ RAMINL int fl_wait_ready(uint32_t max_us, uint32_t *took_us)
 
 /* ---- entry points: IRQs OFF, args/buffers in RAM ---- */
 
-static RAMFN uint32_t fl_jedec_ram(void)                 /* expect 0x856014 */
+static RAMFN uint32_t fl_jedec_ram(void)                 /* expect 0x856014 (FL_JEDEC_OK) */
 {
     fl_saved_t s; uint32_t id;
     if (fl_enter(&s)) return 0;
@@ -171,7 +150,7 @@ static RAMFN uint32_t fl_status_ram(void)                /* SR1 | SR2 << 8 */
 static RAMFN int fl_erase4k_ram(uint32_t off, uint32_t *took_us)
 {
     fl_saved_t s; int rc;
-    if (!FL_RANGE_OK(off, 0x1000u) || (off & 0xFFFu))
+    if (!FL_GUARD(off, 0x1000u) || (off & 0xFFFu))
         return -1;
     if (fl_enter(&s)) return -2;
     fl_wren();
@@ -188,7 +167,7 @@ static RAMFN int fl_erase4k_ram(uint32_t off, uint32_t *took_us)
 static RAMFN int fl_prog_ram(uint32_t off, const uint8_t *src, uint32_t n, uint32_t *took_us)
 {
     fl_saved_t s; int rc; uint32_t i;
-    if (!FL_RANGE_OK(off, n) ||
+    if (!FL_GUARD(off, n) ||
         n == 0 || n > 256u || ((off & 0xFFu) + n) > 256u) return -1;    /* one page, no wrap */
     if (fl_enter(&s)) return -2;
     fl_wren();
@@ -222,11 +201,11 @@ static RAMFN int fl_read_ram(uint32_t off, uint8_t *dst, uint32_t n)   /* 0x0B f
 static void fl_plain_window_init(void)
 {
     SFCENC_CON &= (uint8_t)~2u;
-    SFCENC_UNENC_L = FL_XIP(0x93000u);            /* 0x0208F000 */
+    SFCENC_UNENC_L = FL_XIP(FL_PLAIN_LO);         /* FM-1 0x0208F000 (0x93000); SMK 0x02099000 (0x9D000) */
     SFCENC_UNENC_H = 0x07FFFFFFu;
     SFCENC_CON |= 2u;
     __asm__ volatile("cli" ::: "memory");
-    fl_inval(0x93000u, 0x100000u - 0x93000u);     /* drop any decrypted lines */
+    fl_inval(FL_PLAIN_LO, 0x100000u - FL_PLAIN_LO);   /* drop any decrypted lines */
     __asm__ volatile("csync\n\tsti" ::: "memory");
 }
 

@@ -23,6 +23,15 @@
 #include "hostsim.c"
 #undef main
 #include <assert.h>
+/* SLOOP's words on the screens (felucca.c without SNOOP37) */
+#define BRAND_NAME "SLOOP"
+#define BRAND_SAIL_X 96
+#define BRAND_BASED "BASED ON FELUCCA"
+#define BRAND_CRASH "FELUCCA CRASH"
+#define BRAND_RESCUE "SLOOP USB RESCUE"
+#define VIS_STYLES 12u
+#define VIS_LAST_NAMES "SLOOP"
+#define VIS_N_STR "/12"
 static uint16_t screen[240*240];
 static void lcd_sync(void) {}
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
@@ -37,6 +46,8 @@ static int32_t fm1_enc_take(uint32_t e) { int32_t s = encs[e]; encs[e] = 0; retu
 static uint8_t fm1_led[16], fm1_led_dim[16], fm1_led_bg[16];
 static volatile uint16_t fm1_led_bg_ns;
 #define FM1_NCOL 16u
+#define FM1_NBTN 14u
+#define FM1_NENC 7u
 static const int8_t FM1_KEYMAP[5][16];
 static void fm1_led_key(uint32_t id, int on) { (void)id; (void)on; }
 static uint32_t edges_btn, notes_seen;
@@ -82,7 +93,14 @@ static void settings_save(void) {}
 #include "../firmware/src/ui_draw.c"
 #include "../firmware/src/ui_vis.c"
 #include "../firmware/src/ui_layers.c"
+#ifdef UI_MENU_SMK                                  /* (tests/daw_ui_test.c: the SMK-37 HOME menu, its stand-ins) */
+#include UI_MENU_SMK
+#define BOARD_SMK37 1
+#endif
 #include "../firmware/src/ui_menu.c"
+#ifdef UI_MENU_SMK
+#undef BOARD_SMK37
+#endif
 #include "../firmware/src/ui_input.c"
 #include "../firmware/src/splash.c"
 /* (2.7) the theme's CRC: storage.c's st_crc32 (its flash hooks unused here) */

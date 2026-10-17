@@ -108,8 +108,8 @@ def main(pkg, version, out):
     pkg, out = Path(pkg), Path(out)
     raw = pkg.read_bytes()
     product = product_of(raw)
-    if not re.fullmatch(r"FM-1_9\d\d", product):
-        raise SystemExit(f"{pkg}: identity {product!r} is not a Felucca package (FM-1_9xx)")
+    if not re.fullmatch(r"(FM-1|SMK-37 Pro|SMK-37 Elite|MKE-P37)_9\d\d", product):
+        raise SystemExit(f"{pkg}: identity {product!r} is not a Felucca package (FM-1_9xx, SMK-37 Pro_9xx, SMK-37 Elite_9xx, MKE-P37_9xx)")
     if b"FELUCCA-LOADER-1" not in raw:              # marker of firmware/loader
         raise SystemExit(f"{pkg}: no Felucca update loader in it")
     html = (HERE / "index_pkg.html").read_text(encoding="utf-8")

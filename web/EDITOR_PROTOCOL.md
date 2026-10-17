@@ -470,6 +470,25 @@ fill bar…) are sent once, never repeated on a timeout. The notes are not SysEx
 the tracks' channels (GLO > MIDI; OTHER = SEL: a free channel on the selected track; DR MAP for the drums). A device
 before 2.7 does not answer `LIVE`: the page keeps its mixer and keys (TRACK_MIX, TRACK_PARAM, SET, notes).
 
+## SMK-37: DAW mode
+
+The SMK-37 build only (`firmware/src/editor_daw.c`, `smk_daw.h`); the FM-1 does not answer these (the editor shows the
+DAW MAP tab only for a device that answers `DAW_GET`). `INFO`'s protocol version is unchanged.
+
+| cmd | Request args | Reply args |
+| --- | --- | --- |
+| 80 DAW_GET | [which] (0 the DEFAULT map, 1 the USER map; none: 1) | which, 1 (the format), MODE (0 SYNTH, 1 DAW), CHANNEL (1..16), LOCAL (0/1), CC MAP (0 DEFAULT, 1 USER), KNOBS (0 ABSOLUTE, 1 RELATIVE), N (71), N × (type, number, channel) |
+| 81 DAW_PUT | MODE, CHANNEL, LOCAL, CC MAP, KNOBS [, N, N × (type, number, channel)] | as DAW_GET 1, after it |
+| 82 STOCK_RELEASE | — | rc: 0 the stock firmware's end marker (`usrdata` at 0xEAFF8, the sector 0xEA000) erased: back on the M-Vave firmware it rebuilds its factory key / knob / fader mapping; 1 there was none; 3 stop the song first |
+
+The entries, in order: the 8 knobs K1..K8 of bank A, then bank B; the 4 faders of bank A, then B; the 16 pads of bank
+A, then B (PAD 1..8 the top row, 9..16 the bottom row); the buttons `<` `>` SEQ PLAY, SEQ REC, SEQ, FX, PARA, ARP, NOTE
+REPEAT, SCALE, CHORD, GLOBE, BT; the pitch wheel; the mod wheel. **type:** 0 OFF, 1 CC (a pad or button: 127 held, 0
+let go), 2 CC TOGGLE, 3 NOTE, 4 MMC (number: the command 1..13), 5 PITCH BEND; a knob or fader has OFF, CC; a pad OFF,
+CC, CC TOGGLE, NOTE; a button OFF, CC, CC TOGGLE, NOTE, MMC; the pitch wheel OFF, CC, PITCH BEND; the mod wheel OFF, CC.
+**channel:** 0 = CHANNEL, else 1..16. A setting out of range stays as it was, an entry out of range becomes its default.
+No flash write in the command: the device keeps it with its settings once quiet.
+
 ## Notes for the editor
 
 - **One request at a time.** Wait for the reply, about 10–50 ms, before sending the next.
