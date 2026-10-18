@@ -4,9 +4,12 @@
  * A patch travels as the 128-byte packed record (every byte 7-bit: no pack7). Targets: 0 a part's own patch
  * (track 0..NPART-1; the drum track has none), 1 a bank slot (0..FM6_BANK_N-1, flash: only while the song is
  * stopped, rc 3 as the other flash writes), 2 a factory patch (0..FM6_NFACTORY-1, read only). */
+#ifndef UI_SMALL                 /* (2.7) compiled for size: not the audio path (gfx.c UI_SMALL); the host tests: nothing */
+#define UI_SMALL
+#endif
 enum { ED_FM6_TRACK, ED_FM6_BANK, ED_FM6_FACTORY };
 
-static void ed_fm6_name(const uint8_t *pk)       /* the record's name, trailing spaces off */
+UI_SMALL static void ed_fm6_name(const uint8_t *pk)       /* the record's name, trailing spaces off */
 {
     char s[11];
     uint32_t i, n = 0;
@@ -20,7 +23,7 @@ static void ed_fm6_name(const uint8_t *pk)       /* the record's name, trailing 
 }
 
 /* a bank write: 0 ok, 1 bad slot, 2 flash (or a backup restore holds the staging RAM), 3 stop the song first */
-static uint32_t ed_fm6_bank_write(uint32_t k, const uint8_t *pk)
+UI_SMALL static uint32_t ed_fm6_bank_write(uint32_t k, const uint8_t *pk)
 {
 #if FELUCCA_FLASH
     int r;
@@ -37,7 +40,7 @@ static uint32_t ed_fm6_bank_write(uint32_t k, const uint8_t *pk)
 #endif
 }
 
-static int ed_fm6_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
+UI_SMALL static int ed_fm6_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
 {
     uint8_t pk[FM6_PACKED];
     uint32_t i, rc;

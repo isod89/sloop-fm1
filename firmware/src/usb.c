@@ -274,6 +274,60 @@ static const uint8_t STR2[] = {30, 3, 'F', 0, 'e', 0, 'l', 0, 'u', 0, 'c', 0, 'c
 static const uint8_t STR2[] = {16, 3, 'F', 0, 'e', 0, 'l', 0, 'u', 0, 'c', 0, 'c', 0, 'a', 0};
 #endif
 
+#if FELUCCA_UAC_48K
+/* SLOOP 2.7 beta: menu AUDIO > USB RATE, for the hosts that record the stream badly (reports: Android phones,
+ * distorted, while a computer records clean). main.c sets usb_rate_mode before usb_start; a change takes effect
+ * at the next start, as USB SERIAL does (the host reads the descriptors when the FM-1 appears).
+ *   0 AUTO  44.1 and 48 kHz, the host picks: the descriptors of 2.5 / 2.6, byte for byte;
+ *   1 44.1  44.1 kHz only: the descriptors of SLOOP 2.4 (a FELUCCA_UAC_48K=0 build) byte for byte: the format
+ *           of one rate, packets of 46 frames at most, bcdDevice x.1x; the resampler never runs, the samples
+ *           go out as rendered;
+ *   2 48    48 kHz only (bcdDevice x.3x, a version of its own: hosts cache descriptors per version).
+ * The copies are made from the descriptors above (CDC or not) when the host asks for them. */
+static uint8_t usb_rate_mode;
+static uint8_t dev_rate[18], cfg_rate[CFG_LEN];
+static void rate_desc(const uint8_t **d, uint16_t *l, int cfg)
+{
+    const uint8_t *src = *d;
+    uint32_t n = *l, off, k = 0;
+    if (!usb_rate_mode || usb_rate_mode > 2u)
+        return;
+    if (!cfg) {
+        memcpy(dev_rate, src, 18);
+        dev_rate[12] = (uint8_t)(usb_rate_mode == 1u ? dev_rate[12] - 0x10u : dev_rate[12] + 0x10u);
+        *d = dev_rate;
+        return;
+    }
+    for (off = 0; off < n && src[off] >= 2u && off + src[off] <= n; off += src[off]) {
+        const uint8_t *p = src + off;
+        uint8_t *q = cfg_rate + k;
+        if (p[0] == 14u && p[1] == 0x24u && p[2] == 2u && p[3] == 1u && p[7] == 2u) {   /* type I: one rate */
+            memcpy(q, p, 11);
+            q[0] = 11u;
+            q[7] = 1u;
+            if (usb_rate_mode == 2u)
+                memcpy(q + 8, p + 11, 3);              /* 48000 */
+            k += 11u;
+            continue;
+        }
+        memcpy(q, p, p[0]);
+        if (usb_rate_mode == 1u && p[0] == 9u && p[1] == 5u && p[2] == 0x84u) {   /* 46 frames at most */
+            q[4] = (uint8_t)((46u * 4u) & 0xFFu);
+            q[5] = (uint8_t)((46u * 4u) >> 8);
+        }
+        k += p[0];
+    }
+    cfg_rate[2] = (uint8_t)(k & 0xFFu);
+    cfg_rate[3] = (uint8_t)(k >> 8);
+    *d = cfg_rate;
+    *l = (uint16_t)k;
+}
+static int usb_rate_now(void) { return usb_rate_mode; }   /* (the menu: what this start offers) */
+#else
+static void rate_desc(const uint8_t **d, uint16_t *l, int cfg) { (void)d, (void)l, (void)cfg; }
+static int usb_rate_now(void) { return 0; }
+#endif
+
 static int get_desc(uint32_t wvalue, const uint8_t **d, uint16_t *l)
 {
     switch (wvalue >> 8) {
@@ -284,6 +338,7 @@ static int get_desc(uint32_t wvalue, const uint8_t **d, uint16_t *l)
         if (!usb_cdc_on)
             *d = DEV_DESC_PLAIN;
 #endif
+        rate_desc(d, l, 0);
         return 1;
     case 2:
         *d = CFG_DESC;
@@ -294,6 +349,7 @@ static int get_desc(uint32_t wvalue, const uint8_t **d, uint16_t *l)
             *l = CFG_PLAIN_LEN;
         }
 #endif
+        rate_desc(d, l, 1);
         return 1;
     case 3:
         switch (wvalue & 0xFFu) {
@@ -383,6 +439,10 @@ static void uac_stream(uint32_t alt)                    /* SET_INTERFACE, config
 static void uac_rate_set(uint32_t hz)
 {
     uint8_t r48 = (uint8_t)(FELUCCA_UAC_48K && hz >= (UAC_RATE + 48000u) / 2u);
+#if FELUCCA_UAC_48K
+    if (usb_rate_mode == 1u || usb_rate_mode == 2u)
+        r48 = (uint8_t)(usb_rate_mode == 2u);           /* (menu USB RATE: the one rate described) */
+#endif
     if (r48 == uac.r48)
         return;
     uac.go = 0;
@@ -650,7 +710,9 @@ static void ep0_service(void)
         if (s[4] != 0x84u || s[3] != 1u)
             goto stall;
 #if FELUCCA_UAC_48K
-        if (s[1] == 0x83u || (s[1] == 0x81u && uac.r48)) {
+        if (s[1] == 0x81u ? uac.r48 != 0u : s[1] == 0x83u ? usb_rate_mode != 1u : usb_rate_mode == 2u) {
+                                                        /* CUR: the rate now; MAX 48 (44.1 in USB RATE 44.1);
+                                                         * MIN 44.1 (48 in USB RATE 48) */
             e0_send(RATE48, 3, wlength);
             return;
         }

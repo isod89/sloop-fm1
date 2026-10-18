@@ -11,6 +11,8 @@ static struct {
     uint32_t len;
     uint8_t dtr_seen, stalled;   /* stalled: the host stopped reading, drop the rest of this reply */
 } con;
+static uint32_t lowram_state(void);                  /* main.c: the SRAM below the RAM region, proved at boot */
+static uint32_t stack_free_main(void), stack_free_sup(void), stack_sp(void);   /* main.c: core 0's stacks, painted at boot */
 
 static void con_putc(char c)
 {
@@ -175,6 +177,19 @@ static void con_status(void)
     con_puts("\r\n");
     con_kv("uptime_ms", (int32_t)fm1_ms);
     con_kv("cpu_pct", (int32_t)(song.cpu_q8 * 100u / 256u));
+#if FELUCCA_CPU1
+    con_kv("cpu1", (int32_t)cpu1_state);                 /* 1 did not start, 2 self-test failed, 3 running (cpu1.c) */
+    con_kx("cpu1_trace", fm1_c1_trace);
+    con_kv("cpu1_timeouts", (int32_t)cpu1_timeouts);
+    con_kv("cpu1_units", cpu1_units);                    /* the render units it gets: -1 its share, else a mask (fx.c) */
+    con_kv("cpu1_busy_pct", (int32_t)(cpu1_busy_q8 * 100u / 256u));   /* its time in the render, of a half (fx.c) */
+    con_kv("cpu1_wait_pct", (int32_t)(cpu1_wait_q8 * 100u / 256u));   /* core 0's time waiting for it */
+    con_kv("cpu1_stack_free", (int32_t)cpu1_stack_free());   /* bytes of its stack the render never reached */
+#endif
+    con_kv("lowram", (int32_t)lowram_state());           /* the SRAM below the RAM region: 1 proved at boot, 2 not (main.c) */
+    con_kv("stack_free", (int32_t)stack_free_main());    /* core 0's main stack (24 KB): bytes never reached since boot */
+    con_kv("sstack_free", (int32_t)stack_free_sup());    /* its supervisor stack (8 KB) */
+    con_kx("sp", stack_sp());                           /* where the main loop runs now: which of the two regions */
     con_kv("audio_max_us", (int32_t)felucca_dbg.max_us);
     con_kv("voices_shed", (int32_t)shed_count);
     con_kv("voices_given_up", (int32_t)voice_kills);
@@ -246,7 +261,7 @@ static void con_params(void)
 static void con_exec(const char *p)
 {
     if (con_word(&p, "help") || con_word(&p, "?"))
-        con_puts("status  dbg  crash  params  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
+        con_puts("status  dbg  crash  params  memr ADDR [LEN]  flr OFF [LEN]  cpu1 units MASK|auto  uboot yes\r\n");
     else if (con_word(&p, "status"))
         con_status();
     else if (con_word(&p, "dbg"))
@@ -257,6 +272,24 @@ static void con_exec(const char *p)
         con_params();
     else if (con_word(&p, "memr"))
         con_memr(p);
+#if FELUCCA_CPU1
+    else if (con_word(&p, "cpu1")) {                     /* cpu1 units MASK | auto: the render units core 1 gets (fx.c
+                                                         * units_split: bit k = synth part k, bit 3 = the drums), live */
+        if (con_word(&p, "units")) {
+            int ok;
+            uint32_t v;
+            if (con_word(&p, "auto"))
+                cpu1_units = -1;
+            else if ((v = con_num(&p, &ok)), ok && v <= 15u)
+                cpu1_units = (int32_t)v;
+            else {
+                con_puts("usage: cpu1 units MASK(0-15)|auto\r\n");
+                return;
+            }
+        }
+        con_kv("cpu1_units", cpu1_units);
+    }
+#endif
 #if FELUCCA_FLASH
     else if (con_word(&p, "flr"))
         con_flr(p);

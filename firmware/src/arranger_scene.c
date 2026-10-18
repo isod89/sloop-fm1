@@ -34,8 +34,10 @@ static void arrangement_apply(uint32_t scene)
     for (k = 0; k < NTRK; k++) {
         track_t *t = &trk[k];
         seq_release(t);
+        kh_release(t);                            /* (2.7: KBD HOLD's notes, and their MIDI note-offs) */
         trk_all_off(t);
         t->nheld = t->arp_phys = t->arp_note = t->rh_n = t->rskip_n = 0;
+        t->arp_ch[0] = t->arp_ch[1] = t->arp_ch[2] = 0;
         t->rskip_lanes = 0;
     }
     proj_apply(&proj_slot[scene], 0);
@@ -59,8 +61,10 @@ static void song_restore(void)                 /* (audio ISR: seq_stop) */
         return;
     song_kept = 0;
     for (i = 0; i < NTRK; i++) {
+        kh_release(&trk[i]);                      /* (2.7: KBD HOLD's notes, and their MIDI note-offs) */
         trk_all_off(&trk[i]);
         trk[i].nheld = trk[i].arp_phys = trk[i].arp_note = 0;
+        trk[i].arp_ch[0] = trk[i].arp_ch[1] = trk[i].arp_ch[2] = 0;
     }
     proj_apply(&song_keep, 1);
     song.sel = (uint8_t)(song_keep.sel < NTRK ? song_keep.sel : 0u);

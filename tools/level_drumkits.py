@@ -25,6 +25,8 @@ REL = dict(KICK=0, KICK2=0, SNARE=-1, SNARE2=-2.5, CLAP=-2, CHH=-15, OHH=-12, TO
            CRASH=-10, RIDE=-13, SHAKER=-17, CONGA=-5, RIM=-6, COWBELL=-6, CLAVE=-7)
 KIT = {"AMBIENT": -1.5, "JAZZ": -1.5, "VINTAGE": -0.5, "LATIN": -0.5}
 PEAK = -4.0
+KICK_PEAK = -1.5                               # (2.7) the kicks peak as high as the sampled kits'
+KICK_UP = 2.5                                  # (2.7) and that much louder: heard on a small speaker
 
 
 def loudness(x):
@@ -48,8 +50,9 @@ def main(raw):
         out[n] = {}
         for li, lane in enumerate(LANES):
             x = d[(ki * 16 + li) * N:(ki * 16 + li + 1) * N]
-            want = KICK + REL[lane] + KIT.get(n, 0.0)
-            adj = min(want - loudness(x), PEAK - 20 * np.log10(np.abs(x).max() + 1e-9))
+            kick = lane in ("KICK", "KICK2")
+            want = KICK + REL[lane] + KIT.get(n, 0.0) + (KICK_UP if kick else 0.0)
+            adj = min(want - loudness(x), (KICK_PEAK if kick else PEAK) - 20 * np.log10(np.abs(x).max() + 1e-9))
             t = old.get(n, {}).get(lane, 0.0) + adj
             out[n][lane] = round(max(-31.75, min(31.75, t)) * 4) / 4
     path.write_text(json.dumps(out, indent=1) + "\n")

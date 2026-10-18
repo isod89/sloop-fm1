@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* ANALOG: two band-limited oscillators (saw / square / tri / sine / PWM),
- * noise, drive and a trapezoidal low-pass. */
+ * noise, drive and a trapezoidal state-variable filter: low-pass, or (2.6, TYPE) band-pass / high-pass. */
 static const char *const N_ANALOG_WAVE[] = {"SAW", "SQR", "TRI", "SIN", "PWM"};
 
 static void analog_note_on(track_t *t, voice_t *v)
@@ -15,7 +15,26 @@ static void analog_note_on(track_t *t, voice_t *v)
         v->s[2] = 0x1234567 + (int32_t)v->age;        /* noise state */
 }
 
-static void analog_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
+/* the filter's TYPE (SLOOP 2.6, after Felucca 1.5 by Leo Kuroshita, #104: track parameter P_FTYPE, EDIT > FILTER):
+ * the SVF's outputs (dsp.c tsvf_lp, written out here with the taps: Simper's trapezoidal state-variable filter), 0 LP
+ * the low-pass as always (tsvf_lp itself: the same steps, bit for bit), 1 BP its band-pass v1, 2 HP in - k v1 - v2. At
+ * the cutoff the three peak alike (1/k, k the damping RES sets: 2 at RES 0, ~0.15 at 127), so the soft knee after them
+ * and the level stay as LP's */
+static inline int32_t analog_tap(const tsvf_t *c, int32_t k, int32_t in, int32_t *ic1, int32_t *ic2, uint32_t ft)
+{
+    int32_t v3 = in - *ic2;
+    int32_t v1 = (c->a1 * *ic1 + c->a2 * v3) >> 13;
+    int32_t v2 = *ic2 + ((c->a2 * *ic1 + c->a3 * v3) >> 13);
+    *ic1 = clamp(2 * v1 - *ic1, -150000, 150000);
+    *ic2 = clamp(2 * v2 - *ic2, -150000, 150000);
+    return ft == 1u ? v1 : in - ((k * v1) >> 12) - v2;
+}
+#define ANALOG_K(res) (8192 - (res) * 7600 / 127)     /* tsvf_coef's damping, Q12 */
+
+/* the voice through the filter TYPE ft: analog_render's loop with ft 0 (a constant: LP, the code as it always was),
+ * analog_render_f's with BP / HP (its own copy: the LP loop gains nothing) */
+static inline __attribute__((always_inline)) void analog_body(track_t *t, voice_t *v, int32_t *out, uint32_t n,
+                                                              const vmod_t *m, uint32_t ft)
 {
     const int16_t *p = t->p;
     uint32_t wave = (uint32_t)p[P_E0], i;
@@ -34,6 +53,7 @@ static void analog_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
     int32_t nz = noise * 200, drv = p[P_E6];
     uint32_t ph0 = v->ph[0], ph1 = v->ph[1];                  /* state in locals: out[] may alias v->s[] */
     int32_t ic1 = v->s[0], ic2 = v->s[1], nst = v->s[2];
+    int32_t fk = ft ? ANALOG_K(p[P_E5]) : 0;
     tsvf_coef(&flt, cut, p[P_E5]);
     if (det == 0)
         inc2 = inc1;
@@ -74,7 +94,7 @@ static void analog_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
         if (drv)                                      /* pre-shifts: drive is up to 4x, no overflow */
             s += mulq15(softclip(((s >> 2) * (drive >> 2)) >> 11) - s, dw);
         {   /* filter: linear up to half scale, then a soft knee (only resonance peaks saturate) */
-            int32_t y = tsvf_lp(&flt, s >> 1, &ic1, &ic2), a = y < 0 ? -y : y;
+            int32_t y = ft ? analog_tap(&flt, fk, s >> 1, &ic1, &ic2, ft) : tsvf_lp(&flt, s >> 1, &ic1, &ic2), a = y < 0 ? -y : y;
             if (a > 16000) {
                 a = 16000 + (softclip((a - 16000) * 2) >> 1);
                 y = y < 0 ? -a : a;
@@ -88,6 +108,18 @@ static void analog_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
     v->s[0] = ic1;
     v->s[1] = ic2;
     v->s[2] = nst;
+}
+static __attribute__((noinline)) void analog_render_f(track_t *t, voice_t *v, int32_t *out, uint32_t n,
+                                                      const vmod_t *m)
+{
+    analog_body(t, v, out, n, m, t->p[P_FTYPE] == 1 ? 1u : 2u);
+}
+static void analog_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
+{
+    if (t->p[P_FTYPE])                                  /* BP / HP (2.6) */
+        analog_render_f(t, v, out, n, m);
+    else
+        analog_body(t, v, out, n, m, 0);
 }
 
 static const preset_t ANALOG_PRESETS[] = {

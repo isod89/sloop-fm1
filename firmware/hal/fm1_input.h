@@ -95,6 +95,9 @@ static volatile struct {
     int16_t enc_steps[FM1_NENC]; /* + = clockwise */
     uint32_t frames;
 } fm1_in;
+/* SLOOP 2.7: buttons held over MIDI (GLO > MIDI 3 > REMOTE: src/ui_input.c remote_poll), bit i = button i: read as
+ * closed by the debounce, so a remote press is a press like any other (taps, holds, layers) */
+static volatile uint32_t fm1_remote_btn;
 static uint8_t fm1_led[FM1_NCOL];
 #ifndef FM1_GLOW_NS
 #define FM1_GLOW_NS 4000u        /* the glow pulse a frame (ns); a lit LED ~95 us: ~1/24 the brightness */
@@ -187,6 +190,8 @@ static void fm1__key(uint32_t id, uint32_t closed)
     volatile uint8_t *c = &fm1_in.cnt[id];
     uint32_t note = id >= 14u, bit = note ? 1u << (id - 14u) : 1u << id;
     uint32_t on = ((note ? fm1_in.notes : fm1_in.buttons) & bit) != 0u;
+    if (!note && (fm1_remote_btn & bit))
+        closed = 1;                                /* (2.7) held over MIDI */
     if (closed == on) {                            /* agrees with the state: start over */
         *c = 0;
         return;

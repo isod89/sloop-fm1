@@ -42,9 +42,12 @@ static const icon_map_t ICON_MAP[] = {
     {"BPM", ICON_TEMPO}, {"CLK", ICON_TEMPO}, {"TUNE", ICON_TUNE}, {"TIME", ICON_TIME},
     {"FDBK", ICON_FEEDBACK}, {"COLR", ICON_TONE}, {"MIX", ICON_MIX}, {"SIZE", ICON_SIZE},
     {"DAMP", ICON_DAMP}, {"CRT", ICON_RATE}, {"CDP", ICON_MOD}, {"MIDI", ICON_MIDI},
-    {"SYNC", ICON_TEMPO}, {"ROUT", ICON_MIX}, {"CPU", ICON_CHIP}, {"SLOT", ICON_SAVE},
+    {"SYNC", ICON_TEMPO}, {"ROUT", ICON_MIX}, {"CPU", ICON_CHIP}, {"SLOT", ICON_SAVE}, {"SECT", ICON_SAVE},
     {"LOAD", ICON_LOAD}, {"SAVE", ICON_SAVE}, {"ENG", ICON_WAVE}, {"CLRSQ", ICON_CLEAR},
     {"INIT", ICON_CLEAR}, {"ERASE", ICON_CLEAR}, {"CH", ICON_MIDI}, {"LEVEL", ICON_LEVEL},
+    {"OUT", ICON_MIDI}, {"IN", ICON_MIDI}, {"CH1", ICON_MIDI}, {"CH2", ICON_MIDI}, {"CH3", ICON_MIDI}, {"CH4", ICON_MIDI},   /* (2.6:
+                                                                 * GLO > MIDI, MIDI 2) */
+    {"OTHER", ICON_MIDI}, {"BEND", ICON_TUNE},
     /* engines (eng_*.c edit[] labels) */
     {"DTN", ICON_DETUNE}, {"NOIS", ICON_NOISE}, {"CUT", ICON_CUTOFF}, {"RES", ICON_RESO},
     {"DRV", ICON_DRIVE}, {"KTR", ICON_KEYTRACK}, {"ALG", ICON_ALGORITHM}, {"R2", ICON_RATIO},
@@ -67,7 +70,7 @@ static const icon_map_t ICON_MAP[] = {
     {"SLCR", ICON_SLICE}, {"PAT", ICON_STEPS}, {"DEPTH", ICON_MIX},   /* SLICER page (RATE: param_icon) */
 };
 
-static uint32_t icon_for_label(const char *l)
+UI_SMALL static uint32_t icon_for_label(const char *l)
 {
     uint32_t i;
     if (!l || !l[0] || l[0] == '-')
@@ -86,7 +89,7 @@ static const icon_map_t WAVE_ICON[] = {
     {"RTRP", ICON_W_RTRP},
 };
 
-static uint32_t param_icon(const param_desc_t *d, int32_t v)
+UI_SMALL static uint32_t param_icon(const param_desc_t *d, int32_t v)
 {
     uint32_t i;
     if (!d)
@@ -114,7 +117,7 @@ static uint32_t param_icon(const param_desc_t *d, int32_t v)
 }
 
 /* engine name (ENGINES[]->name, or "DRUM") -> icon */
-static uint32_t engine_icon(const char *name)
+UI_SMALL static uint32_t engine_icon(const char *name)
 {
     static const icon_map_t M[] = {
         {"ANALOG", ICON_WAVE}, {"DIGITAL", ICON_ALGORITHM}, {"PHASE", ICON_PHASE}, {"LOFI", ICON_BITS},
@@ -131,15 +134,15 @@ static uint32_t engine_icon(const char *name)
 }
 
 /* 2-bit icon, ink levels 1..3 = a third .. all of colour c (blended onto black, like cv_text) */
-static void cv_icon(int32_t x, int32_t y, uint32_t id, uint16_t c)
+UI_SMALL static void cv_icon(int32_t x, int32_t y, uint32_t id, uint16_t c)
 {
     uint16_t ramp[4];
-    uint32_t r = c >> 11, g = (c >> 5) & 63u, b = c & 31u, a, i, j;
+    uint32_t a, i, j;
     const uint8_t *p;
     if (id >= FELUCCA_ICONS_N)
         return;
     for (a = 0; a < 4u; a++)
-        ramp[a] = (uint16_t)(((r * a / 3u) << 11) | ((g * a / 3u) << 5) | (b * a / 3u));
+        ramp[a] = rgb565_over(c, a, 3u);               /* (2.7: onto the background; on black as before) */
     p = ICON_DATA[id];
     for (j = 0; j < ICON_CELL; j++)
         for (i = 0; i < ICON_CELL; i++) {
@@ -149,8 +152,8 @@ static void cv_icon(int32_t x, int32_t y, uint32_t id, uint16_t c)
         }
 }
 #else
-static uint32_t icon_for_label(const char *l) { (void)l; return ICON_NONE; }
-static uint32_t param_icon(const param_desc_t *d, int32_t v) { (void)d; (void)v; return ICON_NONE; }
-static uint32_t engine_icon(const char *name) { (void)name; return ICON_NONE; }
-static void cv_icon(int32_t x, int32_t y, uint32_t id, uint16_t c) { (void)x; (void)y; (void)id; (void)c; }
+UI_SMALL static uint32_t icon_for_label(const char *l) { (void)l; return ICON_NONE; }
+UI_SMALL static uint32_t param_icon(const param_desc_t *d, int32_t v) { (void)d; (void)v; return ICON_NONE; }
+UI_SMALL static uint32_t engine_icon(const char *name) { (void)name; return ICON_NONE; }
+UI_SMALL static void cv_icon(int32_t x, int32_t y, uint32_t id, uint16_t c) { (void)x; (void)y; (void)id; (void)c; }
 #endif

@@ -78,6 +78,22 @@ int main(void)
     move(e, 1, 6); move(e, 1, 1000);                /* parked ~1 s mid-click (held at power-on) */
     for (k = 0; k < 4u; k++) click(e, 1, 6), frames(e, 30);
     check("parked 1 s off the detent, then 4 clicks: 4 steps", take(e) == 4);
+    {   /* 2.7: a button held over MIDI (fm1_remote_btn) is read as closed: a press after the debounce, held, then let go */
+        uint32_t i, down, held, up;
+        fm1_in.buttons = fm1_in.pressed = fm1_in.released = 0;
+        fm1_remote_btn = 1u << 10;
+        for (i = 0; i < FM1_DEB_PRESS; i++)
+            fm1__key(10, 0);
+        down = (fm1_in.buttons >> 10) & 1u && (fm1_in.pressed >> 10) & 1u;
+        for (i = 0; i < 50u; i++)
+            fm1__key(10, 0);
+        held = (fm1_in.buttons >> 10) & 1u;
+        fm1_remote_btn = 0;
+        for (i = 0; i < FM1_DEB_RELEASE; i++)
+            fm1__key(10, 0);
+        up = !((fm1_in.buttons >> 10) & 1u) && (fm1_in.released >> 10) & 1u;
+        check("2.7: a button held over MIDI: pressed, held, released (as a real one)", down && held && up);
+    }
     printf("%s\n", fails ? "ENCODER TEST FAILED" : "encoder test passed");
     return fails;
 }

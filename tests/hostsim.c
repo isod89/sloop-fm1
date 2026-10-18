@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>                    /* tests/cpu1_host.c: the second core as a thread (CORES=2) */
 #define __attribute__(x)
 #define memset felucca_memset
 #define memcpy felucca_memcpy
@@ -28,9 +29,12 @@
 #undef memcpy
 #undef memcmp
 static struct { volatile uint32_t notes, buttons; } fm1_in;
+static volatile uint32_t fm1_remote_btn;           /* (2.7, fm1_input.h: the buttons held over MIDI) */
 static void fm1_irq_off(void) {}                 /* (the host: one thread) */
 static void fm1_irq_on(void) {}
 #include "../firmware/src/core.h"
+#include "../firmware/src/cpu1.h"
+#include "cpu1_host.c"                  /* the second core on the host: CORES=1 inline, CORES=2 a thread */
 #include "../firmware/src/engines.c"
 #include "../firmware/src/drums.c"
 #include "../firmware/src/params.c"

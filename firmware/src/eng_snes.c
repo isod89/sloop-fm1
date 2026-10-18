@@ -50,11 +50,12 @@ typedef struct {                        /* a part's S-DSP: what its voices share
     uint16_t quiet;                     /* chip samples the echo has stayed flat (its FIR output and what it */
     int16_t qlo[2], qhi[2];             /* writes within 8 of a level, the range in qlo .. qhi) */
     uint8_t init, eown, edirty;         /* the echo line is ours and cleared; it holds sound */
+    uint32_t eclips;                    /* chip samples the echo's input clipped (16 bits, as on the chip):
+                                         * tests; per part, as the rest (fx.c units_split: core 1 renders parts) */
 } snes_dsp_t;
 
 static snes_voice_t snes_v[NPART][NVOICE];   /* (not the pool: tools/build.py keeps 8 KiB of it spare) */
 static snes_dsp_t snes_dsp[NPART];
-static uint32_t snes_eclips;            /* chip samples the echo's input clipped (16 bits, as on the chip): tests */
 
 /* the echo line: the part's engine arena (engines.c eng_arena_of: a part plays one engine at a time), 6 KB: up to
  * EDL 6 (96 ms; the chip's 15, 240 ms, would need 15 KB a part). It fits in GRAIN's share of the arena, so the
@@ -99,7 +100,15 @@ static struct {
     uint32_t len[SMP_USER_SLOTS];
     uint32_t slots;                     /* bit k: user slot k holds a part of the bank */
 } snes_bank;
-static const char *snes_names[SNES_NSEL_MAX] = {SNES_FW_NAMES_INIT, [SNES_NFW ... SNES_NSEL_MAX - 1] = "-"};   /* INST */
+static const char *const SNES_FW_NAMES[SNES_NFW] = {SNES_FW_NAMES_INIT};
+static const char *snes_names[SNES_NSEL_MAX];  /* INST: in .bss, filled at boot (snes_bank_scan) and by snes_desc (2.7.1:
+                                                * the flash is full, its initialiser was 508 B); a NULL reads as "" */
+static void snes_names_fw(void)
+{
+    uint32_t i;
+    for (i = 0; i < SNES_NFW; i++)
+        snes_names[i] = SNES_FW_NAMES[i];
+}
 static const uint8_t SNES_SILENT[9] = {0x03};   /* one block of silence that loops: a voice whose bank went */
 
 static const snes_slot_hdr_t *snes_slot_hdr(uint32_t k) { return (const snes_slot_hdr_t *)smp_user_xip(k); }
@@ -174,6 +183,7 @@ static void snes_bank_scan(void)
     snes_bank.nsel = 0;
     snes_bank.slots = 0;
     fm1_irq_on();
+    snes_names_fw();
     for (i = SNES_NFW; i < SNES_NSEL_MAX; i++)
         snes_names[i] = "-";
     if (!h0)
@@ -382,7 +392,7 @@ static void snes_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const 
                 sv->o1 = (int16_t)((snes_tick(&sv->c, d->fire[k], d->nz[k], pitch, non, koff) * vol) >> 7);
                 if (eon) {                              /* EON: into the echo (SPC_DSP voice_output) */
                     int32_t e = d->ein[k] + sv->o1;
-                    snes_eclips += (int16_t)e != e;
+                    d->eclips += (int16_t)e != e;
                     d->ein[k] = (int16_t)snes_clamp16(e);
                 }
                 k++;
@@ -486,6 +496,7 @@ static const param_desc_t *snes_desc(const struct track *t, uint32_t k)
     (void)t;
     if (k)
         return 0;
+    snes_names_fw();
     snes_inst_desc = (param_desc_t){"INST", F_ENUM, 0, (int16_t)(SNES_NFW + snes_bank.nsel - 1u), 0, snes_names, 0};
     return &snes_inst_desc;
 }

@@ -1,6 +1,6 @@
 {
  "808": {
-  "KICK": 2.0,
+  "KICK": 1.5,
   "SNARE": -1.25,
   "CLAP": 12.25,
   "CHH": 19.5,
@@ -14,11 +14,11 @@
   "RIM": 7.25,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -0.5,
+  "KICK2": 1.75,
   "SNARE2": 5.25
  },
  "909": {
-  "KICK": 0.0,
+  "KICK": 2.5,
   "SNARE": 1.75,
   "CLAP": 10.75,
   "CHH": 11.5,
@@ -32,11 +32,11 @@
   "RIM": 5.0,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -0.25,
+  "KICK2": 2.0,
   "SNARE2": 4.75
  },
  "606": {
-  "KICK": 2.25,
+  "KICK": 4.0,
   "SNARE": 3.0,
   "CLAP": 13.0,
   "CHH": 20.5,
@@ -50,11 +50,11 @@
   "RIM": 6.0,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": 1.75,
+  "KICK2": 3.0,
   "SNARE2": 4.75
  },
  "80S": {
-  "KICK": 1.75,
+  "KICK": 3.0,
   "SNARE": -1.0,
   "CLAP": 9.5,
   "CHH": 12.5,
@@ -68,11 +68,11 @@
   "RIM": 6.25,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": 0.5,
+  "KICK2": 2.5,
   "SNARE2": 4.25
  },
  "VINTAGE": {
-  "KICK": 2.0,
+  "KICK": 4.25,
   "SNARE": 4.25,
   "CLAP": 15.75,
   "CHH": 20.25,
@@ -86,11 +86,11 @@
   "RIM": 1.25,
   "COWBELL": 5.75,
   "CLAVE": 1.25,
-  "KICK2": 2.0,
+  "KICK2": 3.25,
   "SNARE2": 4.75
  },
  "TRAP": {
-  "KICK": 0.0,
+  "KICK": 2.0,
   "SNARE": 1.75,
   "CLAP": 10.75,
   "CHH": 20.0,
@@ -104,11 +104,11 @@
   "RIM": 7.25,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -1.5,
+  "KICK2": 1.0,
   "SNARE2": 4.25
  },
  "DRILL": {
-  "KICK": 1.25,
+  "KICK": 2.75,
   "SNARE": 1.75,
   "CLAP": 9.5,
   "CHH": 18.75,
@@ -122,11 +122,11 @@
   "RIM": 4.5,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -1.75,
+  "KICK2": 0.25,
   "SNARE2": 5.75
  },
  "BOOMBAP": {
-  "KICK": -0.75,
+  "KICK": 1.5,
   "SNARE": 0.5,
   "CLAP": 11.5,
   "CHH": 16.25,
@@ -140,11 +140,11 @@
   "RIM": 5.75,
   "COWBELL": 5.5,
   "CLAVE": 1.75,
-  "KICK2": -1.25,
+  "KICK2": 1.25,
   "SNARE2": 1.75
  },
  "LO-FI": {
-  "KICK": 0.75,
+  "KICK": 2.25,
   "SNARE": 1.25,
   "CLAP": 13.0,
   "CHH": 18.75,
@@ -158,11 +158,11 @@
   "RIM": 7.25,
   "COWBELL": 5.5,
   "CLAVE": 1.75,
-  "KICK2": 0.25,
+  "KICK2": 2.0,
   "SNARE2": 4.75
  },
  "PHONK": {
-  "KICK": -1.75,
+  "KICK": 0.5,
   "SNARE": -0.75,
   "CLAP": 14.0,
   "CHH": 20.25,
@@ -176,11 +176,11 @@
   "RIM": 6.75,
   "COWBELL": -6.5,
   "CLAVE": 1.75,
-  "KICK2": -2.0,
+  "KICK2": 0.5,
   "SNARE2": 5.0
  },
  "HOUSE": {
-  "KICK": 0.0,
+  "KICK": 2.0,
   "SNARE": 1.75,
   "CLAP": 10.25,
   "CHH": 11.75,
@@ -194,11 +194,11 @@
   "RIM": 6.25,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -0.25,
+  "KICK2": 2.0,
   "SNARE2": 4.75
  },
  "D.HOUSE": {
-  "KICK": 0.75,
+  "KICK": 2.0,
   "SNARE": 2.25,
   "CLAP": 13.25,
   "CHH": 16.25,
@@ -212,11 +212,11 @@
   "RIM": 4.5,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -0.25,
+  "KICK2": 2.0,
   "SNARE2": 5.0
  },
  "TECHNO": {
-  "KICK": -1.75,
+  "KICK": 0.75,
   "SNARE": 1.75,
   "CLAP": 8.5,
   "CHH": 14.75,
@@ -230,11 +230,11 @@
   "RIM": 1.75,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -2.0,
+  "KICK2": 0.5,
   "SNARE2": 3.75
  },
  "MINIMAL": {
-  "KICK": 2.0,
+  "KICK": 4.25,
   "SNARE": 2.75,
   "CLAP": 12.5,
   "CHH": 16.5,
@@ -248,11 +248,11 @@
   "RIM": 7.5,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": 1.75,
+  "KICK2": 3.75,
   "SNARE2": 4.75
  },
  "ELECTRO": {
-  "KICK": -0.25,
+  "KICK": 1.5,
   "SNARE": -1.5,
   "CLAP": 13.5,
   "CHH": 20.25,
@@ -266,11 +266,11 @@
   "RIM": 6.75,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -0.5,
+  "KICK2": 1.75,
   "SNARE2": 4.5
  },
  "DISCO": {
-  "KICK": 1.75,
+  "KICK": 3.0,
   "SNARE": 1.75,
   "CLAP": 11.25,
   "CHH": 11.75,
@@ -284,11 +284,11 @@
   "RIM": 5.25,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -0.25,
+  "KICK2": 2.0,
   "SNARE2": 4.0
  },
  "GARAGE": {
-  "KICK": 0.75,
+  "KICK": 3.0,
   "SNARE": 1.75,
   "CLAP": 9.0,
   "CHH": 13.25,
@@ -302,11 +302,11 @@
   "RIM": 5.0,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -0.25,
+  "KICK2": 2.0,
   "SNARE2": 4.0
  },
  "JUNGLE": {
-  "KICK": 1.25,
+  "KICK": 3.5,
   "SNARE": -0.25,
   "CLAP": 10.75,
   "CHH": 12.5,
@@ -320,11 +320,11 @@
   "RIM": 5.75,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -0.25,
+  "KICK2": 2.0,
   "SNARE2": 1.75
  },
  "DUBSTEP": {
-  "KICK": -1.0,
+  "KICK": 1.5,
   "SNARE": -6.25,
   "CLAP": 10.5,
   "CHH": 11.0,
@@ -338,11 +338,11 @@
   "RIM": 6.5,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -0.25,
+  "KICK2": 2.0,
   "SNARE2": 4.5
  },
  "DEMBOW": {
-  "KICK": 1.0,
+  "KICK": 2.25,
   "SNARE": 1.75,
   "CLAP": 11.25,
   "CHH": 20.5,
@@ -356,11 +356,11 @@
   "RIM": 5.5,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -0.5,
+  "KICK2": 1.75,
   "SNARE2": 5.0
  },
  "AMAPIANO": {
-  "KICK": 1.75,
+  "KICK": 3.0,
   "SNARE": -0.5,
   "CLAP": 10.75,
   "CHH": 19.75,
@@ -374,11 +374,11 @@
   "RIM": 6.75,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -2.25,
+  "KICK2": 0.25,
   "SNARE2": 4.75
  },
  "AFRO": {
-  "KICK": 2.0,
+  "KICK": 3.25,
   "SNARE": 4.75,
   "CLAP": 10.25,
   "CHH": 20.5,
@@ -392,11 +392,11 @@
   "RIM": 6.0,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -0.5,
+  "KICK2": 1.75,
   "SNARE2": 6.0
  },
  "LATIN": {
-  "KICK": 2.25,
+  "KICK": 3.25,
   "SNARE": 4.25,
   "CLAP": 16.5,
   "CHH": 20.25,
@@ -410,11 +410,11 @@
   "RIM": 1.75,
   "COWBELL": 6.25,
   "CLAVE": 0.75,
-  "KICK2": 2.0,
+  "KICK2": 3.25,
   "SNARE2": 4.25
  },
  "TRIBAL": {
-  "KICK": 1.75,
+  "KICK": 1.5,
   "SNARE": 0.5,
   "CLAP": 11.0,
   "CHH": 14.75,
@@ -428,11 +428,11 @@
   "RIM": 6.25,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -0.5,
+  "KICK2": 1.75,
   "SNARE2": 5.0
  },
  "SYNTHWV": {
-  "KICK": 1.75,
+  "KICK": 3.0,
   "SNARE": -3.75,
   "CLAP": 11.0,
   "CHH": 13.25,
@@ -446,11 +446,11 @@
   "RIM": 6.5,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": 0.5,
+  "KICK2": 2.5,
   "SNARE2": 3.25
  },
  "CHIP": {
-  "KICK": 6.0,
+  "KICK": 8.5,
   "SNARE": 3.0,
   "CLAP": 2.5,
   "CHH": -1.5,
@@ -464,11 +464,11 @@
   "RIM": 7.25,
   "COWBELL": 1.0,
   "CLAVE": 4.5,
-  "KICK2": 2.25,
+  "KICK2": 4.0,
   "SNARE2": 4.0
  },
  "ARCADE": {
-  "KICK": 0.75,
+  "KICK": 3.25,
   "SNARE": 3.25,
   "CLAP": 11.75,
   "CHH": -1.5,
@@ -482,11 +482,11 @@
   "RIM": 3.0,
   "COWBELL": -0.5,
   "CLAVE": 3.5,
-  "KICK2": -2.0,
+  "KICK2": 0.5,
   "SNARE2": 2.25
  },
  "GLITCH": {
-  "KICK": 1.75,
+  "KICK": 4.25,
   "SNARE": 7.0,
   "CLAP": 11.75,
   "CHH": -0.25,
@@ -500,11 +500,11 @@
   "RIM": 3.5,
   "COWBELL": -0.5,
   "CLAVE": 3.5,
-  "KICK2": -2.0,
+  "KICK2": 0.5,
   "SNARE2": 1.25
  },
  "INDUSTR": {
-  "KICK": -2.0,
+  "KICK": 0.25,
   "SNARE": -4.25,
   "CLAP": 10.75,
   "CHH": 17.25,
@@ -518,11 +518,11 @@
   "RIM": 5.25,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -0.25,
+  "KICK2": 2.0,
   "SNARE2": 4.25
  },
  "HYPER": {
-  "KICK": -2.0,
+  "KICK": 0.5,
   "SNARE": -2.75,
   "CLAP": 9.25,
   "CHH": 13.5,
@@ -536,11 +536,11 @@
   "RIM": 5.75,
   "COWBELL": 5.25,
   "CLAVE": 1.75,
-  "KICK2": -0.25,
+  "KICK2": 2.0,
   "SNARE2": 4.5
  },
  "AMBIENT": {
-  "KICK": 3.25,
+  "KICK": 0.5,
   "SNARE": 5.75,
   "CLAP": 15.75,
   "CHH": 21.25,
@@ -554,11 +554,11 @@
   "RIM": 6.5,
   "COWBELL": 5.0,
   "CLAVE": 0.25,
-  "KICK2": -2.0,
+  "KICK2": 0.25,
   "SNARE2": 4.5
  },
  "JAZZ": {
-  "KICK": 3.5,
+  "KICK": 3.0,
   "SNARE": 10.25,
   "CLAP": 10.75,
   "CHH": 14.75,

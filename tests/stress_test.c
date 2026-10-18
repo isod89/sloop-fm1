@@ -40,8 +40,14 @@ static void font_ref_build(void)
         big_off[gi] = (uint16_t)o;
         for (y = 0; y < 32u; y++)
             for (x = 0; x < wb; x++) {
-                uint32_t sx = x / 2u, v = s[(y / 2u) * bs + sx / 2u];
-                v = (sx & 1u) ? (v & 15u) : (v >> 4);
+                uint32_t sx = x / 2u, v;
+                if (FONT_S.bits == 1u) {                  /* (2.6: S at 1 bit a pixel) */
+                    uint32_t i = (y / 2u) * ws + sx;
+                    v = (s[i >> 3] >> (7u - (i & 7u))) & 1u ? 15u : 0u;
+                } else {
+                    v = s[(y / 2u) * bs + sx / 2u];
+                    v = (sx & 1u) ? (v & 15u) : (v >> 4);
+                }
                 if (x & 1u) big_data[o + y * bb + x / 2u] |= (uint8_t)v;
                 else big_data[o + y * bb + x / 2u] = (uint8_t)(v << 4);
             }
@@ -50,6 +56,7 @@ static void font_ref_build(void)
     }
     FONT_L2X = FONT_L;
     FONT_L2X.sh = 0;
+    FONT_L2X.bits = 0;                                /* (the reference: 4-bit, stored at 2x) */
     FONT_L2X.off = big_off;
     FONT_L2X.data = big_data;
 }

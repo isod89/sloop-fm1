@@ -9,17 +9,20 @@
  *                 src; 17: the whole kit from a factory kit (1 byte: its index)
  *   75 DSYN_STORE -> rc (0 ok, 3 stop the song first, 4 flash)
  *   76 DSYN_PLAY  k, lane, velocity -> k, lane, rc: the sound, on the drum voices (the drum track's level) */
+#ifndef UI_SMALL                 /* (2.7) compiled for size: not the audio path (gfx.c UI_SMALL); the host tests: nothing */
+#define UI_SMALL
+#endif
 enum { ED_DSYN_LIST = 72, ED_DSYN_GET, ED_DSYN_PUT, ED_DSYN_STORE, ED_DSYN_PLAY };
 #define ED_DSYN_USER 64u
 
-static void ed_dsyn_name(const char *n8)
+UI_SMALL static void ed_dsyn_name(const char *n8)
 {
     char s[9];
     memcpy(s, n8, 8);
     s[8] = 0;
     ed_str(s, 8);
 }
-static uint32_t ed_dsyn_store(void)
+UI_SMALL static uint32_t ed_dsyn_store(void)
 {
 #if FELUCCA_FLASH
     persist_t p;
@@ -37,7 +40,7 @@ static uint32_t ed_dsyn_store(void)
 #endif
 }
 
-static int ed_dsyn_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
+UI_SMALL static int ed_dsyn_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
 {
     uint8_t b[2u + DS_LANES * sizeof(dsnd_t)];
     uint32_t i, rc;

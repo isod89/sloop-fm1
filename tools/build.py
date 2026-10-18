@@ -64,6 +64,9 @@ def use_docker():
     return os.environ.get("JIELI_DOCKER", "0" if native else "1") == "1"
 
 
+LAST_ERR = ""                       # what the last failed toolchain call said (build_app: XIP overflowed)
+
+
 def tc(tool, *args):
     """run a toolchain binary (pi32v2/bin/..., common/bin/...) with cwd SRC; paths relative to SRC"""
     rel = [str(Path(a).resolve().relative_to(SRC)) if isinstance(a, Path) else a for a in args]
@@ -76,7 +79,9 @@ def tc(tool, *args):
         cmd = [str(toolchain() / tool), *rel]
     r = subprocess.run(cmd, cwd=SRC, capture_output=True, text=True)
     if r.returncode:
-        sys.stderr.write(r.stdout + r.stderr)
+        global LAST_ERR
+        LAST_ERR = r.stdout + r.stderr
+        sys.stderr.write(LAST_ERR)
         raise SystemExit(f"build: {tool} failed")
     if r.stderr.strip():
         sys.stderr.write(r.stderr)
@@ -176,7 +181,8 @@ def build_loader():
 def build_app():
     flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ibuild/gen"]
     for flag in ("FELUCCA_FLASH", "FELUCCA_OTA", "FELUCCA_OTA_DRYRUN", "FELUCCA_CDC", "FELUCCA_UART",
-                 "FELUCCA_ICONS", "FELUCCA_SLICE", "FELUCCA_SNES"):
+                 "FELUCCA_ICONS", "FELUCCA_SLICE", "FELUCCA_CPU1", "FELUCCA_LOGO_TEXT",
+                 "FELUCCA_SNES"):
         v = os.environ.get(flag)    # unset: the default in firmware/src/felucca.c
         if v in ("0", "1"):
             flags.append(f"-D{flag}={v}")
@@ -186,15 +192,17 @@ def build_app():
     tc_all(("cc", "-c", FW / "crt0.S", "-o", OUT / "crt0.o"),
            ("cc", "-c", FW / "hal" / "fm1_vec.S", "-o", OUT / "fm1_vec.o"),
            ("cc", "-c", FW / "hal" / "fm1_isr.S", "-o", OUT / "fm1_isr.o"),
+           ("cc", "-c", FW / "hal" / "fm1_cpu1.S", "-o", OUT / "fm1_cpu1.o"),
            ("cc", *flags, "-c", FW / "src" / "felucca.c", "-o", OUT / "felucca.o"))
     elf = OUT / "felucca.elf"
     tc("pi32v2/bin/ld", "-T", FW / "app.ld", OUT / "crt0.o", OUT / "fm1_vec.o", OUT / "fm1_isr.o",
-       OUT / "felucca.o", "-o", elf)
-    for sect in ("text.bin", "data.bin", "ramtext.bin"):
+       OUT / "fm1_cpu1.o", OUT / "felucca.o", "-o", elf)
+    for sect in ("text.bin", "data.bin", "ramtext.bin", "c1text.bin"):
         (OUT / sect).unlink(missing_ok=True)
     *_, syms, dis, rt = tc_all(("common/bin/objcopy", "-O", "binary", "-j", ".text", elf, OUT / "text.bin"),
                                ("common/bin/objcopy", "-O", "binary", "-j", ".data", elf, OUT / "data.bin"),
                                ("common/bin/objcopy", "-O", "binary", "-j", ".ram_text", elf, OUT / "ramtext.bin"),
+                               ("common/bin/objcopy", "-O", "binary", "-j", ".c1_text", elf, OUT / "c1text.bin"),
                                ("common/bin/objdump", "-t", elf),
                                ("common/bin/objdump", "-d", elf),
                                ("common/bin/objdump", "-d", "-j", ".ram_text", elf))
@@ -203,8 +211,9 @@ def build_app():
     def symv(name):
         return int(re.search(r"^([0-9a-f]+) .*\s" + name + r"$", syms, re.M).group(1), 16)
     img = bytearray((OUT / "text.bin").read_bytes())
-    # .ram_text and .data follow .text at their load addresses; crt0 copies them by words
-    for sect, lname in (("ramtext.bin", "_rt_load"), ("data.bin", "_data_load")):
+    # .ram_text, .c1_text (the second core's loop) and .data follow .text at their load addresses, in
+    # that order; main.c copies them by words at boot
+    for sect, lname in (("ramtext.bin", "_rt_load"), ("c1text.bin", "_c1_load"), ("data.bin", "_data_load")):
         load = symv(lname)
         if load % 4:
             raise SystemExit(f"{lname} {load:#x} is not word aligned")
@@ -231,6 +240,9 @@ def check(img, syms, dis, rt):
         errors.append(f".ram_text contains calls: {rt_calls[:3]}")
     else:
         notes.append(f".ram_text: {len([ln for ln in rt.splitlines() if LINE.match(ln)])} insns, no calls")
+    mc1 = [re.search(r"^([0-9a-f]+) .*\s" + n + r"$", syms, re.M) for n in ("_c1_start", "_c1_end")]
+    if all(mc1):
+        notes.append(f".c1_text: {int(mc1[1].group(1), 16) - int(mc1[0].group(1), 16)} B, the second core's loop in RAM")
     for ln in dis.splitlines():     # nothing may call or load an address in the chip ROM
         mm = LINE.match(ln)
         if not mm:
@@ -247,7 +259,9 @@ def check(img, syms, dis, rt):
         return int(mm.group(1), 16) if mm else 0
     bss = sym("_bss_end") - 0x01C08000
     pool = sym("_pool_end") - sym("_pool_start")
-    notes.append(f"image {len(img)} B; RAM .data+.bss {bss} B of 98304; pool {pool} B of {0x54000}")
+    lowram = sym("_lr_end") - sym("_lr_start")    # the SRAM below the RAM region (app.ld .lowram), up to 0x01C07F00
+    notes.append(f"image {len(img)} B; RAM .data+.bss {bss} B of 98304; lowram {lowram} B of "
+                 f"{0x01C07F00 - sym('_lr_start')}; pool {pool} B of {0x54000}")
     if bss > 96 * 1024:
         errors.append("RAM region overflow")
     if 0x54000 - pool < 8192:                     # keep >= 8 KiB of the pool spare
@@ -322,7 +336,15 @@ def main():
         gen, ldr = ex.submit(generate), ex.submit(build_loader)
         gen.result()
         ota = ldr.result()
-    img, syms, dis, rt = build_app()
+    try:
+        img, syms, dis, rt = build_app()
+    except SystemExit:
+        # (2.7) the flash is full: the boot logo as text ("S" and "LOOP" in the tracks' colours, splash.c) gives 4.6 KB
+        if "overflow" not in LAST_ERR or os.environ.get("FELUCCA_LOGO_TEXT") == "1":
+            raise
+        print("build: the flash is full: building again with the boot logo as text (FELUCCA_LOGO_TEXT=1, 4.6 KB less)")
+        os.environ["FELUCCA_LOGO_TEXT"] = "1"
+        img, syms, dis, rt = build_app()
     errors, notes = check(img, syms, dis, rt)
     hal_err = mmio_check()
     errors += hal_err

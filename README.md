@@ -17,11 +17,11 @@ Free and open source (GPL-3.0), based on <a href="https://github.com/hugelton/Fe
 
 SLOOP turns the FM-1 into a four-track groovebox you play live: **three synths and a drum machine** with 16 sounds on the white keys, twelve synthesis engines, 153 sounds, 37 drum kits, your own samples, a song mode you play with your hands, USB audio, MIDI in on the jack and MIDI clock — and now **physical models** (guitars, sitar, bells, hand drums), a **noise** engine, **six-operator FM with DX7 patches**, **parameter locks**, **micro timing**, **fills**, a **quick chain** of sections and the **sequencer to MIDI out**. House, techno, hip-hop, trap, drum & bass, amapiano, synthwave, lo-fi, ambient, chiptune — it does not pick a style for you. No factory patterns, nothing to load: everything you hear, you play.
 
-> **Status:** 2.5 (two new engines, PHYS and NOISE, 77 new sounds, a drum synth, DX7 cartridges in one go, MIDI CCs, 48 kHz USB audio, and the fixes of 2.4.1). Still a beta: install at your own risk, and please [report](../../issues) what you find. Your projects, presets, samples and settings are kept when you update, and you can go back at any time (see [Going back](#going-back)).
+> **Status:** 2.7.1 (a fix for 2.7: an FM-1 whose second core ran late showed a FELUCCA CRASH screen and restarted; it now carries on, on one core). 2.7: two processor cores, fifteen arp modes, KBD HOLD, drum TUNE and DECAY, favourite sounds, looping samples, QUANT off, MIDI 3, your own screen colours; after 2.6's 27 punch-in effects, INSERT and MIDI LEARN. Still a beta: install at your own risk, and please [report](../../issues) what you find. Your projects, presets, samples and settings are kept when you update, and you can go back at any time (see [Going back](#going-back)).
 
 ## Contents
 
-1. [What's new in 2.5 and 2.4](#whats-new-in-25)
+1. [What's new in 2.7, 2.6 and 2.5](#whats-new-in-27)
 2. [Screenshots](#screenshots)
 3. [Features](#features)
 4. [Install](#install)
@@ -40,6 +40,49 @@ SLOOP turns the FM-1 into a four-track groovebox you play live: **three synths a
 17. [Licence](#licence)
 
 ---
+
+## What's new in 2.7
+
+**2.7.1** fixes a crash: when the FM-1's second core did not finish its share of the sound in time, SLOOP stops it and carries on on one core, but stopping it raised a false alarm on the chip, and the FM-1 showed a red FELUCCA CRASH screen and restarted. It now holds the second core the safe way (after Felucca 1.6.1): a short glitch, and the music goes on. The crash screen also says more (the stack, the second core's state) and stays 10 seconds, long enough for a photo.
+
+- **Two cores:** the sound now runs on both of the FM-1's cores (andrerezemini, #111): about twice the room, so many voices and INSERT effects no longer crackle. On by default (HOME menu → SYSTEM → 2ND CORE).
+- **Fifteen arp modes** from Felucca 1.5.1 (REPEAT, DNUP, UP+8, CONV, DIVG, PINKY, THUMB, WALK, CHORD), ORD in the order you pressed, and the arp keeps going when you change the sound.
+- **KBD HOLD** (#103): HOLD with the arp off holds your chord. **ARP SWG** works stopped too (#52).
+- **Samples that loop** while held (LOOP, LOOP+TAIL, zero-crossing loop points, a WAV's own loop), on the editor's Samples page.
+- **Tune and decay every drum sound** (DRUMS screen, new SOUND page), on every kit, kept with each section.
+- **Kicks you hear on any speaker:** the synthesised kits' kicks (808, 909, 606, TRAP…) were a 50 Hz sine the FM-1's speaker, a phone or earbuds cannot play: only a quiet click was left. They now have the drive and pitch sweep that carry them up there, and more level.
+- **Favourite sounds** at the top of the PRESETS list (PRESETS page, KNOB 4).
+- **QUANT off** on the REC screen keeps your timing as nudges; **overdub** over held notes.
+- **GLO → MIDI 3:** punch-in effects from MIDI (FX CH), drums from any 16 notes (DR MAP 1-16), the 14 buttons over MIDI (REMOTE), **CLOCK OUT** on USB (#106). **CC 74** sweeps each engine's own cutoff (after @renebohne, #71).
+- **Faster knobs** (KNOB ACCEL) and LEVEL / PAN glide, after JIANT FM.
+- **The editor's LIVE page:** play a whole show from a computer, tablet or phone: PLAY / REC, BPM and TAP, sections A–D on the next bar, a mixer (level, mute, solo, filter, pan, sends, sound), the 27 punch-in effects as pads, keys and drum pads, fills, full screen and computer-key shortcuts; songs saved as files and played from a **playlist**. **Scenes** (8, at once or morphed over bars, an A/B crossfader), a **PERFORM** card (every knob of the track you play, its steps), **chains**, **roll** and **erase** from the keys, the pattern's tools, each pad's tune and decay, **throws** and the master **volume**, **MIDI learn** for your controller, a **lock**, the set **recorded as WAV**, and a **?** on every card that explains it.
+- **Steadier on two cores:** the supplies at M-VAVE's own levels from power-on (after X0X 1.0.9).
+- **Your own screen colours:** the editor's Theme page (light themes too), MENU → COLOR.
+- **USB RATE** (44.1 / 48 kHz) for phones; the drum **MUTE mode stays** after EDIT (#126).
+- **SAVE → SECTION A–D** (was PROJECT 1–4): the FM-1 holds one song; keep several as editor backups.
+
+Details in [SLOOP.md](SLOOP.md#new-in-27). Projects, autosaves and backups from 2.6 load as they are; a project saved in 2.7 opens in 2.6 without the 2.7 features.
+
+## What's new in 2.6
+
+- **27 punch-in effects:** eleven more on the black keys (hold FX): KILL LOW / MID / HIGH, REWIND, OCT UP, FLANGER, AUTO-PAN, FREEZE, LOOP 8T, MONO, FADE OUT.
+- **From Felucca 1.4 / 1.5 (Leo Kuroshita):** an **INSERT** effect on every track (SOFT, HARD, FOLD, FUZZ, CRUSH, PHASR, FLANG, CHOR, with dry / wet), **LFO 2** (tempo SYNC, TRIG NOTE / FREE, POL BI / UNI), **ENV SYNC** (attack, decay and release as note values), the **ANALOG filter** as LP, BP or HP, a note's **LEN** in steps and each step's **velocity**, **MIDI LEARN** (GLO + F#3), and the latched-arp fix (#191).
+- **TEXTURE:** a looping bed under the mix (vinyl, tape, rain, wind, radio, room tone or your own sample), breathing slowly with the tempo, without taking a track (GLO → TEXTURE).
+- **Live drum mutes:** EDIT + a black key, then the sounds' keys.
+- **Sustain pedal and pitch bend** from a MIDI keyboard (the bend's range: GLO → MIDI 2).
+- **Each track on its own MIDI channel** (GLO → MIDI: CH1, CH2, CH3, OTHER), in and out, for an external sequencer (drums 10, bass 2, pad 11, lead 8…). Thanks to the viewer who asked!
+- **Step entry from a MIDI keyboard:** on the STEP page, the notes your keyboard plays write the step, as the FM-1's keys do.
+- **Program Change, 1/4D delay, REV / ECHO THROW** (FX + OCT− / OCT+), after Felucca 1.5.1.
+- **Erase a saved loop:** SAVE → PROJECT → ERASE (KNOB 2) empties a project slot, song section A–D. Thanks to the viewer who asked!
+- **The web editor offline:** *Download the editor* saves it as one file that runs in Chrome or Edge without internet, or *Install the app* (Android too): the editor and the installer then open without internet.
+- **MIDI IN on one channel** (GLO → MIDI 2 → IN = CH 1 … 16), for a sequencer driving other gear on the same cable.
+- **A bolder screen:** Terminus Bold, all in capitals.
+- **No more clicks** when loading a sound over held notes, or when a filter (track, drums, master FILT) starts to close.
+- **A cleaner output:** the master limiter looks ahead, so loud kicks and basses no longer crackle with MASTER turned up (headphones especially).
+- **Fixed in the web editor:** the same value set on a second track (DIV 1/8 on the drums, then on track 1) is sent again.
+- **The installer finds an FM-1 running CLIPPER** (or another firmware naming its USB port its own way).
+
+Details in [SLOOP.md](SLOOP.md#new-in-26). Projects, autosaves and backups from 2.5 load as they are; a project saved in 2.6 does not open in 2.5 (keep a backup before updating). Going back to 2.5 after changing GLO → MIDI or learning CCs: restore your SYN drum kits from a backup (2.5 does not read the 2.6 settings and starts them over).
 
 ## What's new in 2.5
 
@@ -69,8 +112,8 @@ Projects, autosaves and backups from 2.4 load as they are. Going back to 2.4: a 
 | **Micro timing** | Hold a step: **KNOB 4** nudges it, half a step early to half a step late, in 1/64. |
 | **Fills** | Hold a step: **OCT+** makes it *fill only* or *no fill*. GLO + key **9** plays a fill while held, key **10** on the whole next bar. |
 | **Quick chain** | Hold SAVE and tap A B B C…: let go and the sections play in turn, each for its pattern's length, looped. |
-| **Clock only** | GLO → SYSTEM → **IN** = **CLOCK**: follow a DAW's clock and ignore its notes. |
-| **Sequencer to MIDI out** | GLO → SYSTEM → **MIDI** = **SEQ**: the steps, the arp and the rolls go out on USB MIDI — drive another synth, or record the notes in a DAW. |
+| **Clock only** | GLO → MIDI 2 → **IN** = **CLOCK**: follow a DAW's clock and ignore its notes. |
+| **Sequencer to MIDI out** | GLO → MIDI 2 (or SYSTEM) → **OUT** = **SEQ**: the steps, the arp and the rolls go out on USB MIDI — drive another synth, or record the notes in a DAW. |
 | **Your own drum kits** | A 4th sample slot (USR4). KIT USR1–USR4 or **USR3+4** (a big kit, about 15 s) on the drum track: 16 of your sounds, one per lane, built in the editor's new **Drum kit** page (drop WAVs on pads, sorted by name; pitch, gain, length; choose where; ZIP to share). |
 | **New web editor** | Rebuilt in the FM-1's own look (black, the four track colours, its pixel font): each button's pages as rows of four coloured knobs, values you drag like knobs, the steps as the device's tiles. |
 | **CHORD+** | In chord mode the black keys change the chord (major ↔ minor, 7th, sus4, 9th, inversion), even while it is held; STRUM strums the chords, VLEAD voices them smoothly. After HiChord and minichord. |
@@ -102,21 +145,34 @@ The full list, and what came in 2.0, 2.1 and 2.2: [SLOOP.md](SLOOP.md#new-in-23)
 
 ## Screenshots
 
-<p align="center"><img src="assets/screens/sloop-2.3-screens.png" alt="SLOOP 2.3 screens on the FM-1" width="760"></p>
+<p align="center"><img src="assets/screens/sloop-2.6-screens.png" alt="SLOOP 2.6 screens on the FM-1" width="760"></p>
 
-<p align="center"><sub>The FM-1's screen in 2.3: the tracks, the REC screen and its count-in, the menu (lights and USB audio), MIDI clock, about.</sub></p>
+<p align="center"><sub>The FM-1's screen in 2.6, in its bold font: the tracks playing, the 27 punch-in effects (FREEZE held, REV THROW on), an INSERT on a track, LFO 2 synced to the tempo, a note's LEN on the STEP page, the TEXTURE bed, every track's MIDI channel (GLO → MIDI, MIDI 2) and MIDI LEARN.</sub></p>
 
-<p align="center"><img src="assets/screens/screens.png" alt="SLOOP screens on the FM-1" width="760"></p>
+<p align="center"><img src="assets/screens/editor-sound.png" alt="SLOOP web editor: the Sound page with INSERT, ENV SYNC and LFO 2" width="760"></p>
 
-<p align="center"><sub>Start-up, the four tracks (recording), the drum grid and the acoustic kit, the sounds by kind, the layers (punch-in FX, steps, key and chords, mix, erase), a free take, the FX sends.</sub></p>
+<p align="center"><sub>The web editor's Sound page in 2.6: the INSERT and its dry / wet, ENV SYNC, LFO 2 (SYNC, TRIG, POL).</sub></p>
 
-<p align="center"><img src="assets/screens/editor-drums.png" alt="SLOOP web editor: the drum track" width="760"></p>
+<p align="center"><img src="assets/screens/editor-midi-texture.png" alt="SLOOP web editor: MIDI and TEXTURE settings" width="760"></p>
 
-<p align="center"><sub>The web editor: the drum track as a 16-lane grid, with levels and ratchets.</sub></p>
+<p align="center"><sub>Settings: each track's MIDI channel, the other channels and the bend range; the TEXTURE bed.</sub></p>
 
-<p align="center"><img src="assets/screens/editor-chop.png" alt="SLOOP web editor: CHOP" width="760"></p>
+<p align="center"><img src="assets/screens/sloop-screens.png" alt="SLOOP screens on the FM-1" width="760"></p>
 
-<p align="center"><sub>CHOP: a 20 s recording cut into 16 chops, 8 kept, fitted to the slot.</sub></p>
+<p align="center"><sub>And the rest, in 2.6's look: the drum grid and kit, a step held in the SEQ layer (its note, velocity, ratchet and a lock), the GLO mix layer, the SAVE layer's song sections and chain, PHYS, FM6, chords on the keys (SEL), the visualiser.</sub></p>
+
+<p align="center"><img src="assets/screens/editor-drumsynth.png" alt="SLOOP web editor: the Drum synth page" width="760"></p>
+
+<p align="center"><sub>The web editor's Drum synth page: every value of every drum sound, heard on the FM-1 at once.</sub></p>
+
+<p align="center"><img src="assets/screens/editor-cartridge.png" alt="SLOOP web editor: a DX7 cartridge on the FM6 panel" width="760"></p>
+
+<p align="center"><sub>A 32-voice DX7 cartridge dropped on the FM6 panel: 27 voices ticked, into the bank in one write, and as user presets if you choose.</sub></p>
+
+<p align="center"><img src="assets/screens/editor-pianoroll.png" alt="SLOOP web editor: the piano roll" width="760"></p>
+
+<p align="center"><sub>The piano roll: draw, delete and stretch notes and chords with the mouse; Export MIDI / Import MIDI next to it.</sub></p>
+
 
 ## Features
 
@@ -126,12 +182,12 @@ Every function button is a **layer**: hold it and the 16 white keys and the four
 
 | Hold | The white keys | KNOB 1 · 2 · 3 · 4 |
 | --- | --- | --- |
-| **FX** — punch | 16 punch-in effects on the whole mix: loops 1/4–1/32, stutter, reverse, tape stop, half speed, filter sweeps, phone, bit crush, alias, gate, echo, tape wobble | FILTER · DUST · DUCK · the track's filter |
-| **EDIT** — erase | erase a sound or a note as the loop plays (stopped: from the whole pattern) | SHIFT · LENGTH ×2 / ½ · TRANSPOSE |
+| **FX** — punch | 27 punch-in effects on the whole mix. White keys: loops 1/4–1/32, stutter, reverse, tape stop, half speed, filter sweeps, phone, bit crush, alias, gate, echo, tape wobble. Black keys (2.6): kill low / mid / high, rewind, octave up, flanger, auto-pan, freeze, loop 1/8T, mono, fade out | FILTER · DUST · DUCK · the track's filter |
+| **EDIT** — erase | erase a sound or a note as the loop plays (stopped: from the whole pattern); a black key: live drum mutes (2.6) | SHIFT · LENGTH ×2 / ½ · TRANSPOSE |
 | **ARP** — roll | note repeat on the grid, recorded as ratchets | RATE (1/8 … 1/64) |
-| **SEQ** — steps | the 16 steps of the page; a step held: a level, a ratchet, a nudge, parameter locks (PRESETS / ALGORITHM), a fill condition (OCT+) | SOUND / NOTE · DIV · SWING · LENGTH (a step held: SOUND / NOTE · LEVEL · RATCHET · NUDGE) |
+| **SEQ** — steps | the 16 steps of the page; a step held: a level, a ratchet, a nudge, parameter locks (PRESETS / ALGORITHM), a fill condition (OCT+) | SOUND / NOTE · DIV · SWING · LENGTH (a step held: SOUND / NOTE · LEVEL or, synths, VELOCITY · RATCHET · NUDGE) |
 | **SEL** — key | the key of the song | CHORD · SCALE · KEYS · TRANSPOSE |
-| **GLO** — mix | 1–4 mute, 5–8 solo, 9 fill (held), 10 fill on the next bar, 16 tap tempo | the levels of tracks 1–4 |
+| **GLO** — mix | 1–4 mute, 5–8 solo, 9 fill (held), 10 fill on the next bar, 16 tap tempo; F#3: MIDI LEARN (2.6) | the levels of tracks 1–4 |
 | **SAVE** — song | 1–4 play sections A–D (several tapped while held: a quick chain), 5–8 save the loop into them, 13 loop / song, 14 record the song, 16 the chain | — |
 
 Keys 1, 5, 9 and 13 glow dimly while a layer is held: the first key of each row of the 4 × 4 grid on the screen. **EDIT + OCT− / OCT+** is undo / redo.
@@ -147,7 +203,7 @@ Keys 1, 5, 9 and 13 glow dimly while a layer is held: the first key of each row 
 
 - **Twelve engines:** analog, 4-op FM, **6-op FM with DX7 patches (FM6, 2.4)**, phase distortion, three-oscillator, tonewheel organ, formant voice, granular, lo-fi chip, sampler, **physical models (PHYS, 2.5)**, **noise (NOISE, 2.5)**.
 - **153 sounds, browsed by kind** — basses (sliding 808s, acid 303, reese, FM, bass guitar), guitars, sitar and koto (physical models), keys (Rhodes, a real Steinway grand, house and afro keys), organs and accordion, pads (string machine, granular clouds), leads (supersaw, talkbox, pan flute, harmonica), plucks and bells (harp, steel drum, glockenspiel, celesta, xylophone), stabs and dub chords — every one level-matched. **32 slots** for your own presets.
-- Envelopes (with a pitch punch for 808s), LFO, arpeggiator, glide and voice modes (POLY, MONO, LEGATO, UNISON), per-track drive and slicer, sends to a **stereo chorus**, a **tempo delay** (dotted 1/8 and 1/16 too) and a **stereo reverb**.
+- Envelopes (with a pitch punch for 808s; 2.6: in note values with ENV SYNC), LFO (2.6: tempo-synced, free-running or unipolar), arpeggiator, glide and voice modes (POLY, MONO, LEGATO, UNISON), per-track drive, **INSERT effect** (2.6: soft / hard clip, wavefolder, fuzz, bit crush, phaser, flanger, chorus) and slicer, ANALOG's filter as LP, BP or HP (2.6), sends to a **stereo chorus**, a **tempo delay** (dotted 1/8 and 1/16 too) and a **stereo reverb**.
 - **Key and chords (SEL):** the key of the song for all synths, 16 scales, one-key chords (triad, 7th, 9th, sus4, power), keys snapped to the scale or the scale on the white keys.
 
 ### Recording and the sequencer
@@ -165,8 +221,9 @@ Save up to four sections **A–D** (SAVE + keys 5–8), play them live on the ne
 
 ### Effects and master
 
-- **16 punch-in effects** (FX + a key), locked to the tempo.
+- **27 punch-in effects** (FX + a key, white or black), locked to the tempo: DJ kills, rewind, reverb freeze and more.
 - **Master:** **DUST** (an old sampler and a record: bits, rate, crackle), **DUCK** (the kick pumps the synths), **FILT** (a DJ filter: low-pass ← off → high-pass), and an output limiter.
+- **TEXTURE (2.6):** a looping bed under the mix: vinyl, tape, rain, wind, radio, room tone or one of your samples, with level, tone and a slow breath over 1–16 bars.
 
 ### Your own samples
 
@@ -178,8 +235,8 @@ Save up to four sections **A–D** (SAVE + keys 5–8), play them live on the ne
 - **USB MIDI** in and out, class compliant.
 - **TRS MIDI IN** (the 3.5 mm jack, 2.3) for a keyboard or a pad controller.
 - **MIDI clock in** (USB or TRS): tempo, START, CONTINUE, STOP.
-- **MIDI CCs** (2.5): level, pan, filter, resonance, envelope, glide and the sends from a controller's knobs.
-- **MIDI out:** the keys always; the sequencer, the arp and the rolls too with GLO → SYSTEM → MIDI = SEQ (2.4).
+- **MIDI CCs** (2.5): level, pan, filter, resonance, envelope, glide and the sends from a controller's knobs; **MIDI LEARN** (2.6): any knob of yours onto any parameter of a track.
+- **MIDI out:** the keys always; the sequencer, the arp and the rolls too with GLO → MIDI 2 → OUT = SEQ (2.4).
 - Details: [MIDI and USB audio](#midi-and-usb-audio).
 
 ### USB audio (2.3)
@@ -193,7 +250,7 @@ Every button can glow so its label is readable on a black FM-1; the C keys or ev
 ### Memory and safety
 
 - **Autosave:** stop and leave it 2.5 s, your work is kept; at power-on SLOOP comes back exactly as you left it.
-- **4 projects**, **32 user presets**, **27 FM6 patches**, **undo / redo**.
+- **1 song of 4 sections (A–D)** (more songs as backup files), **32 user presets**, **27 FM6 patches**, **undo / redo**.
 - **Full backup and restore** from the web editor (2.3).
 - **Safe updates:** the installer checks the package (SHA-256) before writing it, the update loader checks it again (CRC) before starting it; an interrupted install finishes when you press Install again; **USB rescue** (OCT− at power-on).
 
@@ -232,7 +289,7 @@ Nothing to download or compile. Your projects, user presets, samples and setting
 3. **Press REC on the "1" after your last bar.** The loop closes, its length sets the tempo, the hits snap to the grid and it plays at once. (Prefer a set tempo, or a count-in? Turn KNOB 1 and KNOB 3 on the REC screen before you start.)
 4. **REC** again while it plays: you record on top. Hold **ARP** and hold the hat key for a hat roll.
 5. **ALGORITHM** to track **1**, **REC**, play a bass line. Hold **SEL** and press the key of your song; on track 2, hold SEL and turn **KNOB 1** to *7TH*: every white key now plays a chord.
-6. Hold **FX** and press a white key for a punch-in effect; still holding FX, turn **KNOB 2** for DUST, **KNOB 3** for DUCK.
+6. Hold **FX** and press a key (white or black) for a punch-in effect; still holding FX, turn **KNOB 2** for DUST, **KNOB 3** for DUCK.
 7. A mistake? Hold **EDIT** and press **OCT−**: undo.
 
 ## The controls
@@ -257,18 +314,20 @@ Colours: **blue** track 1 and KNOB 1, **green** 2, **yellow** 3, **orange** 4 (d
 
 ## The menu: settings of the FM-1
 
-Hold **HOME**. The menu is in four sections, as the pages are: **SCREEN** (COLOR, ZOOM), **LIGHTS** (LIGHTS, KEYS, NOTES), **AUDIO** (LOWCUT, USB AUDIO, USB SERIAL), **SYSTEM** (HARDWARE CALIBRATION, ABOUT). **SELECT** goes from one section to the next, **KNOB 1, 2, 3** set the section's rows (each row shows its knob's colour), **PRESETS** moves the cursor, **OCT+** steps the cursor's setting round or opens it (CALIBRATION, ABOUT), **OCT−** closes. These are settings of the FM-1, not of a project: loading a project or NEW PROJECT does not change them, and the backup keeps them.
+Hold **HOME**. The menu is in four sections, as the pages are: **SCREEN** (COLOR, ZOOM, KNOB ACCEL), **LIGHTS** (LIGHTS, KEYS, NOTES), **AUDIO** (LOWCUT, USB AUDIO, USB RATE; 2.6: USB SERIAL), **SYSTEM** (HARDWARE CALIBRATION, ABOUT). **SELECT** goes from one section to the next, **KNOB 1, 2, 3** set the section's rows (each row shows its knob's colour), **PRESETS** moves the cursor, **OCT+** steps the cursor's setting round or opens it (CALIBRATION, ABOUT), **OCT−** closes. These are settings of the FM-1, not of a project: loading a project or NEW PROJECT does not change them, and the backup keeps them.
 
 | Item | Choices | What it does |
 | --- | --- | --- |
-| **COLOR** (SCREEN) | 5 palettes | the screen's colours |
+| **COLOR** (SCREEN) | 5 palettes, then your theme (2.7) | the screen's colours; your own made on the editor's Theme page (and shared as one line of text) |
 | **ZOOM** (SCREEN) | OFF / ON | a large readout of the value you turn |
+| **KNOB ACCEL** (SCREEN, 2.7) | ON / OFF | ON: a fast turn sweeps wider, progressively (after JIANT FM); OFF: one value a detent |
 | **LIGHTS** (LIGHTS) | OFF / LOW / MID / HIGH | every button glows at that level; what is active stays at full light |
 | **KEYS** | OFF / C KEYS / WHITE KEYS / ALL KEYS | the C keys, every white key, or every key glow too |
 | **NOTES** | OFF / ON | the notes playing on the selected synth track light their keys (sequencer notes too, at least a tenth of a second each), on every page and in every layer |
 | **SPEAKER LOWCUT** (AUDIO) | OFF / ON | a low cut for the small built-in speaker |
 | **USB AUDIO** | MASTER / FULL | the level of the USB audio input: follows the MASTER knob, or a fixed full level |
-| **USB SERIAL** | OFF / ON | a serial console for developers; OFF (default) so macOS 13–15 show the USB audio input; at the next start |
+| **USB SERIAL** (2.6 only) | OFF / ON | a serial console for developers; OFF (default) so macOS 13–15 show the USB audio input; at the next start. From 2.7 not in the FM-1's build (the flash is full) |
+| **USB RATE** (2.7) | AUTO / 44.1 KHZ / 48 KHZ | the rates the USB audio input offers; 44.1 KHZ if a phone records it distorted; at the next start |
 | **HARDWARE CALIBRATION** (SYSTEM) | | the panel table, if a key or a knob answers wrongly |
 | **ABOUT** | | the version (*SLOOP 2.4*) and its build date, the credits |
 
@@ -285,21 +344,25 @@ SLOOP takes MIDI from two places at once:
 
 | MIDI channel | Plays |
 | --- | --- |
-| 1, 2, 3 | synth tracks 1, 2, 3 |
-| 10 | the drum track (the nearest of its 16 sounds; GLO → DRUMS → CH changes the channel) |
-| 4–16 | the selected track: set your keyboard to channel 4 and it follows ALGORITHM |
+| 1, 2, 3 | synth tracks 1, 2, 3 (2.6: GLO → MIDI → CH1, CH2, CH3 set any channel for each) |
+| 10 | the drum track (the nearest of its 16 sounds; GLO → MIDI → CH4 changes the channel) |
+| the others | the selected track: set your keyboard to channel 4 and it follows ALGORITHM (2.6: GLO → MIDI → OTHER = OFF ignores them) |
+
+**Your own channels (2.6).** For an external sequencer with its own channels (drums 10, bass 2, pad 11, lead 8…): GLO → **MIDI** sets each track's channel (CH1, CH2, CH3, CH4 the drums: OFF or 1–16, in and out; two tracks never share one) and GLO → **MIDI 2** the rest: **IN**, **OTHER** (SEL: the channels no track has play the selected track; OFF: ignored), **OUT**, **BEND**. Notes, CCs and MIDI out follow. Settings of the FM-1, kept through power-off.
+
+Your sequencer uses the other channels for other gear? GLO → MIDI 2 → **IN = CH 1 … CH 16** (2.6): SLOOP then answers that one channel only, on the selected track, and ignores the rest.
 
 A USB keyboard plugged **straight into the FM-1** cannot work: both are USB devices, and a USB link needs a host (a computer, a phone, or a USB MIDI host box). Bluetooth MIDI is not supported: SLOOP, like Felucca, never switches the radio on.
 
 ### MIDI out
 
-What you play on the keys always goes out on USB MIDI, each track on its channel (1–3 the synths, 10 the drums). GLO → SYSTEM → **MIDI** = **SEQ** sends what the sequencer, the arp and the rolls play too: every note is ended, STOP ends whatever was still on, and notes that came in from a computer or the jack are never sent back. Record the FM-1's MIDI in a DAW and you get your pattern as notes.
+What you play on the keys always goes out on USB MIDI, each track on its channel (1–3 the synths, 10 the drums). GLO → MIDI 2 (or SYSTEM) → **OUT** = **SEQ** sends what the sequencer, the arp and the rolls play too: every note is ended, STOP ends whatever was still on, and notes that came in from a computer or the jack are never sent back. Record the FM-1's MIDI in a DAW and you get your pattern as notes.
 
 ### MIDI clock in
 
 GLO → SYSTEM → **SYNC** = **USB** or **TRS** (INT: SLOOP's own tempo). START plays from the top, CONTINUE carries on, STOP stops; the tempo follows the master and the steps follow its 24 pulses a beat, so SLOOP never drifts. When the clock stops for half a second, PLAY on the FM-1 plays at its own tempo again.
 
-**Clock only (2.4):** GLO → SYSTEM → **IN** = **CLOCK**: SLOOP follows the clock and ignores incoming notes (and CCs), handy when a DAW or a sequencer also sends notes to other gear.
+**Clock only (2.4):** GLO → MIDI 2 → **IN** = **CLOCK**: SLOOP follows the clock and ignores incoming notes (and CCs), handy when a DAW or a sequencer also sends notes to other gear.
 
 ### MIDI CCs (2.5)
 
@@ -315,7 +378,9 @@ The knobs of a MIDI controller set the sound, on the track the channel plays (as
 | 74 | the track's FILTER: 64 off, lower a low-pass, higher a high-pass (every engine, the drums too) |
 | 91 · 93 · 94 | the reverb, chorus and delay sends (on the drum channel 91 and 94 are GLO → DRUMS → REV and DLY) |
 
-Other CCs (mod wheel, sustain…) are ignored.
+Other CCs (mod wheel…) are ignored. From 2.6 the **sustain pedal** (CC 64) and **pitch bend** work too (the bend's range: GLO → MIDI 2 → BEND, 1–12 semitones).
+
+**MIDI LEARN** (2.6, after Felucca 1.5): **GLO + F#3**, turn the knob of SLOOP you want, move a knob of your controller; GLO + F#3 again to finish. A learned CC sets that track's parameter on any channel, in place of the map above (up to 16; kept through power-off). HOME menu → SYSTEM → **MIDI LEARN CLEAR** forgets them. Details: [GUIDE.md](GUIDE.md#midi-learn-26).
 
 ### USB audio: record the FM-1 on a computer
 
@@ -329,6 +394,40 @@ On USB the FM-1 is also an **audio input named "Felucca"**: 44.1 or 48 kHz (2.5:
 
 Open it from the [installer page](https://isod89.github.io/sloop-fm1/) (or the [editor link](https://isod89.github.io/sloop-fm1/webapp/editor/)) in Chrome or Edge, with the FM-1 on USB, and press **Connect**. It follows the device live: turn a knob on the FM-1 and the editor moves.
 
+**Local audio preview.** Build the browser audio engine with `python3 tools/build_preview.py`
+(Emscripten required; see [BUILDING.md](BUILDING.md#browser-audio-preview)), generate and serve the local site,
+then open `http://localhost:8766/webapp/editor/?mock=1`. Press **Connect** and **Play loop**
+to hear the current four-track loop. Presets, sound parameters, tempo, mixer, steps, locks, FM6 patches and
+uploaded samples feed the actual firmware DSP compiled to WebAssembly, running in an AudioWorklet at 44.1 kHz.
+The preview starts collapsed so the sound editor stays visible. Its compact bar keeps **Play loop** and
+**Stop**, plus the selected sound and its live step/note. **Show preview** opens the piano/pads, volume
+and sequence; **Hide preview** folds them again while the loop keeps playing. Sound parameters remain
+editable during playback in either view.
+Click the notes or play **A W S E D F T G Y H U J K**; **Space** toggles the sequencer, **Stop** releases all notes,
+and **Volume** adjusts browser output. **Current sequence** shows all four patterns with the actual audio
+engine's playing step highlighted, independently following each track's length and division. Patterns over
+16 steps follow automatically. Click a synth step to enable or disable it: re-enabling keeps its previous
+notes, velocity, levels and ratchets. Double-click a synth step to open a piano picker: click a key,
+use **− / +** to browse octaves, then **Apply** to change the pitch (or **Cancel** to keep it).
+**Listen on click** auditions the draft through that track's instrument without saving it to the sequence.
+For chords, select a member above the piano and change its pitch. An empty
+step uses the new note chosen beside its track or by playing its piano. Drum rows show individual percussion sounds: click a cell to toggle
+that hit while keeping the other sounds on the same step. Drums start as a compact overview of hits per
+step; **Show drum grid** (or clicking an overview step) expands the editable sound rows, and **Hide drum
+grid** collapses them without changing the pattern or interrupting playback. Common and programmed sounds stay visible;
+**Show all 16 sounds** reveals the rest. Edits reach the playing loop through the editor protocol.
+**Follow playback** and the page arrows control which 16 steps are shown; paging pauses under the pointer
+or keyboard focus so a click keeps its target. **Full editor** opens the detailed sequencer (including
+chords and ties). **Hide keys/pads** saves space.
+The simulated device stays still until you edit it; its changes are kept
+only for the current page session. This mode makes no MIDI requests and does not connect to or update an FM-1.
+It previews the current project loop; the saved Song section order and hardware recording are not emulated.
+Audio preview requires the served site, rather than the downloaded single-file editor.
+
+**Offline (2.6).** *Download the editor* (under Connect, or on the installer page) saves the whole editor as one file for a computer, `sloop-editor-2.6.html`, also attached to each [release](https://github.com/isod89/sloop-fm1/releases). Double-click it: it opens in Chrome or Edge without internet (Chrome asks once to allow MIDI) and works as the online one. Its sound library (kept in the browser) is its own, apart from the online editor's: move sounds between them with Export / Import, or a backup.
+
+**As an app, also on Android (2.6).** Open the [online editor](https://isod89.github.io/sloop-fm1/webapp/editor/) or the installer once with internet, then *Install the app* (under Connect, or on the installer page; or Chrome's menu → *Install app* / *Add to Home screen*). From then on the SLOOP app opens the editor without internet, and its link to the installer works offline too (with the firmware it installs). It stays the online site kept by the browser, so it uses the same sound library as the online editor, and it takes each new SLOOP version by itself the next time it opens online. On Android, use the app rather than the downloaded file: Chrome on Android does not allow MIDI in a downloaded file.
+
 - **Sound** — every parameter of the selected track, the engines and the presets; on an FM6 track the **FM6** panel: every operator, the bank, **Import / Export SysEx** (DX7 voices and banks).
 - **Sequencer** — the steps, as tiles or as a **piano roll**, and the track's length (1–64 steps); on the drum track a grid of 16 sounds × the steps, with levels and ratchets, and the kit. Click a step for its nudge, parameter locks and fill condition. **Export MIDI / Import MIDI**: the selected track as a MIDI file, and back.
 - **Tracks** — the four channel strips.
@@ -336,7 +435,7 @@ Open it from the [installer page](https://isod89.github.io/sloop-fm1/) (or the [
 - **Library** — your user presets and preset files.
 - **Samples** — the three user slots, files and **CHOP**.
 - **Drum synth** (2.5) — your own synthesised kits SYN1–SYN4: every value of every drum sound, heard at once.
-- **Projects** — the four projects, and **Backup**: *Save a backup* writes everything on the FM-1 to one file (with the FM6 bank); *Restore from a file* puts it all back (stop playback first).
+- **Song & sections** — the sections A–D, and **Backup** (one file per song): *Save a backup* writes everything on the FM-1 to one file (with the FM6 bank); *Restore from a file* puts it all back (stop playback first).
 - **Settings** — global, master (DUST, DUCK, FILT, ROLL), drums.
 
 <p align="center"><img src="assets/screens/editor-backup.png" alt="SLOOP web editor: projects and backup" width="560"></p>
@@ -362,13 +461,13 @@ The protocol is documented in [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md).
 
 **The black keys make no sound on a synth track.** That track plays chords or the scale on the white keys (in chord mode the black keys change the chord: CHORD+): hold **SEL** (between FX and ENV) and set **KNOB 1 CHORD** to OFF and **KNOB 3 KEYS** to OFF. The drum track always uses the black keys.
 
-**Nothing plays from the MIDI IN jack.** Try the other adapter type (A / B); check the keyboard's channel (1–3 synths, 10 drums, 4–16 the selected track).
+**Nothing plays from the MIDI IN jack.** Try the other adapter type (A / B); check the keyboard's channel (1–3 synths, 10 drums, the others the selected track; 2.6: GLO → MIDI sets them).
 
-**The USB audio input does not show.** Unplug the FM-1 and plug it back in (after an install the computer must find it again). On a Mac (macOS 13–15), check that HOME menu → **USB SERIAL** is OFF (the default), then restart the FM-1. In Audacity: Transport → Rescan Audio Devices. On Windows: Sound settings → Recording → show disabled devices.
+**The USB audio input does not show.** Unplug the FM-1 and plug it back in (after an install the computer must find it again). On a Mac (macOS 13–15) with 2.6, check that HOME menu → **USB SERIAL** is OFF (the default), then restart the FM-1. In Audacity: Transport → Rescan Audio Devices. On Windows: Sound settings → Recording → show disabled devices.
 
 **The USB recording is too quiet, or follows the volume knob.** Set HOME menu → **USB AUDIO** to **FULL**, or turn MASTER up.
 
-**Recorded notes move to the grid.** SLOOP quantises what you record to the steps of the track (its **DIV**: 1/4 … 1/32, triplets). For finer timing, set DIV to 1/32, or hold the step and nudge it (KNOB 4); for groove, use SWING.
+**Recorded notes move to the grid.** SLOOP quantises what you record to the steps of the track (its **DIV**: 1/4 … 1/32, triplets). In 2.7, set **QUANT off** on the REC screen (KNOB 4): your timing is kept as each step's nudge. Otherwise set DIV to 1/32, or hold the step and nudge it (KNOB 4); for groove, use SWING.
 
 **Notes fade out on a dense part.** The processor is at its limit: SLOOP fades one voice at a time (never the bass or the lead) rather than glitching. Fewer held notes or a lighter engine help.
 
@@ -388,8 +487,8 @@ Something else? [Open an issue](../../issues): what you did, what you expected, 
 | Sequencer | 64 steps per track, own length and division each (1/32 to two bars); chords with a level and ratchet per note; drums with a level and ratchet per sound; ties, slide; per-step parameter locks (24 per track), micro timing (±½ step in 1/64) and fill conditions; swing 0 (straight) to 100 (MPC 75 %); one sample-accurate clock (no drift) |
 | Recording | live, quantised as heard (latency-compensated), overdub; free take (the tempo follows you) or the tempo set; start on the first note or a one-bar count-in; 1, 2 or 4 bars |
 | Performance | layers: punch-in FX, erase, note repeat, step entry, key / chords, mute / solo / fill / tap tempo, song sections and a quick chain of up to 8 |
-| Effects | 16 punch-in effects; master DUST, DUCK, DJ filter, limiter; per track drive, slicer, sends to a stereo chorus, a tempo delay (dotted 1/8 and 1/16 too) and a stereo reverb |
-| Memory | autosave, undo / redo, 4 projects, 32 user presets, 27 FM6 patches, song of 4 sections × 16 steps × 1–64 bars, full backup / restore (editor) |
+| Effects | 27 punch-in effects; master DUST, DUCK, DJ filter, limiter; per track drive, slicer, sends to a stereo chorus, a tempo delay (dotted 1/8 and 1/16 too) and a stereo reverb |
+| Memory | autosave, undo / redo, one song of 4 sections (more as backup files), 32 user presets, 27 FM6 patches, song of 4 sections × 16 steps × 1–64 bars, full backup / restore (editor) |
 | Audio | 44.1 kHz, fixed-point DSP; USB audio input (the master output, 16-bit stereo at 44.1 or 48 kHz, class compliant) |
 | MIDI | USB class-compliant in / out (the keys, or the sequencer too); TRS MIDI IN (3.5 mm); MIDI clock in (USB or TRS), clock only if you like (IN = CLOCK) |
 | Lights | button backlight (3 levels), C keys / white keys, played notes |
@@ -418,11 +517,16 @@ See [BUILDING.md](BUILDING.md). In short: the JieLi toolchain and three files of
 
 ## Credits and thanks
 
-- **[Felucca](https://github.com/hugelton/Felucca)** by **Leo Kuroshita** (@kurogedelic) / **Hügelton Instruments** — the engines, the sequencer, the editor, the installer, in 2.3 the USB audio input, the MIDI clock, the knob reading and many fixes, and in 2.4 the FM6 engine and its DX7 patch editor (Felucca 1.0 / 1.0.1). Thank you.
-- **@renebohne** — the played-note key lights (pull request #11).
+- **[Felucca](https://github.com/hugelton/Felucca)** by **Leo Kuroshita** (@kurogedelic) / **Hügelton Instruments** — the engines, the sequencer, the editor, the installer, in 2.3 the USB audio input, the MIDI clock, the knob reading and many fixes, in 2.4 the FM6 engine and its DX7 patch editor (Felucca 1.0 / 1.0.1), and in 2.6 the INSERT effects, LFO 2 (SYNC / TRIG / POL), ENV SYNC, the ANALOG filter types, note LEN and step velocity, MIDI LEARN, the live drum mutes, the latched-arp fix (#191), the 1/4D delay and REV / ECHO THROW (Felucca 1.4 / 1.4.1 / 1.5 / 1.5.1), and in 2.7 the arp modes REPEAT, DNUP, UP+8, CONV, DIVG, PINKY, THUMB, WALK and CHORD, and ORD in the order you pressed (Felucca 1.4 / 1.5.1). Thank you.
+- **The Felucca community, who asked for those features first** (Felucca discussions and issues): **Wulgaren** (insert effects with dry / wet, #78; the arp report, #191), **etyrnal** (the lo-fi bit effect, #177; envelopes in note values, #175), **benjaminguerrer** (LFO sync, #154), **gospodindilly-ops** (the ANALOG filter types, #104), **Armstrong1980** (#178) and **oMauNaProducer** (#173) (note length, step velocity), **lostfictions** and **planist79** (MIDI LEARN, #170).
+- **@renebohne** — the played-note key lights (pull request #11) and, in 2.6, MIDI Program Change (Felucca pull request #179).
 - **ChanceTheMaker** and **keremimo** — the TRS MIDI input fix (Felucca Salt) and contributions to the MIDI clock.
-- **Everyone who installed SLOOP, made music with it, commented, reported a bug or asked for a feature** — most of 2.3 and 2.4 comes from your messages (parameter locks, DX7 patches, dotted delays, longer steps: you asked for them).
-- Samples: Versilian Studios VSCO-2 CE and VCSL, Sonic Pi (all CC0). Font: Terminus (SIL OFL 1.1). Icons: Fukiai (MIT, Hügelton Instruments). PHASE engine after CrispyZebra (GPL); VOICE after klattsch (MIT); FM6: msfa from Dexed by Google Inc. and Pascal Gauthier (Apache-2.0). SNES: the S-DSP of snes_spc by Shay Green (LGPL-2.1-or-later).
+- **andrerezemini** ([sloop-lab](https://github.com/andrerezemini/sloop-lab)) — in 2.7 the sound on the FM-1's second core and 38 KB of RAM back (pull request #111), on the dual-core start of **Charles Vestal** ([X0X](https://github.com/charlesvestal/fm1-x0x)) and **keremimo** ([Melodee](https://github.com/keremimo/melodee)).
+- **juanjiant-bit** ([JIANT FM](https://github.com/juanjiant-bit/JIANT)) — in 2.7 the progressive knob acceleration (KNOB ACCEL) and the LEVEL / PAN glide come from JIANT's.
+- **renebohne** — in 2.7 MIDI CC 74 sweeps each engine's own cutoff or brightness, after his pull request #71 (Felucca 1.1.5's standard CC map).
+- **@ordenador** (Mario Faúndez Vidal) — the web editor's local audio preview: the firmware's own engines and sequencer in the browser (WebAssembly), with the playable piano / pads and the inline sequence editing (pull request #120).
+- **Everyone who installed SLOOP, made music with it, commented, reported a bug or asked for a feature** — most of each update comes from your messages: parameter locks, DX7 patches, dotted delays and longer steps (2.4); in 2.6 a MIDI channel per track, sustain and pitch bend, step entry from a MIDI keyboard, TEXTURE, the fixed crackles, the web editor bug with the same value on two tracks, and the MIDI learn backup. You asked, tested and reported them.
+- Samples: Versilian Studios VSCO-2 CE and VCSL, Sonic Pi (all CC0). Font: Terminus and Terminus Bold (SIL OFL 1.1). Icons: Fukiai (MIT, Hügelton Instruments). PHASE engine after CrispyZebra (GPL); VOICE after klattsch (MIT); FM6: msfa from Dexed by Google Inc. and Pascal Gauthier (Apache-2.0). SNES: the S-DSP of snes_spc by Shay Green (LGPL-2.1-or-later).
 - Interface ideas after teenage engineering's pocket operators and EP-133, Elektron's step entry and Akai's MPC (swing, note repeat, erase).
 
 ## Licence

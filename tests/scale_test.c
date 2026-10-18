@@ -133,10 +133,271 @@ static void key_events_test(void)
     puts("scales: silent keys, arp, live recording, MIDI out and held-note changes ok");
 }
 
+
+/* 2.7: the arp modes of Felucca 1.5.1, C E G held (MIDI notes: as they are), OCT 1; ORD as pressed */
+static void arp_seq(track_t *t, int mode, uint32_t n, uint8_t *out)
+{
+    uint32_t i, list[65], cnt, len;
+    t->p[P_AMODE] = (int16_t)mode;
+    t->arp_idx = 0xFFFFFFFFu;
+    t->arp_walk = 0;
+    for (i = 0; i < n; i++) {
+        len = arp_list(t, list, &cnt);
+        t->arp_idx++;
+        out[i] = (uint8_t)list[arp_pick(t, list, len)];
+    }
+}
+
+static void arp_modes_test(void)
+{
+    static const struct { int mode; uint8_t want[8]; } M[] = {
+        {AM_UP, {60, 64, 67, 60, 64, 67, 60, 64}},
+        {AM_DN, {67, 64, 60, 67, 64, 60, 67, 64}},
+        {AM_UPDN, {60, 64, 67, 64, 60, 64, 67, 64}},
+        {AM_DNUP, {67, 64, 60, 64, 67, 64, 60, 64}},
+        {AM_UP8, {60, 64, 67, 72, 60, 64, 67, 72}},
+        {AM_CONV, {60, 67, 64, 60, 67, 64, 60, 67}},
+        {AM_DIVG, {64, 67, 60, 64, 67, 60, 64, 67}},
+        {AM_PINKY, {60, 67, 64, 67, 60, 67, 64, 67}},
+        {AM_THUMB, {60, 64, 60, 67, 60, 64, 60, 67}},
+        {AM_ORD, {67, 60, 64, 67, 60, 64, 67, 60}},
+        {AM_REPEAT, {64, 64, 64, 64, 64, 64, 64, 64}},
+    };
+    track_t *t = &trk[0];
+    uint8_t got[16];
+    uint32_t i, j;
+    memset(trk, 0, sizeof trk);
+    memset(&song, 0, sizeof song);
+    host_tracks_init();
+    assert(TP[P_AMODE].max == AM_CHORD);
+    t->p[P_AOCT] = 1, t->p[P_AORDER] = 0, t->p[P_AHOLD] = 0;
+    memset(held_key, 0, sizeof held_key);          /* (MIDI notes: played as they are) */
+    t->held[0] = 67, t->held[1] = 60, t->held[2] = 64, t->nheld = 3;   /* pressed G, C, E */
+    for (i = 0; i < sizeof M / sizeof M[0]; i++) {
+        arp_seq(t, M[i].mode, 8, got);
+        for (j = 0; j < 8u; j++)
+            if (got[j] != M[i].want[j]) {
+                fprintf(stderr, "arp mode %s step %u: %u, want %u\n", N_AMODE[M[i].mode], j, got[j], M[i].want[j]);
+                assert(0);
+            }
+    }
+    t->p[P_AOCT] = 2;                               /* UP+8 over 2 octaves: the first note over the top one */
+    arp_seq(t, AM_UP8, 7, got);
+    assert(got[5] == 79 && got[6] == 84);
+    t->p[P_AOCT] = 1;
+    arp_seq(t, AM_WALK, 16, got);                   /* WALK: from the bottom, one place at a time */
+    assert(got[0] == 60);
+    for (j = 1; j < 16u; j++)
+        assert((got[j - 1] == 60 && got[j] == 64) || (got[j - 1] == 67 && got[j] == 64) ||
+               (got[j - 1] == 64 && (got[j] == 60 || got[j] == 67)));
+    t->p[P_AMODE] = AM_CHORD, t->p[P_AOCT] = 2;     /* CHORD: the held notes together, an octave up every other step */
+    t->arp_idx = 0xFFFFFFFFu;
+    assert(arp_step(t) && t->arp_note == 60 && t->arp_ch[0] == 64 && t->arp_ch[1] == 67 && !t->arp_ch[2]);
+    arp_end(t);
+    assert(!t->arp_note && !t->arp_ch[0] && !t->arp_ch[1]);
+    assert(arp_step(t) && t->arp_note == 72 && t->arp_ch[0] == 76 && t->arp_ch[1] == 79);
+    arp_end(t);
+    t->nheld = 0;
+    assert(!arp_step(t) && !t->arp_note);
+    t->p[P_AMODE] = 0, t->p[P_AOCT] = 1;
+    puts("arp: the 2.7 modes (Felucca 1.5.1): DNUP UP+8 CONV DIVG PINKY THUMB WALK REPEAT CHORD, ORD as pressed ok");
+}
+
+/* 2.7 (#52): ARP SWG with the transport stopped: the odd steps late by SWG, the even ones back on the grid */
+static void arp_swing_test(void)
+{
+    track_t *t = &trk[0];
+    uint32_t div = 2, u = div_units(div), sw, pos = 0, last = 0, gaps[6], ng = 0, idx0, i, ok = 1;
+    memset(trk, 0, sizeof trk);
+    memset(&song, 0, sizeof song);
+    host_tracks_init();
+    memset(held_key, 0, sizeof held_key);
+    song.playing = 0;
+    t->p[P_AMODE] = AM_UP, t->p[P_ARATE] = (int16_t)div, t->p[P_AOCT] = 1, t->p[P_AGATE] = 64, t->p[P_APROB] = 127;
+    t->held[0] = 60, t->nheld = 1;
+    for (uint32_t swg = 100; swg >= 50u; swg -= 50u) {  /* (SWG 50 too: the first step's length) */
+    t->p[P_ASWING] = (int16_t)swg;
+    sw = swing_units(swg, u);
+    t->arp_new = 1, t->arp_idx = 0xFFFFFFFFu, ng = 0, pos = last = 0, ok = 1;
+    idx0 = t->arp_idx;
+    for (i = 0; i < 400000u && ng < 6u; i++) {         /* 100 units a tick */
+        uint32_t before = t->arp_idx;
+        arp_tick(t, 100);
+        pos += 100;
+        if (t->arp_idx != before) {
+            if (before != idx0)
+                gaps[ng++] = pos - last;
+            last = pos;
+        }
+    }
+    for (i = 0; i < ng; i++)                            /* to the odd step u + sw, to the even one u - sw (100 a tick) */
+        if ((i & 1u ? u - sw : u + sw) + 100u < gaps[i] || gaps[i] + 100u < (i & 1u ? u - sw : u + sw))
+            ok = 0;
+    printf("arp swing stopped SWG %u: steps %u %u %u %u (u %u, sw %u)\n", swg, gaps[0], gaps[1], gaps[2], gaps[3], u, sw);
+    assert(ng == 6u && ok && sw > 0u);
+    }
+    t->p[P_ASWING] = 0, t->arp_new = 1, t->arp_idx = 0xFFFFFFFFu, ng = 0, pos = last = 0;
+    idx0 = t->arp_idx;
+    for (i = 0; i < 400000u && ng < 4u; i++) {
+        uint32_t before = t->arp_idx;
+        arp_tick(t, 100);
+        pos += 100;
+        if (t->arp_idx != before) {
+            if (before != idx0)
+                gaps[ng++] = pos - last;
+            last = pos;
+        }
+    }
+    for (i = 0; i < ng; i++)
+        assert(gaps[i] + 100u >= u && gaps[i] <= u + 100u);   /* SWG 0: as before, every step u */
+    t->nheld = 0;
+    arp_tick(t, 100);
+    t->p[P_AMODE] = 0;
+    puts("arp: SWG works with the transport stopped (odd steps late), SWG 0 as before ok");
+}
+
+/* 2.7 (#106): CLK OUT: 24 pulses a beat, START with the downbeat's pulse, STOP; nothing with SYNC USB or CLK OUT OFF */
+static void clkout_test(void)
+{
+    uint32_t n = 32, i, f8 = 0, fa = 0, fc = 0, other = 0, beats = 4, blocks;
+    memset(&song, 0, sizeof song);
+    host_tracks_init();
+    usb.config = 1;
+    song.g[G_BPM] = 120;
+    song.g[G_CLKOUT] = 1, song.g[G_SYNC] = 0;
+    mo_w = mo_r = 0;
+    blocks = beats * BEAT_U / (n * 120u);
+    for (i = 0; i < blocks; i++) {
+        clkout_block(n);
+        while (mo_r != mo_w) {
+            uint32_t b = (midi_out_q[mo_r++ % MQ] >> 8) & 0xFFu;
+            f8 += b == 0xF8u, fa += b == 0xFAu, fc += b == 0xFCu, other += b != 0xF8u && b != 0xFAu && b != 0xFCu;
+        }
+    }
+    printf("clk out stopped, 4 beats: %u pulses\n", f8);
+    assert(f8 >= 24u * beats - 1u && f8 <= 24u * beats && !fa && !fc && !other);
+    song.playing = 1;
+    f8 = 0;
+    clkout_block(n);
+    while (mo_r != mo_w) {
+        uint32_t b = (midi_out_q[mo_r++ % MQ] >> 8) & 0xFFu;
+        if (b == 0xFAu) fa++, assert(f8 == 0u);          /* START first */
+        f8 += b == 0xF8u;
+    }
+    assert(fa == 1u && f8 == 1u);                       /* START, then the downbeat's pulse */
+    clkout_block(n);
+    song.playing = 0;
+    clkout_block(n);
+    while (mo_r != mo_w)
+        fc += ((midi_out_q[mo_r++ % MQ] >> 8) & 0xFFu) == 0xFCu;
+    assert(fc == 1u);
+    song.g[G_SYNC] = 1;                                 /* following a clock: nothing out */
+    for (i = 0; i < blocks; i++)
+        clkout_block(n);
+    assert(mo_r == mo_w);
+    song.g[G_SYNC] = 0, song.g[G_CLKOUT] = 0;
+    song.playing = 1;
+    for (i = 0; i < blocks; i++)
+        clkout_block(n);
+    assert(mo_r == mo_w);                               /* CLK OUT OFF: nothing (as before) */
+    song.playing = 0;
+    song.g[G_CLKOUT] = 1, song.playing = 1;
+    clkout_block(n);
+    song.g[G_CLKOUT] = 0;                               /* turned off while playing: STOP */
+    clkout_block(n);
+    fc = 0;
+    while (mo_r != mo_w)
+        fc += ((midi_out_q[mo_r++ % MQ] >> 8) & 0xFFu) == 0xFCu;
+    assert(fc == 1u);
+    song.playing = 0;
+    clkout_block(n);
+    puts("clk out: 24 pulses a beat (stopped too), START + downbeat pulse, STOP; none with SYNC USB or OFF ok");
+}
+
+/* 2.7 (#103): KBD HOLD (ARP 2 HOLD ON, MODE OFF): the notes keep sounding; a new chord replaces them; keys join while
+ * down; the MIDI note-off waits; HOLD OFF ends them. MODE OFF, HOLD OFF: as before */
+static int sounding(const track_t *t, uint32_t note)
+{
+    uint32_t i;
+    for (i = 0; i < NVOICE; i++)
+        if (t->v[i].active && t->v[i].gate && t->v[i].note == note)
+            return 1;
+    return 0;
+}
+static uint32_t midi_offs(uint32_t note)
+{
+    uint32_t c = 0;
+    while (mo_r != mo_w) {
+        uint32_t pk = midi_out_q[mo_r++ % MQ];
+        c += ((pk >> 8) & 0xF0u) == 0x80u && ((pk >> 16) & 127u) == note;
+    }
+    return c;
+}
+static void kbd_hold_test(void)
+{
+    track_t *t = &trk[0];
+    memset(trk, 0, sizeof trk);
+    memset(&song, 0, sizeof song);
+    host_tracks_init();
+    memset(held_key, 0, sizeof held_key);
+    kb_prev = 0;
+    usb.config = 1;
+    song.g[G_CH1] = 1;
+    mo_w = mo_r = 0;
+    t->p[P_AMODE] = 0, t->p[P_AHOLD] = 1, t->p[P_QUANT] = 0, t->p[P_CHORD] = 0, t->p[P_VOICE] = V_POLY;
+    fm1_in.notes = 1u << 7 | 1u << 11;                  /* C4 + E4 down */
+    keyboard_block();
+    assert(sounding(t, 60) && sounding(t, 64));
+    fm1_in.notes = 0;                                   /* let go: they go on, no MIDI note-off yet */
+    keyboard_block();
+    assert(sounding(t, 60) && sounding(t, 64) && kh_has(t, 60) && midi_offs(60) == 0u);
+    fm1_in.notes = 1u << 14;                            /* G4 alone: the new chord replaces C E */
+    keyboard_block();
+    assert(!sounding(t, 60) && !sounding(t, 64) && sounding(t, 67) && midi_offs(60) == 1u);
+    fm1_in.notes = 1u << 14 | 1u << 18;                 /* B4 while G4 is down: joins */
+    keyboard_block();
+    fm1_in.notes = 0;
+    keyboard_block();
+    assert(sounding(t, 67) && sounding(t, 71));
+    t->p[P_AHOLD] = 0;                                  /* HOLD OFF: they end (the block's check) */
+    if (kh_any(t) && !kh_on(t))
+        kh_release(t);
+    assert(!sounding(t, 67) && !sounding(t, 71) && !kh_any(t));
+    fm1_in.notes = 1u << 7;                             /* HOLD OFF: as before */
+    keyboard_block();
+    fm1_in.notes = 0;
+    keyboard_block();
+    assert(!sounding(t, 60));
+    t->p[P_AMODE] = 1, t->p[P_AHOLD] = 1;               /* ARP on + HOLD: the arp's latch, not KBD HOLD */
+    fm1_in.notes = 1u << 7;
+    keyboard_block();
+    fm1_in.notes = 0;
+    keyboard_block();
+    assert(!kh_any(t) && t->nheld == 1u);
+    t->p[P_AMODE] = 0, t->p[P_AHOLD] = 0, t->nheld = 0;
+    puts("kbd hold: notes held when let go, a new chord replaces them, keys join while down, MIDI off waits, HOLD OFF ends ok");
+}
+
+/* 2.7 (#126): EDIT's MUTE mode (drum track) stays when EDIT is let go */
+static void mute_mode_test(void)
+{
+    er_mute = 1;
+    fm1_in.buttons = 0, fm1_in.notes = 0;
+    keyboard_block();
+    assert(er_mute == 1u);
+    er_mute = 0;
+    puts("edit mute mode: kept when EDIT is let go ok");
+}
+
 int main(void)
 {
     host_tracks_init();
     mapping_test();
     key_events_test();
+    arp_modes_test();
+    arp_swing_test();
+    clkout_test();
+    kbd_hold_test();
+    mute_mode_test();
     return 0;
 }

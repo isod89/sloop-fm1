@@ -34,15 +34,27 @@ static struct {
     int32_t tail;                /* declick: the last output of cut voices, decaying */
     int32_t peak;                /* largest |output| since the UI last looked (TRACKS meter) */
     uint8_t kit[NDRUM];
-    int32_t filter[NDRUM], env[NDRUM];
+    int32_t filter[NDRUM], env[NDRUM], denv[NDRUM];   /* denv (2.7): the DECAY's fade, Q15 */
+    uint16_t dk[NDRUM];          /* (2.7) its factor a sample (DECAY_K), 0: none */
     uint8_t synth[NDRUM];        /* the voice plays a synthesised kit (ds[]) */
     dsv_t ds[NDRUM];
     volatile uint16_t hits;      /* bit per lane hit since the UI last looked (pads, key LEDs) */
     volatile uint8_t kick;       /* a kick was hit (fx.c DUCK) */
     int32_t a0, a1;              /* the drum track's mute / solo attenuation over this block (fx.c), Q15, 0 = heard */
+    int32_t glv, ggl, ggr;       /* (2.7) LEVEL and PAN as last mixed: a change glides (~3 ms, fx.c mix_glide) */
+    uint8_t gon;
 } drums = {.set = -2};
 
 static int32_t ds_buf[CTL];
+
+/* (2.7) LEVEL and PAN glide: a knob's detent (or a new sound's trim) moves a quarter of the way each block of CTL
+ * samples (0.73 ms), ~3 ms in all, instead of a step a detent (after JIANT FM 0.6.8, github.com/juanjiant-bit/JIANT:
+ * "LEVEL and PAN glide (~3 ms) instead of stepping at each knob move"). The last few units: at once */
+static int32_t mix_glide(int32_t from, int32_t to)
+{
+    int32_t d = to - from;
+    return d <= 8 && d >= -8 ? to : from + d / 4;
+}
 
 static int32_t drum_set(void)
 {
@@ -75,6 +87,25 @@ static const uint8_t LANE_OF_GM[81 - 35 + 1] = {
     /* 55 */ 11, 15, 11, 13, 12, 14, 14, 14, 14, 14,
     /* 65 */ 14, 14, 15, 15, 13, 13, 15, 15, 13, 13,
     /* 75 */ 7, 7, 7, 14, 14, 15, 15};
+/* SLOOP 2.7, the DRUMS screen's SOUND page: each of the 16 sounds' TUNE (-8 .. +7 semitones) and DECAY (-4 .. +3,
+ * 0 as the kit has it), on every kit; kept with the project and each section (project.c: in the drum track's free
+ * engine values) */
+#define DRUM_TUNE_MIN (-8)
+#define DRUM_TUNE_MAX 7
+#define DRUM_DEC_MIN (-4)
+#define DRUM_DEC_MAX 3
+static int8_t drum_tune[DRUM_LANES], drum_dec[DRUM_LANES];
+static const uint8_t DK_SMP[4] = {47, 60, 74, 87};   /* a sample's DECAY -4 .. -1: -60 dB in 60, 120, 250, 500 ms */
+#define DRUM_CLICK(n) ((n) == 76u || (n) == 77u)    /* (the click's wood block: no lane, never tuned) */
+static uint32_t lane_of_note(uint32_t note);
+static int drum_tweaked(void)
+{
+    uint32_t l;
+    for (l = 0; l < DRUM_LANES; l++)
+        if (drum_tune[l] || drum_dec[l])
+            return 1;
+    return 0;
+}
 static uint32_t lane_of_note(uint32_t note)
 {
     return note < 35u ? 0u : note > 81u ? 13u : LANE_OF_GM[note - 35u];
@@ -180,7 +211,8 @@ static void click_render(int32_t *ml, int32_t *mr, uint32_t n)
 }
 
 /* a synthesised voice: note on the 16 sounds snd (a factory kit, SYN1..4), the oldest voice stolen */
-static void __attribute__((noinline)) drum_synth_on(uint32_t note, uint32_t vel, uint32_t kit, const dsnd_t *snd, uint32_t crush)
+static void __attribute__((noinline)) drum_synth_on(uint32_t note, uint32_t vel, uint32_t kit, const dsnd_t *snd, uint32_t crush,
+                                                    int tweak)
 {
     voice_t *v = &drums.v[0];
     uint32_t i;
@@ -208,7 +240,11 @@ static void __attribute__((noinline)) drum_synth_on(uint32_t note, uint32_t vel,
     v->age = ++drums.age;
     drums.synth[i] = 1;
     drums.kit[i] = (uint8_t)kit;
-    ds_on(&drums.ds[i], snd, crush, note, vel);
+    {
+        uint32_t ln = lane_of_note(note);
+        tweak = tweak && !DRUM_CLICK(note);
+        ds_on(&drums.ds[i], snd, crush, note, vel, tweak ? drum_tune[ln] * 16 : 0, tweak ? (uint32_t)(drum_dec[ln] + 4) : 4u);
+    }
 }
 /* the editor's audition (editor_dsyn.c DSYN_PLAY): queued, played by the audio ISR (drum_audition_poll) */
 static volatile uint8_t dsu_aud_k, dsu_aud_lane, dsu_aud_vel;
@@ -220,7 +256,7 @@ static void drum_audition_poll(void)
     dsu_aud_vel = 0;
     {
         const dsu_kit_t *u = dsu_kit(dsu_aud_k);
-        drum_synth_on(DS_LANE_NOTE[dsu_aud_lane % DS_LANES], vel, DRUM_SYN + dsu_aud_k % DSU_N, u->s, u->crush);
+        drum_synth_on(DS_LANE_NOTE[dsu_aud_lane % DS_LANES], vel, DRUM_SYN + dsu_aud_k % DSU_N, u->s, u->crush, 0);   /* (as designed) */
     }
 }
 
@@ -237,7 +273,7 @@ static void drum_on(uint32_t note, uint32_t vel)
         drums.kick = 1;                             /* (DUCK) */
     if (kit >= DRUM_SYN) {                          /* SYN1..SYN4: your synthesised kit */
         const dsu_kit_t *u = dsu_kit(kit - DRUM_SYN);
-        drum_synth_on(note, vel, kit, u->s, u->crush);
+        drum_synth_on(note, vel, kit, u->s, u->crush, 1);
         return;
     }
     if (kit >= DRUM_USR) {                          /* a user kit: the lane's sound, as its note (the hat choke) */
@@ -254,7 +290,7 @@ static void drum_on(uint32_t note, uint32_t vel)
         if (zid < 0)
             return;                                 /* (an empty slot, or no sound on this lane) */
     } else if (kit >= DRUM_SAMPLED) {               /* synthesised kit */
-        drum_synth_on(note, vel, kit, DS_KITS[kit - DRUM_SAMPLED].s, DS_KITS[kit - DRUM_SAMPLED].crush);
+        drum_synth_on(note, vel, kit, DS_KITS[kit - DRUM_SAMPLED].s, DS_KITS[kit - DRUM_SAMPLED].crush, 1);
         return;
     }
     if (zid < 0) {                                  /* the GM sample kit */
@@ -299,12 +335,19 @@ static void drum_on(uint32_t note, uint32_t vel)
     }
     {
         uint32_t vi = (uint32_t)(v - drums.v);
+        uint32_t ln = lane_of_note(v->note), tw = !DRUM_CLICK(v->note);
         int32_t shift = kit == 1u ? (note <= 36u ? -5 : -2) : kit == 3u ? 2 : kit == 4u ? -1 : 0;
         drums.kit[vi] = (uint8_t)kit;
         drums.synth[vi] = 0;
         drums.filter[vi] = 0;
         drums.env[vi] = 32767;
-        if (shift) v->s[5] = (int32_t)((pow2_q16((int32_t)note * 16 + shift * 16 - SMP_ZONES[zi].root16) >> 8) * (SMP_ZONES[zi].rate >> 8));
+        drums.denv[vi] = 32767;                     /* (2.7) DECAY below 0: a fade to -60 dB in 60 .. 500 ms (DK_SMP) */
+        drums.dk[vi] = tw && drum_dec[ln] < 0 ? DECAY_K[DK_SMP[drum_dec[ln] + 4]] : 0u;
+        shift = shift * 16 + (tw ? drum_tune[ln] * 16 : 0);    /* (2.7) TUNE: the sound's semitones */
+        if (shift) {
+            const smp_zone_t *z = drum_zone_of(v);
+            v->s[5] = (int32_t)((pow2_q16((int32_t)note * 16 + shift - z->root16) >> 8) * (z->rate >> 8));
+        }
     }
 }
 
@@ -313,8 +356,14 @@ static void drum_on(uint32_t note, uint32_t vel)
 static inline void drums_mix(int32_t *ml, int32_t *mr, int32_t *rev, int32_t *dly, int32_t *mono, uint32_t n)
 {
     uint32_t k, i;
-    int32_t lvl = song.g[G_DRLVL] * 200, send = song.g[G_DRREV] * 258, dsend = song.g[G_DRDLY] * 258, pk = drums.peak;
+    int32_t lvl = song.g[G_DRLVL] * 200, send = send_thr(song.g[G_DRREV] * 258, thr_rev),
+            dsend = send_thr(song.g[G_DRDLY] * 258, thr_dly), pk = drums.peak;   /* (2.6: the THROWs) */
     int32_t pan = trk[TRK_DRUM].p[P_PAN], gl = 4096 - (pan > 0 ? pan * 64 : 0), gr = 4096 + (pan < 0 ? pan * 64 : 0);
+    if (!drums.gon)                                 /* (2.7) LEVEL and PAN glide, block by block (mix_glide) */
+        drums.glv = lvl, drums.ggl = gl, drums.ggr = gr, drums.gon = 1;
+    lvl = drums.glv = mix_glide(drums.glv, lvl);
+    gl = drums.ggl = mix_glide(drums.ggl, gl);
+    gr = drums.ggr = mix_glide(drums.ggr, gr);
     for (i = 0; i < n && drums.tail; i++) {         /* declick tail, ~0.4 ms */
         if (mono) {
             mono[i] += drums.tail;
@@ -388,6 +437,11 @@ static inline void drums_mix(int32_t *ml, int32_t *mr, int32_t *rev, int32_t *dl
                 s = mulq15(s, drums.env[k]);
                 drums.env[k] -= (drums.env[k] >> 11) + 1;
                 if (drums.env[k] <= 0) v->active = 0;
+            }
+            if (drums.dk[k]) {                      /* (2.7) a shorter DECAY: the sample fades out */
+                s = mulq15(s, drums.denv[k]);
+                drums.denv[k] = (int32_t)(((uint32_t)drums.denv[k] * drums.dk[k]) >> 16);
+                if (drums.denv[k] < 8) v->active = 0;
             }
             v->s[7] = s;
             if (s > pk || -s > pk)

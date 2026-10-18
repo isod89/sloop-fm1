@@ -82,6 +82,7 @@ typedef struct {
     int32_t gain, lg;            /* velocity Q15, the sound's level Q10 */
     int32_t held, holdn;         /* crush: sample-and-hold */
     uint8_t crush, bursts, fmode;
+    int8_t dk;                   /* (2.7) the DECAY's DECAY_K steps (the CLAP's tail after its bursts) */
 } dsv_t;
 
 /* per-sample DECAY_K (Q16) -> per-block (CTL = 32 samples) by squaring five times */
@@ -119,8 +120,14 @@ static void ds_filter(dsv_t *s)
 /* the 808 cymbal oscillators (205.3 304.4 369.6 522.7 540 800 Hz) as 1/16 semitones above the first */
 static const int16_t DS_METAL[6] = {0, 109, 163, 259, 268, 377};
 
-static void ds_on(dsv_t *s, const dsnd_t *snd, uint32_t crush, uint32_t note, uint32_t vel)
+/* (2.7, the DRUMS screen's SOUND page) a sound's DECAY, -4 .. +3 (0: as designed): the decays' DECAY_K steps (x0.25 ..
+ * x3 the time, 5.4 % a step) and the holds scaled alike (Q8) */
+static const int8_t DK_IDX[8] = {-26, -17, -10, -4, 0, 6, 13, 21};
+static const uint16_t DK_SCALE[8] = {64, 102, 154, 205, 256, 358, 512, 768};
+/* tune16: the sound's TUNE in 1/16 semitones; dsel: its DECAY + 4 (0 .. 7) */
+static void ds_on(dsv_t *s, const dsnd_t *snd, uint32_t crush, uint32_t note, uint32_t vel, int32_t tune16, uint32_t dsel)
 {
+    int32_t dk = DK_IDX[dsel & 7u];
     int32_t semi;
     uint32_t lane = ds_lane(note, &semi), i;
     const dsnd_t *d = &snd[lane];
@@ -135,16 +142,21 @@ static void ds_on(dsv_t *s, const dsnd_t *snd, uint32_t crush, uint32_t note, ui
         uint32_t g = QDB[e % 24];
         s->lg = (int32_t)(q >= 0 ? g << q : g >> -q);
     }
-    s->base16 = ((int32_t)d->pitch + semi) * 16 + d->fine;
+    s->base16 = ((int32_t)d->pitch + semi) * 16 + d->fine + tune16;
     s->pe = d->bend || d->fenv ? 32767 : 0;
     s->kpe = ds_k32(d->btime);
     s->inc = s->inc_to = ds_inc(s->base16 + ((s->pe * (int32_t)d->bend * 16) >> 15));
     s->amp = s->amp_to = d->wave ? (int32_t)d->tlev * 258 : 0;
-    s->ka = ds_k32(d->decay);
+    s->ka = ds_k32((uint32_t)clamp((int32_t)d->decay + dk, 0, 127));
     s->hold = ds_blocks(d->hold);
+    s->dk = (int8_t)dk;
+    if (dk)
+        s->hold = (uint16_t)(((uint32_t)s->hold * DK_SCALE[dsel & 7u]) >> 8);
     s->nz = s->nz_to = (d->src & 15u) ? (int32_t)d->nlev * 258 : 0;
-    s->kn = (d->src & DN_CLAP) ? ds_k32(12) : ds_k32(d->ndec);  /* CLAP: short bursts first */
+    s->kn = (d->src & DN_CLAP) ? ds_k32(12) : ds_k32((uint32_t)clamp((int32_t)d->ndec + dk, 0, 127));   /* CLAP: short bursts first */
     s->nhold = (d->src & DN_CLAP) ? 0 : ds_blocks(d->nhold);
+    if (dk)
+        s->nhold = (uint16_t)(((uint32_t)s->nhold * DK_SCALE[dsel & 7u]) >> 8);
     s->ck = s->ck_to = (int32_t)d->click * 258;
     s->bursts = 1;
     s->fmode = d->flt & 7u;
@@ -179,7 +191,7 @@ static void ds_control(dsv_t *s)
     if ((d->src & DN_CLAP) && s->bursts < 4u && s->t >= s->bursts * 420u) {
         s->nz = (int32_t)d->nlev * 258;                 /* bursts at 0, 9.5, 19 ms; the 4th is the tail */
         if (++s->bursts == 4u) {
-            s->kn = ds_k32(d->ndec);
+            s->kn = ds_k32((uint32_t)clamp((int32_t)d->ndec + s->dk, 0, 127));
             s->nhold = ds_blocks(d->nhold);
         }
     }
@@ -206,8 +218,10 @@ static int ds_render(dsv_t *s, int32_t *out, uint32_t n)
 {
     const dsnd_t *d = s->d;
     uint32_t i, src = d->src & 15u, wave = d->wave, fmode = s->fmode & 3u, fall = s->fmode & DF_ALL;
-    int32_t da = (s->amp_to - s->amp) >> CTL_LOG2, dn = (s->nz_to - s->nz) >> CTL_LOG2;   /* (no divide) */
-    int32_t dc = (s->ck_to - s->ck) >> CTL_LOG2;
+    /* (2.6, a whistle on the kicks) the levels glide to their targets exactly: a0 + r (i + 1) / CTL. A step of
+     * r >> CTL_LOG2 a sample fell up to CTL - 1 short and jumped the rest at every block: a click 1378 times a
+     * second under the kick's long sine (tones at 1.4 / 2.8 kHz). The pitch keeps its step (a frequency, no jump) */
+    int32_t a0 = s->amp, ra = s->amp_to - s->amp, z0 = s->nz, rn = s->nz_to - s->nz, c0 = s->ck, rc = s->ck_to - s->ck;
     int32_t di = (int32_t)(s->inc_to - s->inc) >> CTL_LOG2;
     int32_t a = s->amp, z = s->nz, c = s->ck, inc = (int32_t)s->inc;
     int32_t drive = 16 + d->drive, bits = s->crush & 15, hold = (s->crush >> 4) + 1;
@@ -294,9 +308,9 @@ static int ds_render(dsv_t *s, int32_t *out, uint32_t n)
             x = s->held;
         }
         out[i] = ((mulq15(x, s->gain) >> 2) * s->lg) >> 8;
-        a += da;
-        z += dn;
-        c += dc;
+        a = a0 + ((ra * (int32_t)(i + 1u)) >> CTL_LOG2);   /* (|r| < 2^17: no overflow) */
+        z = z0 + ((rn * (int32_t)(i + 1u)) >> CTL_LOG2);
+        c = c0 + ((rc * (int32_t)(i + 1u)) >> CTL_LOG2);
         inc += di;
     }
     s->t += n;

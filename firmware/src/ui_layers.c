@@ -32,7 +32,7 @@ static uint8_t chain_tap[CHAIN_MAX], chain_taps;        /* the section keys tapp
 #define SHOW_MS 140u                                    /* the layer shows after this (a tap does not flash it) */
 
 /* the ISR's view of the panel: the layers' buttons, OCT- / OCT+, REC / PLAY of a free take */
-static void layers_init(void)
+UI_SMALL static void layers_init(void)
 {
     uint32_t l;
     for (l = LY_FX; l < LY_COUNT; l++)
@@ -44,17 +44,17 @@ static void layers_init(void)
     ui.lock_par = P_ED_FLT;                             /* the lock parameter until a sound knob is turned */
 }
 
-static uint32_t key_of_white(uint32_t w) { return key_of_lane(w & 15u); }   /* white key w -> key index */
+UI_SMALL static uint32_t key_of_white(uint32_t w) { return key_of_lane(w & 15u); }   /* white key w -> key index */
 
 /* ------------------------------------------------------------ tools --- */
 /* EDIT layer knobs; each a step of one undo (the layer's hold) */
-static void layer_undo_mark(track_t *t)
+UI_SMALL static void layer_undo_mark(track_t *t)
 {
     if (!ui.step_sess)
         ui.step_sess = (undo_sess += 4u) | 3u;
     undo_mark(t, ui.step_sess);
 }
-static void pattern_rotate(track_t *t, int32_t d)       /* every step one later (d > 0) / earlier */
+UI_SMALL static void pattern_rotate(track_t *t, int32_t d)       /* every step one later (d > 0) / earlier */
 {
     uint32_t len = trk_len(t), i;
     step_t keep;
@@ -73,7 +73,7 @@ static void pattern_rotate(track_t *t, int32_t d)       /* every step one later 
     }
     fm1_irq_on();
 }
-static void pattern_length(track_t *t, int32_t d)       /* x2 (the pattern again after itself), or half */
+UI_SMALL static void pattern_length(track_t *t, int32_t d)       /* x2 (the pattern again after itself), or half */
 {
     uint32_t len = trk_len(t), i;
     layer_undo_mark(t);
@@ -92,7 +92,7 @@ static void pattern_length(track_t *t, int32_t d)       /* x2 (the pattern again
         ui_say("STEPS ", b);
     }
 }
-static void pattern_transpose(track_t *t, int32_t d)    /* every note a semitone up / down (synth parts) */
+UI_SMALL static void pattern_transpose(track_t *t, int32_t d)    /* every note a semitone up / down (synth parts) */
 {
     uint32_t i, j;
     if (is_drum(t))
@@ -110,11 +110,11 @@ static void pattern_transpose(track_t *t, int32_t d)    /* every note a semitone
  * sound's lane; synth: the pen, the chord / note played last); a set one goes when its key is let go,
  * unless a knob changed it meanwhile (level, ratchet, note) */
 static uint16_t step_pend_off;                         /* the step keys that clear their step when let go */
-static int step_is_on(const track_t *t, uint32_t idx)
+UI_SMALL static int step_is_on(const track_t *t, uint32_t idx)
 {
     return is_drum(t) ? dstep_has(&t->dstep[idx], pen_lane) : step_on(&t->step[idx]);
 }
-static void step_down(uint32_t w)
+UI_SMALL static void step_down(uint32_t w)
 {
     track_t *t = TSEL;
     uint32_t idx = ui.step_page * 16u + w;
@@ -146,7 +146,7 @@ static void step_down(uint32_t w)
     fm1_irq_on();
     sync_reload = 1;
 }
-static void step_up(uint32_t w)
+UI_SMALL static void step_up(uint32_t w)
 {
     track_t *t = TSEL;
     uint32_t idx = ui.step_page * 16u + w;
@@ -170,7 +170,7 @@ static void step_up(uint32_t w)
     sync_reload = 1;
 }
 /* the drum sound the SEQ layer sets (KNOB 1): heard when it changes */
-static void pen_lane_move(int32_t s)
+UI_SMALL static void pen_lane_move(int32_t s)
 {
     uint8_t l = (uint8_t)clamp(pen_lane + s, 0, DRUM_LANES - 1);
     if (l != pen_lane)
@@ -180,10 +180,14 @@ static void pen_lane_move(int32_t s)
 /* KNOB 1..4 with step keys held: their sound / note (drums: the sound's lane; synth: every note), level,
  * ratchet, nudge (1/64 of a step, - early + late). knob 4 = PRESETS: a lock of ui.lock_par on them, made at
  * the track's value, then moved */
-static void steps_held_edit(uint32_t knob, int32_t s)
+UI_SMALL static void steps_held_edit(uint32_t knob, int32_t s)
 {
     track_t *t = TSEL;
     uint32_t w, i;
+    /* the accelerated turn once for every step held (a second call would see no time pass: x3 on the others) */
+    int32_t sv = knob == 1u && !is_drum(t) ? accel(EN_K2, s, 126) : 0;
+    int32_t sk = knob == 4u ? accel(EN_PRESET, s, lock_desc(t, ui.lock_par % P_COUNT)->max -
+                                                  lock_desc(t, ui.lock_par % P_COUNT)->min) : 0;
     layer_undo_mark(t);
     step_pend_off &= (uint16_t)~ui.step_held;            /* (edited: kept when let go) */
     fm1_irq_off();
@@ -198,9 +202,8 @@ static void steps_held_edit(uint32_t knob, int32_t s)
         if (knob == 4u) {                                 /* LOCK (PRESETS): ui.lock_par on this step */
             uint32_t id = ui.lock_par % P_COUNT;
             int k = lock_find(t, idx, id, 0);
-            const param_desc_t *d = lock_desc(t, id);
             int32_t v = k >= 0 ? t->lock[k].val : t->p[id];
-            if (!lock_set(t, idx, id, v + accel(EN_PRESET, s, d->max - d->min)))
+            if (!lock_set(t, idx, id, v + sk))
                 ui_message(p_lockable(id) ? "NO LOCK LEFT" : "NOT LOCKABLE");
             continue;
         }
@@ -218,6 +221,13 @@ static void steps_held_edit(uint32_t knob, int32_t s)
             step_t *st = &t->step[idx];
             if (!step_on(st))
                 continue;
+            if (knob == 1u) {                             /* VEL (2.6): the step's velocity, 1..127; every note */
+                int32_t v = clamp((int32_t)step_vel_shown(st) + sv, 1, 127);   /* at it (NORM) */
+                st->vel = (uint8_t)v;
+                st->lvl = 0;
+                st->flags &= (uint8_t)~SF_ACCENT;         /* (ACC would play it at 127) */
+                continue;
+            }
             for (i = 0; i < st->n; i++) {
                 uint32_t sh = 2u * i, lv = (st->lvl >> sh) & 3u, rt = (st->rat >> sh) & 3u;
                 if (knob == 0u) {
@@ -238,7 +248,7 @@ static void steps_held_edit(uint32_t knob, int32_t s)
 }
 /* ALGORITHM with step keys held: the lock parameter, through the lockable ones (the drum track: not the
  * engine parameters it has no use for), wrapping round */
-static void lock_par_step(int32_t s)
+UI_SMALL static void lock_par_step(int32_t s)
 {
     const track_t *t = TSEL;
     uint32_t id = ui.lock_par % P_COUNT, guard = P_COUNT;
@@ -249,7 +259,7 @@ static void lock_par_step(int32_t s)
     ui.lock_par = (uint8_t)id;
 }
 /* OCT- with step keys held: their nudge, locks and fill condition go */
-static void steps_held_clear(void)
+UI_SMALL static void steps_held_clear(void)
 {
     track_t *t = TSEL;
     uint32_t w, n = 0;
@@ -270,7 +280,7 @@ static void steps_held_clear(void)
     ui_message(n ? "NUDGE, LOCKS, FILL CLEARED" : "NO NUDGE, LOCK OR FILL");
 }
 /* OCT+ with step keys held: their fill condition, round: normal -> fill only -> no fill (the first one's next) */
-static void steps_held_fill(void)
+UI_SMALL static void steps_held_fill(void)
 {
     track_t *t = TSEL;
     static const char *const MSG[3] = {"FILL: NORMAL", "FILL ONLY", "NO FILL"};
@@ -293,7 +303,7 @@ static void steps_held_fill(void)
 }
 
 /* ------------------------------------------------------------- GLO --- */
-static void tap_tempo(void)
+UI_SMALL static void tap_tempo(void)
 {
     uint32_t now = fm1_ms, i, sum = 0;
     if (ui.tap_n && now - ui.tap_ms[(ui.tap_n - 1u) & 3u] > 2000u)
@@ -313,7 +323,7 @@ static void tap_tempo(void)
 }
 
 /* a key of the layers the UI runs (seq.c lk_q): SEQ steps, SEL key, GLO mix */
-static void layer_key(uint32_t layer, uint32_t k, uint32_t down)
+UI_SMALL static void layer_key(uint32_t layer, uint32_t k, uint32_t down)
 {
     int32_t w = punch_key(k);
     if (layer >= LY_COUNT)
@@ -408,7 +418,9 @@ static void layer_key(uint32_t layer, uint32_t k, uint32_t down)
         return;
     }
     case LY_MIX:
-        if (w >= 0 && w < 4) {
+        if (k == 1u) {                                      /* (2.6) the black key F#3: MIDI LEARN on / off */
+            ml_toggle();
+        } else if (w >= 0 && w < 4) {
             trk[w].p[P_MUTE] = (int16_t)!trk[w].p[P_MUTE];
         } else if (w >= 4 && w < 8) {
             song.solo ^= (uint8_t)(1u << (w - 4));
@@ -428,7 +440,7 @@ static void layer_key(uint32_t layer, uint32_t k, uint32_t down)
 
 /* SAVE let go (ui_input.c): two or more section taps while it was held play as a chain, from the one
  * already asked for (the first), each for the bars of its pattern, looped; one tap was a plain jump */
-static void chain_release(void)
+UI_SMALL static void chain_release(void)
 {
     uint32_t i;
     if (chain_taps >= 2u && song.playing && !arrangement_clock.running) {
@@ -443,7 +455,7 @@ static void chain_release(void)
     chain_taps = 0;
 }
 /* "chain A B B C": the chain being built (SAVE held) or playing */
-static void chain_sub(char *sub, uint32_t n)
+UI_SMALL static void chain_sub(char *sub, uint32_t n)
 {
     uint32_t i, m = chain_taps >= 2u ? chain_taps : chain_n, k = 5;
     str_cpy(sub, "chain", n);
@@ -455,7 +467,7 @@ static void chain_sub(char *sub, uint32_t n)
 }
 
 /* KNOB 1..4 while a layer is held: what the layer gives them (the page does not see them) */
-static void layer_knobs(uint32_t layer)
+UI_SMALL static void layer_knobs(uint32_t layer)
 {
     uint32_t k;
     int32_t s;
@@ -560,7 +572,7 @@ typedef struct {
     uint8_t cond;                /* top left: the step's fill condition (FC_FILL an "F", FC_NOFILL an "x"), 0 = none */
 } tile_t;
 
-static void tiles_draw(const tile_t *tl, uint32_t *cache)
+UI_SMALL static void tiles_draw(const tile_t *tl, uint32_t *cache)
 {
     uint32_t r, c, sig = 7u;
     for (r = 0; r < 16u; r++)
@@ -599,7 +611,44 @@ static void tiles_draw(const tile_t *tl, uint32_t *cache)
     }
 }
 
-static void layer_title(const char *name, const char *sub, uint16_t col, uint32_t *cache)
+/* the punch layer (2.6): the 27 keys as a keyboard, four rows of four white keys (as the other layers' 16
+ * tiles) with the black keys over them, between the white keys they sit between (the one after the
+ * row's last white key at its right end); a held effect lit white */
+#define PT_BW 52                                        /* a black key's tile */
+UI_SMALL static void punch_tiles_draw(const tile_t *tl, uint32_t *cache)
+{
+    uint32_t r, c, i, sig = 11u;
+    for (i = 0; i < PUNCH_NFX; i++)
+        sig = studio_hash(sig * 31u + tl[i].bg * 3u + tl[i].fg * 5u + tl[i].top * 7u, tl[i].lab);
+    if (!ui.force && sig == *cache)
+        return;
+    *cache = sig;
+    for (r = 0; r < 4u; r++) {
+        cv_begin(240, 36, C_BLACK);
+        for (c = 0; c < 4u; c++) {                      /* the white keys */
+            const tile_t *t = &tl[r * 4u + c];
+            int32_t x = 2 + (int32_t)c * 60;
+            cv_rect(x, 19, 56, 17, t->bg);
+            if (t->top)
+                cv_rect(x, 19, 56, 2, t->top);
+            te_text_c(x + 28, 20, t->lab, t->fg);
+        }
+        for (i = 16u; i < PUNCH_NFX; i++) {             /* the black keys of this row */
+            const tile_t *t = &tl[i];
+            int32_t w = punch_key(PUNCH_BLACK[i - 16u] - 1u), x;   /* the white key before it */
+            if ((uint32_t)w / 4u != r)
+                continue;
+            x = w % 4 < 3 ? 60 * (w % 4 + 1) - PT_BW / 2 : 238 - PT_BW;
+            if (t->bg == C_BLACK)
+                cv_rect(x, 0, PT_BW, 17, TE_G2);         /* an outline: a black key on the black screen */
+            cv_rect(x + 1, 1, PT_BW - 2, 15, t->bg);
+            te_text_c(x + PT_BW / 2, 1, t->lab, t->fg);
+        }
+        cv_blit(0, 40 + r * 36);
+    }
+}
+
+UI_SMALL static void layer_title(const char *name, const char *sub, uint16_t col, uint32_t *cache)
 {
     uint32_t locked = ly_lock != LY_PLAY;
     uint32_t sig = studio_hash(studio_hash(col, name), sub) + (ui.msg_t ? studio_hash(3u, ui.msg) : 0u) + locked * 7919u;
@@ -618,7 +667,7 @@ static void layer_title(const char *name, const char *sub, uint16_t col, uint32_
     cv_blit(0, 0);
 }
 
-static const char *lock_label(const track_t *t, uint32_t id)   /* the lock parameter's name, lower case */
+UI_SMALL static const char *lock_label(const track_t *t, uint32_t id)   /* the lock parameter's name, lower case */
 {
     static char b[8];
     te_lower(b, track_desc(t, id % P_COUNT)->label, 8);
@@ -627,10 +676,10 @@ static const char *lock_label(const track_t *t, uint32_t id)   /* the lock param
 
 static uint8_t layer_shown;                              /* the screen holds a layer (or a hold) */
 static const char *layer_sub_shown = "";                 /* the sub line last drawn (the host tests read it) */
-static void layer_screen_draw(void)
+UI_SMALL static void layer_screen_draw(void)
 {
     static uint32_t head, tiles, foot;
-    static tile_t tl[16];
+    static tile_t tl[PUNCH_NFX];                        /* 16 (the punch layer: 27) */
     static char v[4][10], sub[24];
     const char *lab[4] = {"", "", "", ""}, *val[4] = {v[0], v[1], v[2], v[3]};
     int32_t ratio[4] = {-1, -1, -1, -1};
@@ -653,17 +702,20 @@ static void layer_screen_draw(void)
     sub[6] = (char)('1' + sel);
     sub[7] = 0;
     switch (layer) {
-    case LY_FX:                                         /* the 16 punch-in effects */
+    case LY_FX:                                         /* the 27 punch-in effects: 16 white keys, 11 black */
         col = TE_DRUM;
-        str_cpy(sub, "hold + key", sizeof sub);
-        for (i = 0; i < 16u; i++) {
-            static const char *const PSHORT[16] = {"loop 4", "loop 8", "loop16", "loop32", "stutt", "rev", "stop", "half",
-                                                   "low", "high", "phone", "crush", "alias", "gate", "echo", "wobble"};
-            int on = punch.req == (int8_t)i;
+        str_cpy(sub, thr_req == 3u ? "rev + echo throw" : thr_req == 2u ? "echo throw" : thr_req ? "rev throw" : "hold + key",
+                sizeof sub);
+        for (i = 0; i < PUNCH_NFX; i++) {
+            static const char *const PSHORT[PUNCH_NFX] = {"loop 4", "loop 8", "loop16", "loop32", "stutt", "rev", "stop",
+                                                          "half", "low", "high", "phone", "crush", "alias", "gate", "echo",
+                                                          "wobble", "k low", "k mid", "k high", "rewind", "oct up", "flange",
+                                                          "pan", "freeze", "loop8t", "mono", "fade"};
+            int on = punch.req == (int8_t)i, black = i >= 16u;
             str_cpy(tl[i].lab, PSHORT[i], 8);
-            tl[i].bg = on ? C_WHITE : TE_G1;
-            tl[i].fg = on ? C_BLACK : TE_G4;
-            tl[i].top = on ? 0 : TE_DIM[i / 4u];
+            tl[i].bg = on ? C_WHITE : black ? C_BLACK : TE_G1;
+            tl[i].fg = on ? C_BLACK : black ? TE_G3 : TE_G4;
+            tl[i].top = on || black ? 0 : TE_DIM[i / 4u];
         }
         lab[0] = "filter", lab[1] = "dust", lab[2] = "duck", lab[3] = "trk flt";
         {
@@ -683,8 +735,9 @@ static void layer_screen_draw(void)
     case LY_ERASE:
     case LY_ROLL: {                                     /* the keys' sounds: lit = held */
         uint32_t held = fm1_in.notes;
+        int mute = layer == LY_ERASE && is_drum(t) && er_mute;   /* (2.6) EDIT + a black key: the mutes */
         col = layer == LY_ERASE ? TE_RED : col;
-        str_cpy(sub, layer == LY_ERASE ? (song.playing ? "as it plays" : "every step") : "hold + key", sizeof sub);
+        str_cpy(sub, mute ? "mute: key = sound" : layer == LY_ERASE ? (song.playing ? "as it plays" : "every step") : "hold + key", sizeof sub);
         for (i = 0; i < 16u; i++) {
             uint32_t k = key_of_white(i), down = (held >> k) & 1u, present = 0, j;
             if (is_drum(t)) {
@@ -708,13 +761,24 @@ static void layer_screen_draw(void)
             tl[i].bg = down ? (layer == LY_ERASE ? TE_RED : C_WHITE) : TE_G1;
             tl[i].fg = down ? C_BLACK : present ? C_WHITE : TE_G3;
             tl[i].top = present && !down ? (layer == LY_ERASE ? TE_RED : col) : 0;
+            if (mute) {                                 /* MUTE: a muted sound white on red, "off" */
+                uint32_t off = (drum_mute >> i) & 1u;
+                tl[i].bg = off ? TE_RED : TE_G1;
+                tl[i].fg = off ? C_WHITE : present ? C_WHITE : TE_G3;
+                tl[i].top = 0;
+                if (off)
+                    str_cpy(tl[i].lab, "off", 8);
+            }
         }
+        if (layer == LY_ERASE && is_drum(t) && !mute && !undo.valid)
+            str_cpy(sub, "black key: mute", sizeof sub);
         if (layer == LY_ERASE) {
             lab[0] = "shift", lab[1] = "length", lab[2] = is_drum(t) ? "" : "transp";
             str_cpy(v[0], "<  >", 8);
             fmt_int(v[1], t->p[P_SLEN]);
             str_cpy(v[2], is_drum(t) ? "" : "-  +", 8);
-            str_cpy(sub, undo.valid ? (undo.undone ? "oct+ redo" : "oct- undo") : sub, sizeof sub);
+            if (!mute)
+                str_cpy(sub, undo.valid ? (undo.undone ? "oct+ redo" : "oct- undo") : sub, sizeof sub);
         } else {
             lab[0] = "rate";
             str_cpy(v[0], N_ROLL[clamp(song.g[G_ROLL], 0, 4)], 8);
@@ -780,8 +844,17 @@ static void layer_screen_draw(void)
             for (w = 0; w < 16u && !((ui.step_held >> w) & 1u); w++)
                 ;
             idx = (page * 16u + w) % NSTEP;
-            lab[1] = "level", lab[2] = "ratchet", lab[3] = "nudge";
+            lab[1] = is_drum(t) ? "level" : "vel", lab[2] = "ratchet", lab[3] = "nudge";
             str_cpy(v[1], "-  +", 8);
+            if (!is_drum(t)) {                          /* (2.6) the first held step's velocity */
+                const step_t *st = &t->step[idx];
+                if (step_on(st)) {
+                    fmt_int(v[1], (int32_t)step_vel_shown(st));
+                    ratio[1] = (int32_t)step_vel_shown(st) * 1000 / 127;
+                } else {
+                    str_cpy(v[1], "--", 8);
+                }
+            }
             str_cpy(v[2], "x1 x4", 8);
             {
                 int32_t m = t->micro[idx];
@@ -940,7 +1013,10 @@ static void layer_screen_draw(void)
     }
     layer_sub_shown = sub;
     layer_title(LAYER_NAME[layer % LY_COUNT], sub, col, &head);
-    tiles_draw(tl, &tiles);
+    if (layer == LY_FX)
+        punch_tiles_draw(tl, &tiles);
+    else
+        tiles_draw(tl, &tiles);
     {   /* (a message shows in the title: the dials stay) */
         uint8_t m = ui.msg_t;
         ui.msg_t = 0;
@@ -952,7 +1028,7 @@ static void layer_screen_draw(void)
 /* HOLD to confirm: a ring fills while REC (clear the track) or SAVE (save the project) is held */
 #define HOLD_CLEAR_MS 1300u                             /* after the 0.7 s that make REC a hold */
 #define HOLD_SAVE_MS 1000u
-static void hold_screen_draw(void)
+UI_SMALL static void hold_screen_draw(void)
 {
     static uint32_t cache;
     uint32_t span = ui.hold_kind == 1u ? HOLD_CLEAR_MS : HOLD_SAVE_MS, el = fm1_ms - ui.hold_t0;
@@ -985,8 +1061,8 @@ static void hold_screen_draw(void)
         str_cpy(b, "track 1", sizeof b);
         b[6] = (char)('1' + ui.hold_trk);
     } else {
-        str_cpy(b, "project in slot 1", sizeof b);
-        b[16] = (char)('0' + clamp(song.g[G_SLOT], 1, 4));
+        str_cpy(b, "section A", sizeof b);
+        b[8] = (char)('A' - 1 + clamp(song.g[G_SLOT], 1, 4));
     }
     te_text_c(120, 4, b, TE_G4);
     te_text_c(120, 30, "keep holding", TE_G3);

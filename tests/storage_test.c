@@ -36,6 +36,37 @@ static int check(const char *what, int ok)
     return ok ? 0 : 1;
 }
 
+static int side_tests(void)                          /* 2.7: the side record (project.c: the theme) */
+{
+    int bad = 0, n;
+    char p1[300], p2[300], got[300], side[36], sg[36], ff[36];
+    memset(p1, 'P', sizeof p1);
+    memset(p2, 'Q', sizeof p2);
+    memset(side, 'S', sizeof side);
+    memset(ff, 0xFF, sizeof ff);
+    st_side = side;
+    st_side_len = sizeof side;
+    bad += check("side: saved with a copy", st_save(OBJ_SETTINGS, p1, sizeof p1) == 0);
+    st_side = 0;
+    n = st_load(OBJ_SETTINGS, got, sizeof got);
+    bad += check("side: the payload as without it", n == (int)sizeof p1 && !memcmp(got, p1, sizeof p1));
+    bad += check("side: read back", st_side_load(OBJ_SETTINGS, sg, sizeof sg) == 0 && !memcmp(sg, side, sizeof sg));
+    bad += check("side: an older save (none): erased bytes",
+                 st_save(OBJ_SETTINGS, p2, sizeof p2) == 0 && st_side_load(OBJ_SETTINGS, sg, sizeof sg) == 0 &&
+                 !memcmp(sg, ff, sizeof sg));
+    st_side = side;
+    fail_after = 3;                                  /* payload (2 pages) and side written, header torn */
+    st_save(OBJ_SETTINGS, p1, sizeof p1);
+    fail_after = -1;
+    st_side = 0;
+    n = st_load(OBJ_SETTINGS, got, sizeof got);
+    bad += check("side: torn save keeps the last copy, its side",
+                 n == (int)sizeof p2 && !memcmp(got, p2, sizeof p2) && st_side_load(OBJ_SETTINGS, sg, sizeof sg) == 0 &&
+                 !memcmp(sg, ff, sizeof sg));
+    bad += check("side: no more than the gap", st_side_load(OBJ_SETTINGS, sg, ST_SIDE_MAX + 1u) < 0);
+    return bad;
+}
+
 int main(void)
 {
     char a[600], b[600], got[600];
@@ -123,6 +154,18 @@ int main(void)
         bad += check("2.5: ... a torn save keeps the last one", n == (int)sizeof all && !memcmp(got2, all, sizeof all));
         bad += check("2.5: ... too big for a sector: refused", st_save2(OBJ_SETTINGS, p2, 3000, p2, 1000) == -1);
     }
+    {   /* 2.6: SAVE > PROJECT > ERASE (project.c project_erase), as the editor's restore of an empty slot: an object
+         * of no bytes; a load reads 0 bytes (proj_fetch: no project), the next save works as ever */
+        static uint8_t a2[3816], got3[3816];
+        memset(a2, 'P', sizeof a2);
+        bad += check("2.6 erase: a project saved", st_save(OBJ_PROJECT0 + 2u, a2, sizeof a2) == 0);
+        bad += check("2.6 erase: the empty object written", st_save(OBJ_PROJECT0 + 2u, a2, 0) == 0);
+        n = st_load(OBJ_PROJECT0 + 2u, got3, sizeof got3);
+        bad += check("2.6 erase: loads 0 bytes (an empty slot)", n == 0);
+        bad += check("2.6 erase: saved again", st_save(OBJ_PROJECT0 + 2u, a2, sizeof a2) == 0 &&
+                     st_load(OBJ_PROJECT0 + 2u, got3, sizeof got3) == (int)sizeof a2 && !memcmp(got3, a2, sizeof a2));
+    }
+    bad += side_tests();
     printf("%s\n", bad ? "STORAGE TEST FAILED" : "storage test passed");
     return bad != 0;
 }

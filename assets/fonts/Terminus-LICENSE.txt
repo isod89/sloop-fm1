@@ -1,4 +1,4 @@
-Terminus Font (ter-u16n.bdf)
+Terminus Font (ter-u16n.bdf, ter-u16b.bdf: the bold one, from Terminus 4.48 as packaged by Debian, xfonts-terminus)
 Copyright (C) 2020 Dimitar Toshkov Zhekov
 Source: https://github.com/retro-vault/font-vault (source/fonts/terminus)
 

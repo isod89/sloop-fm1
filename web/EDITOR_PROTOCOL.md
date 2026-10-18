@@ -127,7 +127,7 @@ checked byte for byte by `web/test_web.mjs`): header at 0, ADPCM data at 512.
 | 0 | magic `"FSMP"` (u32 0x504D5346), u16 version 1, u8 zone count 1..16, u8 0 |
 | 8 | name, 8 ASCII bytes (0-padded) |
 | 16 | u32 data length (bytes), u32 CRC-32 (zlib) of the data, 8 bytes 0 |
-| 32 | 16 zones × 28 bytes: u32 off (in the data), n (samples), loop start, loop end, rate (Hz / 44100 × 65536); i16 root × 16 (MIDI note), ADPCM predictor at the loop start; u8 step index at the loop start, lo note, hi note, looped (0/1) |
+| 32 | 16 zones × 28 bytes: u32 off (in the data), n (samples), loop start, loop end, rate (Hz / 44100 × 65536); i16 root × 16 (MIDI note), ADPCM predictor at the loop start; u8 step index at the loop start, lo note, hi note, looped (0 one-shot, 1 always, 2 while the note is held then the rest to the end: SLOOP 2.7, the editor's LOOP and LOOP+TAIL; 2.6 plays 2 as 1) |
 
 Data is IMA ADPCM, 4 bit, low nibble first, starting from predictor 0 and step index 0.
 All little endian.
@@ -184,7 +184,13 @@ parameters (SLCR, PAT, RATE, DEPTH: ids 45..48) went in just before P_E0: P_COUN
 added CHORD (id 49): P_COUNT 58, P_E0 50 (and G_COUNT 32: DUST, DUCK, FILT, ROLL, NEW at 27..31). An
 editor takes them from `INFO`; older records load with the SLICER off and CHORD off. SLOOP 2.5 adds `G_DRDLY` (id 32,
 GLO > DRUMS DLY, the drums' delay send): G_COUNT 33 (a 2.4 device says 32; the editor takes both). A project keeps it in
-the byte after `sel` (format 5 unchanged; 0 in older projects).
+the byte after `sel` (format 5 unchanged; 0 in older projects). SLOOP 2.4 had grown P_COUNT to 61 (P_E0 53: TFLT, STRUM,
+VLEAD and the others before it). SLOOP 2.6 adds ten track parameters just before P_E0 (ids 53..62: the INSERT's TYPE, A, B,
+C, MIX; ANALOG's filter FTYPE; ESYNC; LFO 2's LSYNC, LTRIG, LPOL): P_COUNT 71, P_E0 63; and twelve globals (ids 33..44: CH1, CH2,
+CH3, OTHER for GLO > MIDI; SRC, LEVEL, TONE, MOVE, RATE, WHEN, DUCK for GLO > TEXTURE; BEND for GLO > MIDI 2):
+G_COUNT 45. An editor reads both from `INFO` and maps a patch file by its own count (61 or 71 values; `pCount`,
+`pE0` in the file). User preset records of 61 values load with the new parameters at their defaults. Backup object
+10 holds the MIDI LEARN map and the GLO > MIDI settings (40 bytes; listed only when not the default).
 
 ## v2: live sync
 
@@ -278,7 +284,7 @@ empty). Numbers are 5 × 7 bit (u35, LSB first); data is pack7.
 | --- | --- | --- |
 | 34 BK_LIST | — | rc (0 ok, 4 no flash), count, then per object: id, length u35, CRC-32 u35 (zlib). Takes a snapshot of the working project and the settings for GET |
 | 35 BK_GET | id, offset u35, count (2 × 7 bit, 1..256) | id, rc (0 ok, 1 arguments, 5 the snapshot is gone: LIST again), offset u35, count, pack7 data |
-| 36 BK_PUT | op 0 begin: id 0..9 (8: v9, 9: v10), length u35, CRC-32 u35 · op 1 data: id, offset u35, pack7 (≤ 256 bytes, in order) · op 2 commit: id · op 3 abort: id | op, id, rc: 0 ok, 1 arguments, 2 not a valid object (CRC, magic, sizes, ranges), 3 stop the song first (projects and preset banks; since 2.5 the settings too when their song order differs), 4 flash, 5 no begin for this object (or more than 15 s ago) |
+| 36 BK_PUT | op 0 begin: id 0..11 (8: v9, 9: v10, 10: 2.6, 11: v11), length u35, CRC-32 u35 · op 1 data: id, offset u35, pack7 (≤ 256 bytes, in order) · op 2 commit: id · op 3 abort: id | op, id, rc: 0 ok, 1 arguments, 2 not a valid object (CRC, magic, sizes, ranges), 3 stop the song first (projects and preset banks; since 2.5 the settings too when their song order differs), 4 flash, 5 no begin for this object (or more than 15 s ago) |
 
 A restore stages one object in RAM (the project load buffer), checks it at the commit as a load checks it
 (projects: magic, size and sum, older formats converted; banks: magic, record size, slot count; settings:
@@ -412,6 +418,57 @@ is put into range before a voice sees it.
 Backup object **9** is the four kits (`dsu_bank_t`, 1464 bytes: "DSU1", version 1, count 4, then per kit name 8,
 crush, src, 2 reserved, 16 x 22). Its commit answers rc 3 while the song plays. A device before v10 answers the
 begin of object 9 with rc 5: the editor skips it (as object 8 on a v8 device).
+
+Backup object **10** (SLOOP 2.6) is the MIDI part, 40 bytes: the MIDI LEARN map, 16 entries of 2 bytes (little-endian),
+each `cc | track << 7 | code << 9` (0: empty; code: a common parameter its id + 1, an engine parameter 120 + k for E k),
+then GLO > MIDI: CH1, CH2, CH3 (0 OFF, 1..16) and the drum channel | OTHER << 7, GLO > MIDI 2's BEND (1..12), 3 spare (a
+restore takes 32 and 36 bytes too: the map alone, the map and the channels). BK_LIST names it only while it is not the default (nothing learned, channels 1 2 3 10, OTHER SEL, BEND 2), so such a
+backup is one an older editor reads. Its commit checks every entry
+(a CC that learns, a parameter the firmware knows; the others become empty), writes it with the settings, and answers rc 3
+while the song plays. A device before 2.6 answers its begin with rc 5: the editor skips it.
+
+## v11: your theme (SLOOP 2.7)
+
+`INFO` ends with 11. Backup object **11** is the theme (gfx.c `theme_t`, 36 bytes, little-endian): "THM1", the name (8
+ASCII, 0-padded), the screen's five colours darkest first (lines, dim, labels, secondary, values) and the four tracks'
+colours (T1 T2 T3 drums), the background (0: black), RGB565 each, then the CRC-32 of the 32 bytes before it. BK_LIST names it only while
+there is one. A begin with length 0 removes it. Its commit checks the record (magic, CRC, a printable name, the
+brightest colour with a channel 96 or more apart from the background's, on 0..255: rc 2 otherwise), keeps it with the settings (in the settings sector's
+side record: firmware before 2.7 never reads it), shows it (MENU > COLOR on it) and answers rc 3 while the song plays. A
+device before 2.7 answers its begin with rc 5: the editor skips it. The editor's Theme page shares a theme as one line,
+`SLOOP-THEME-1:` + the 36 bytes in base64.
+
+## v12: LIVE (SLOOP 2.7)
+
+`INFO` ends with 12. Command **77**, `LIVE` (firmware `editor_live.c`), drives the editor's LIVE page: `op [args]`,
+and every reply is `op` followed by the live state. Each op runs the code of the FM-1's own buttons:
+
+| op | args | does |
+| --- | --- | --- |
+| 0 | — | nothing: the state only (the page asks about 8 times a second) |
+| 1 | 0 / 1 / 2 | PLAY: stop, play, or as the PLAY button (play / stop). Song mode with an empty section: *EMPTY SECTION: REC* |
+| 2 | layer, white key 0..15, down 1 / up 0 | a key of a layer, as the layer's button held + that key (`ui_layers.c layer_key`): layer 6 GLO (keys 1..4 mute, 5..8 solo, 9 fill while held, 10 fill the next bar, 16 tap tempo), 7 SAVE (1..4 play A..D on the next bar or, stopped, load it; 5..8 store the loop, a used section only on a second press within 3 s; 13 loop / song; 14 SONG REC), 5 SEL (the song's key) |
+| 3 | effect 0..26, on 1 / off 0 | a punch-in effect, as GLO > MIDI 3 > FX CH (`seq.c midi_fx`): one at a time; an FM-1 key with FX held takes over |
+| 4 | — | REC, as the REC button (`rec_toggle`) |
+| 5 | 0 undo / 1 redo | as EDIT + OCT− / OCT+ |
+| 6 | track, note (drums: lane 0..15), level (0 NORM, 1 GHOST, 2 SOFT, 3 HARD), down 1 / up 0 | ROLL, as ARP + key (`seq.c roll_start`): the note repeats at GLO's ROLL rate while held (recorded with REC on). The page's rolls use the key 0x80 + note, so letting go of ARP on the FM-1 does not end them; up does |
+| 7 | track, note (drums: lane), down / up | ERASE, as EDIT + key: playing, the steps it passes; stopped, every step (`erase_now`, one undo) |
+| 8 | track, tool (0 shift, 1 length, 2 transpose), 1 up / 0 down | the pattern, as EDIT + KNOB 1..3 (`pattern_rotate`, `pattern_length` ×2 / ½, `pattern_transpose`): each one undo |
+| 9 | n, then n sections 0..3 (n ≤ 8; 0: the chain stops) | a chain, as SAVE + several keys (`chain_release`): the first is asked for the next bar, each plays its bars, looped. Only while playing; an empty section refuses it |
+| 10 | bits (1 the reverb, 2 the echo; 0 let go) | THROW, as FX + OCT− / OCT+ (`thr_ed`, with the FM-1's own) |
+| 11 | 0..126, or 127 | the master level from the page; 127, or turning the MASTER knob, gives it back to the knob (`ed_master`, main.c) |
+| 12 | lane, TUNE + 8 (0..15), DECAY + 4 (0..7) | a drum sound's TUNE and DECAY, as the DRUMS screen's SOUND page |
+
+The state, 50 bytes after `op` (an early 2.7 test build: 32, without the last 18, and without ops 6..12): flags (bit 0 playing, 1 PLAY asked, 2 song mode, 3 the song plays, 4 a fill now, 5 fill
+next bar, 6 SONG REC), flags 2 (bit 0 REC armed and waiting for a note, 1 undo there, 2 redo there), BPM (v14), the
+section playing + 1 (0 none), the one asked for + 1, the chain's entries and the one playing, the mutes (bit per track),
+the solos, the REC tracks, the selected track, the punch-in effect + 1, CPU %, the song's entry, entries, bar and that
+entry's bars, the sections stored (bit per section), then per track its step, its pattern length and its meter
+(8 log2 |peak|: 48 = −54 dB, 128 = +6 dB, 0 silent, as the TRACKS meters), the master (0: the knob, else the page's
+level + 1), the THROWs (bits), and the 16 drum sounds' TUNE + 8 | DECAY + 4 << 4. Requests that toggle (op 2's mute, solo,
+fill bar…) are sent once, never repeated on a timeout. The notes are not SysEx: the page plays them as MIDI notes on
+the tracks' channels (GLO > MIDI; OTHER = SEL: a free channel on the selected track; DR MAP for the drums). A device
+before 2.7 does not answer `LIVE`: the page keeps its mixer and keys (TRACK_MIX, TRACK_PARAM, SET, notes).
 
 ## Notes for the editor
 

@@ -2,7 +2,10 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* User presets (editor protocol v2, cmds 16-21; the SAVE > USER page): 32
  * slots in two storage.c objects (OBJ_UPRESET0/1, 0xDC000..0xDFFFF), 16
- * records each, mirrored in RAM so browsing never reads flash. A record:
+ * records each. sloop-lab: no RAM mirror; the banks are read where they are, in the flash's plain
+ * XIP window (storage.c st_xip), as the samples and the FM6 bank already are; a write stages the
+ * bank in the project buffer (project.c up_stage) and goes through st_save (6,160 B of RAM back).
+ * The host test (UP_HOST) keeps the RAM banks. A record:
  * engine, name, the instrument parameters, a 16-step pattern.
  *
  * A bank whose magic, record size or slot count differ reads as empty; so
@@ -14,6 +17,9 @@
  *
  * With -DUP_HOST (host test) only the part above #ifndef UP_HOST is built;
  * it needs nothing but core.h. */
+#ifndef UI_SMALL                 /* (2.7) compiled for size: not the audio path (gfx.c UI_SMALL); the host tests: nothing */
+#define UI_SMALL
+#endif
 #define UP_PER_BANK 16u
 #define UP_PMAX 72u                              /* room for P_COUNT to grow */
 #define UP_USED 0xA5u
@@ -32,28 +38,54 @@ typedef struct {
 } up_bank_t;
 _Static_assert(sizeof(up_rec_t) == 192, "user preset record layout");
 _Static_assert(P_COUNT <= UP_PMAX && P_COUNT < 128, "user preset record: P_COUNT");
+#ifdef UP_HOST
 static up_bank_t up_bank[UP_SLOTS / UP_PER_BANK];
+UI_SMALL static up_rec_t *up_rec(uint32_t k) { return &up_bank[k / UP_PER_BANK].r[k % UP_PER_BANK]; }
+#else
+static const up_bank_t *up_bank_xip[UP_SLOTS / UP_PER_BANK];   /* each bank's current copy in the window, 0 = none */
+static const up_rec_t up_rec_none;                              /* an empty slot (up_valid says no) */
+UI_SMALL static const up_rec_t *up_rec(uint32_t k)
+{
+    const up_bank_t *bk = up_bank_xip[(k / UP_PER_BANK) % NELEM(up_bank_xip)];
+    return bk ? &bk->r[k % UP_PER_BANK] : &up_rec_none;
+}
+static void *up_stage(void);                                    /* project.c: the project buffer (main loop) */
+#endif
 
-static up_rec_t *up_rec(uint32_t k) { return &up_bank[k / UP_PER_BANK].r[k % UP_PER_BANK]; }
-
-static int up_valid(const up_rec_t *r)
+UI_SMALL static int up_valid(const up_rec_t *r)
 {
     return r->used == UP_USED && r->ver == UP_VER && r->engine < NENGINES && r->np >= 8u && r->np <= UP_PMAX &&
            r->name[0];
 }
 
-static int up_used(uint32_t k) { return k < UP_SLOTS && up_valid(up_rec(k)); }
+UI_SMALL static int up_used(uint32_t k) { return k < UP_SLOTS && up_valid(up_rec(k)); }
 
-static void up_bank_check(uint32_t b, int len)  /* after loading bank b (len bytes, -1 = none): wrong shape -> empty */
+UI_SMALL static int up_bank_ok(const up_bank_t *bk, int len)   /* a bank of this layout, whole */
+{
+    return len == (int)sizeof *bk && bk->magic == UP_BANK_MAGIC && bk->rsize == sizeof(up_rec_t) &&
+           bk->nslot == UP_PER_BANK;
+}
+#ifdef UP_HOST
+UI_SMALL static void up_bank_check(uint32_t b, int len)  /* after loading bank b (len bytes, -1 = none): wrong shape -> empty */
 {
     up_bank_t *bk = &up_bank[b];
-    if (len != (int)sizeof *bk || bk->magic != UP_BANK_MAGIC || bk->rsize != sizeof(up_rec_t) ||
-        bk->nslot != UP_PER_BANK)
+    if (!up_bank_ok(bk, len))
         memset(bk, 0, sizeof *bk);
 }
+#else
+UI_SMALL static void up_bank_find(uint32_t b)            /* bank b's current copy in the XIP window, or none (after a save too) */
+{
+    const void *p = 0;
+    uint32_t len = 0;
+#if FELUCCA_FLASH
+    p = flash_ok ? st_xip(OBJ_UPRESET0 + b, &len) : 0;
+#endif
+    up_bank_xip[b % NELEM(up_bank_xip)] = p && up_bank_ok((const up_bank_t *)p, (int)len) ? (const up_bank_t *)p : 0;
+}
+#endif
 
 /* the record's values in today's P_* order (mapped by count, see above); def = the defaults */
-static void up_params(const up_rec_t *r, int16_t *out, const int16_t *def)
+UI_SMALL static void up_params(const up_rec_t *r, int16_t *out, const int16_t *def)
 {
     uint32_t i, nc = r->np - 8u;
     for (i = 0; i < P_E0; i++)
@@ -62,7 +94,7 @@ static void up_params(const up_rec_t *r, int16_t *out, const int16_t *def)
         out[P_E0 + i] = r->p[nc + i];
 }
 
-static int up_name_ok(const uint8_t *s, uint32_t n)   /* 1..12 printable ASCII */
+UI_SMALL static int up_name_ok(const uint8_t *s, uint32_t n)   /* 1..12 printable ASCII */
 {
     uint32_t i;
     if (!n || n > 12u)
@@ -73,7 +105,7 @@ static int up_name_ok(const uint8_t *s, uint32_t n)   /* 1..12 printable ASCII *
     return 1;
 }
 
-static void up_name(uint32_t k, char *b)       /* upper case, 0-terminated: b holds 13 */
+UI_SMALL static void up_name(uint32_t k, char *b)       /* upper case, 0-terminated: b holds 13 */
 {
     const up_rec_t *r = up_rec(k);
     uint32_t i;
@@ -82,7 +114,7 @@ static void up_name(uint32_t k, char *b)       /* upper case, 0-terminated: b ho
     b[i] = 0;
 }
 
-static void up_pat_norm(uint8_t *note, uint8_t *flags)   /* tie: no note; rest: no flags */
+UI_SMALL static void up_pat_norm(uint8_t *note, uint8_t *flags)   /* tie: no note; rest: no flags */
 {
     *note &= 127u;
     if (*flags & 4u) {
@@ -93,7 +125,7 @@ static void up_pat_norm(uint8_t *note, uint8_t *flags)   /* tie: no note; rest: 
     }
 }
 
-static void up_pat_from(up_rec_t *r, const step_t *st)   /* the first 16 steps -> the pattern */
+UI_SMALL static void up_pat_from(up_rec_t *r, const step_t *st)   /* the first 16 steps -> the pattern */
 {
     uint32_t i;
     for (i = 0; i < 16u; i++) {
@@ -103,7 +135,7 @@ static void up_pat_from(up_rec_t *r, const step_t *st)   /* the first 16 steps -
     }
 }
 
-static int up_pat_empty(const up_rec_t *r)
+UI_SMALL static int up_pat_empty(const up_rec_t *r)
 {
     uint32_t i;
     for (i = 0; i < 16u; i++)
@@ -114,7 +146,7 @@ static int up_pat_empty(const up_rec_t *r)
 
 /* UP_PUT arguments: slot, engine, name, P_COUNT x v14, 16 x (note, flags) -> *r (values not yet
  * clamped); 0 ok, 1 bad arguments. *slot gets the slot byte when there is one. */
-static int up_parse(const uint8_t *a, uint32_t na, up_rec_t *r, uint32_t *slot)
+UI_SMALL static int up_parse(const uint8_t *a, uint32_t na, up_rec_t *r, uint32_t *slot)
 {
     uint32_t i, n, k;
     if (na < 3u)
@@ -144,12 +176,12 @@ static int up_parse(const uint8_t *a, uint32_t na, up_rec_t *r, uint32_t *slot)
 }
 
 #ifndef UP_HOST
-static const param_desc_t *up_desc(uint32_t e, uint32_t i)
+UI_SMALL static const param_desc_t *up_desc(uint32_t e, uint32_t i)
 {
     return i >= P_E0 ? &ENGINES[e]->edit[i - P_E0] : &TP[i];
 }
 
-static void up_values(const up_rec_t *r, int16_t *v)   /* mapped and clamped for its engine */
+UI_SMALL static void up_values(const up_rec_t *r, int16_t *v)   /* mapped and clamped for its engine */
 {
     int16_t def[P_COUNT];
     uint32_t i;
@@ -160,41 +192,45 @@ static void up_values(const up_rec_t *r, int16_t *v)   /* mapped and clamped for
         v[i] = (int16_t)clamp(v[i], up_desc(r->engine, i)->min, up_desc(r->engine, i)->max);
 }
 
-static void up_boot(void)                      /* persist_boot: the banks from flash */
+UI_SMALL static void up_boot(void)                      /* persist_boot: the banks, where they are in the flash */
 {
-#if FELUCCA_FLASH
     uint32_t b;
     for (b = 0; b < UP_SLOTS / UP_PER_BANK; b++)
-        up_bank_check(b, flash_ok ? st_load(OBJ_UPRESET0 + b, &up_bank[b], sizeof up_bank[b]) : -1);
-#endif
+        up_bank_find(b);
 }
 
-/* record k = *r (0: erase), then the bank to flash: 0 ok, 2 flash error, 3 no flash (kept in RAM) */
-static int up_put(uint32_t k, const up_rec_t *r)
+/* record k = *r (0: erase), then the bank to flash: 0 ok, 2 flash error, 3 no flash (nothing kept: there is no
+ * RAM mirror). The bank is staged in the project buffer: its current copy, or an empty one, with the record put */
+UI_SMALL static int up_put(uint32_t k, const up_rec_t *r)
 {
-    up_bank_t *bk = &up_bank[k / UP_PER_BANK];
+    uint32_t b = (k / UP_PER_BANK) % NELEM(up_bank_xip), i;
+    up_bank_t *bk = (up_bank_t *)up_stage();
+    int rc = 3;
+    if (up_bank_xip[b])
+        memcpy(bk, up_bank_xip[b], sizeof *bk);
+    else
+        memset(bk, 0, sizeof *bk);
     bk->magic = UP_BANK_MAGIC;
     bk->rsize = sizeof(up_rec_t);
     bk->nslot = UP_PER_BANK;
     if (r)
-        *up_rec(k) = *r;
+        bk->r[k % UP_PER_BANK] = *r;
     else
-        memset(up_rec(k), 0, sizeof(up_rec_t));
-    if (!r) {
-        uint32_t i;
+        memset(&bk->r[k % UP_PER_BANK], 0, sizeof(up_rec_t));
+    if (!r)
         for (i = 0; i < NTRK; i++)
             if (trk[i].user == k + 1u)
                 trk[i].user = 0;
-    }
     up_gen++;
 #if FELUCCA_FLASH
     if (flash_ok)
-        return st_save(OBJ_UPRESET0 + k / UP_PER_BANK, bk, sizeof *bk) ? 2 : 0;
+        rc = st_save(OBJ_UPRESET0 + b, bk, sizeof *bk) ? 2 : 0;
 #endif
-    return 3;
+    up_bank_find(b);
+    return rc;
 }
 
-static void up_slot_label(char *b, uint32_t k)  /* "U07" */
+UI_SMALL static void up_slot_label(char *b, uint32_t k)  /* "U07" */
 {
     b[0] = 'U';
     b[1] = (char)('0' + (k + 1u) / 10u);
@@ -204,7 +240,7 @@ static void up_slot_label(char *b, uint32_t k)  /* "U07" */
 
 /* the selected part's sound -> slot k; name 0 or "": engine name + slot number ("ANALOG 07").
  * 1 = the drum track is selected (it has no sound to store) */
-static int up_store(uint32_t k, const char *name)
+UI_SMALL static int up_store(uint32_t k, const char *name)
 {
     up_rec_t r;
     uint32_t i;
@@ -237,20 +273,26 @@ static int up_store(uint32_t k, const char *name)
  * PAN, MUTE: the TRACKS faders) and its pattern parameters (param_kept). LIVE: the pattern
  * stored in the record is not loaded: changing the sound never changes the sequence.
  * 0 ok, 1 empty (or the drum track is selected) */
-static int up_load(uint32_t k)
+UI_SMALL static int up_load_to(track_t *t, uint32_t k)       /* user preset k into track t (2.6: any track, MIDI PC) */
 {
     const up_rec_t *r;
     int16_t v[P_COUNT];
     uint32_t i;
-    track_t *t = TSEL;
     if (!up_used(k) || is_drum(t))
         return 1;
     r = up_rec(k);
     up_values(r, v);
     for (i = 0; i < P_COUNT; i++)                       /* (LEN etc. of a kept pattern changed too, and */
-        if (param_kept(i))                              /* a preset pattern then counted as edited) */
-            v[i] = t->p[i];
-    panic_req |= (uint8_t)(1u << song.sel);
+        if (param_kept(i) || (t->p[P_AMODE] && i >= P_AMODE && i <= P_AORDER) ||   /* a preset pattern then counted as */
+            (i == P_AHOLD && !t->p[P_AMODE] && t->p[P_AHOLD]))   /* (2.7: KBD HOLD stays on) */
+            v[i] = t->p[i];                             /* edited; 2.7: the arp that runs goes on, ui.c apply_preset_to) */
+    if (!v[P_AMODE] && !t->p[P_AMODE])
+        v[P_AHOLD] = t->p[P_AHOLD];                     /* (2.7) KBD HOLD (HOLD with the arp OFF) is the track's, not the
+                                                         * preset's: as it was (a 2.6 preset's HOLD meant nothing there) */
+    sound_change(t);                                    /* (2.6: what sounds fades out with the old sound, no click) */
+    if (t->p[P_AMODE])
+        arp_keep_req |= (uint8_t)(1u << trk_index(t));  /* (2.7: its notes too) */
+    panic_req |= (uint8_t)(1u << trk_index(t));
     fm1_irq_off();                                      /* the audio ISR must not see half a sound */
     t->eng_req = r->engine;
     for (i = 0; i < P_COUNT; i++)
@@ -259,12 +301,14 @@ static int up_load(uint32_t k)
     fm1_irq_on();
     fm6_track_loaded(t);                                /* FM6: a user preset holds the PTCH and the macros */
     t->user = (uint8_t)(k + 1u);
-    sync_reload = 1;
+    if (t == TSEL)
+        sync_reload = 1;
     ui.force = 1;
     return 0;
 }
+UI_SMALL static int up_load(uint32_t k) { return up_load_to(TSEL, k); }   /* into the selected track */
 
-static uint32_t up_count(void)                 /* used slots */
+UI_SMALL static uint32_t up_count(void)                 /* used slots */
 {
     uint32_t k, n = 0;
     for (k = 0; k < UP_SLOTS; k++)
@@ -272,7 +316,7 @@ static uint32_t up_count(void)                 /* used slots */
     return n;
 }
 
-static uint32_t up_nth(uint32_t n)             /* slot of the n-th used one (n < up_count()) */
+UI_SMALL static uint32_t up_nth(uint32_t n)             /* slot of the n-th used one (n < up_count()) */
 {
     uint32_t k;
     for (k = 0; k < UP_SLOTS; k++)
@@ -281,7 +325,7 @@ static uint32_t up_nth(uint32_t n)             /* slot of the n-th used one (n <
     return 0;
 }
 
-static uint32_t up_rank(uint32_t slot)         /* used slots before it */
+UI_SMALL static uint32_t up_rank(uint32_t slot)         /* used slots before it */
 {
     uint32_t k, n = 0;
     for (k = 0; k < slot && k < UP_SLOTS; k++)
@@ -290,7 +334,7 @@ static uint32_t up_rank(uint32_t slot)         /* used slots before it */
 }
 
 /* SAVE > USER page actions, with the message in the top bar */
-static void up_ui(uint32_t op, uint32_t k)     /* 0 load, 1 erase, 2 save */
+UI_SMALL static void up_ui(uint32_t op, uint32_t k)     /* 0 load, 1 erase, 2 save */
 {
     char l[4];
     int rc;
@@ -314,7 +358,7 @@ static void up_ui(uint32_t op, uint32_t k)     /* 0 load, 1 erase, 2 save */
     }
     rc = op == 1u ? up_put(k, 0) : up_store(k, 0);
     if (rc == 3)
-        ui_message(op == 1u ? "ERASED (RAM)" : "SAVED (RAM)");
+        ui_message("NO FLASH");                        /* (no RAM mirror to keep it in) */
     else if (rc)
         ui_message(op == 1u ? "ERASE ERROR" : "SAVE ERROR");
     else

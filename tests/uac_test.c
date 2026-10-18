@@ -23,9 +23,13 @@
 #define FELUCCA_CDC (T_CDC != 0)
 #define CDC_SHOWN (T_CDC == 1)            /* the console presented */
 #define FELUCCA_UAC 1
+#ifndef T_RATE
+#define T_RATE 0                          /* 2.7 beta: menu USB RATE (0 AUTO, 1 44.1, 2 48): what this start offers */
+#endif
 static void fm1_delay_ms(uint32_t ms) { (void)ms; }
 #pragma GCC diagnostic ignored "-Wint-to-pointer-cast"   /* SIE register macros (never touched here) */
 #include "../firmware/src/usb.c"
+#define RATES (FELUCCA_UAC_48K ? T_RATE : 1)   /* 0: both; 1: 44.1 only (as 2.4: a FELUCCA_UAC_48K=0 build); 2: 48 only */
 
 static int fails;
 static int check(const char *what, int ok)
@@ -54,6 +58,9 @@ static void test_descriptors(void)
 #if T_CDC
     usb_cdc_on = CDC_SHOWN;                            /* (main.c sets it from the menu before usb_start) */
 #endif
+#if FELUCCA_UAC_48K
+    usb_rate_mode = T_RATE;                            /* (main.c, from the menu USB RATE, the same way) */
+#endif
     get_desc(0x0100, &dv, &dl);
     get_desc(0x0200, &c, &cl);
     total = le16(c + 2);
@@ -67,7 +74,9 @@ static void test_descriptors(void)
     }
 
     check("device descriptor: 18 bytes, type 1, EP0 64", dv[0] == 18 && dv[1] == 1 && dv[7] == 64);
-    check("bcdDevice bumped for the audio input at 44.1 / 48 kHz (x.2x)", (dv[12] & 0xF0u) == 0x20u && dv[13] == 3);
+    check(RATES == 0 ? "bcdDevice bumped for the audio input at 44.1 / 48 kHz (x.2x)" :
+          RATES == 1 ? "bcdDevice of the audio input at 44.1 only (x.1x, as 2.4)" : "bcdDevice of 48 kHz only (x.3x)",
+          (dv[12] & 0xF0u) == (RATES == 0 ? 0x20u : RATES == 1 ? 0x10u : 0x30u) && dv[13] == 3);
     check(CDC_SHOWN ? "device class misc / IAD (EF 02 01)" : "device class 0 (per interface)",
           CDC_SHOWN ? dv[4] == 0xEF && dv[5] == 2 && dv[6] == 1 : dv[4] == 0);
     check("configuration: type 2, wTotalLength = the bytes sent", c[1] == 2 && total == n);
@@ -114,7 +123,7 @@ static void test_descriptors(void)
         case 5:
             got_eps++;
             if (d[2] == 0x84) {
-                iso_ok = d[0] == 9 && d[3] == 0x05 && le16(d + 4) == UA_MAXF * 4u && le16(d + 4) <= 1023u &&
+                iso_ok = d[0] == 9 && d[3] == 0x05 && le16(d + 4) == (RATES == 1 ? 46u : 49u) * 4u && le16(d + 4) <= 1023u &&
                          d[6] == 1 && cur_alt == 1 && if_sub[cur_if] == 2;
             }
             if ((d[2] == 0x01 || d[2] == 0x81) && d[3] == 2 && if_sub[cur_if] == 3)
@@ -142,8 +151,10 @@ static void test_descriptors(void)
                 if (d[2] == 1)
                     asg_ok = d[0] == 7 && d[3] == 2 && le16(d + 5) == 1u;
                 else if (d[2] == 2)
-                    fmt_ok = d[0] == 14 && d[3] == 1 && d[4] == 2 && d[5] == 2 && d[6] == 16 && d[7] == 2 &&
-                             (d[8] | d[9] << 8 | d[10] << 16) == 44100 && (d[11] | d[12] << 8 | d[13] << 16) == 48000;
+                    fmt_ok = RATES == 0 ? d[0] == 14 && d[3] == 1 && d[4] == 2 && d[5] == 2 && d[6] == 16 && d[7] == 2 &&
+                             (d[8] | d[9] << 8 | d[10] << 16) == 44100 && (d[11] | d[12] << 8 | d[13] << 16) == 48000 :
+                             d[0] == 11 && d[3] == 1 && d[4] == 2 && d[5] == 2 && d[6] == 16 && d[7] == 1 &&
+                             (d[8] | d[9] << 8 | d[10] << 16) == (RATES == 1 ? 44100 : 48000);
             }
             break;
         case 0x25:
@@ -171,8 +182,10 @@ static void test_descriptors(void)
     check("output terminal 2: USB streaming, source 1", ot_ok);
     check("AS alt 0 has no endpoint", alt0_ok);
     check("AS general: terminal 2, PCM", asg_ok);
-    check("type I format: 2 ch, 2-byte subframe, 16 bit, 44100 and 48000 Hz (2.5)", fmt_ok);
-    check("EP 0x84: isochronous async, 196 B (49 frames), every frame, alt 1", iso_ok && UA_MAXF == 49u);
+    check(RATES == 0 ? "type I format: 2 ch, 2-byte subframe, 16 bit, 44100 and 48000 Hz (2.5)" :
+          RATES == 1 ? "type I format: 2 ch, 16 bit, 44100 Hz only" : "type I format: 2 ch, 16 bit, 48000 Hz only", fmt_ok);
+    check(RATES == 1 ? "EP 0x84: isochronous async, 184 B (46 frames), every frame, alt 1" :
+          "EP 0x84: isochronous async, 196 B (49 frames), every frame, alt 1", iso_ok);
     check("CS endpoint: sampling frequency control", csep_ok);
     check("MIDI bulk endpoints 0x01 / 0x81 unchanged", midi_ok == 2);
     snprintf(name, sizeof name, "IADs: %s", CDC_SHOWN ? "audio IF 0-2, CDC IF 3-4" : "none");
@@ -391,8 +404,27 @@ static void test_rate(void)
             ok &= uac.go == 0;                          /* a change re-primes */
     }
     check("SET_CUR: 44100 / 48000, the nearer of the two; a change re-primes", ok);
+#if FELUCCA_UAC_48K
+    {   /* 2.7 beta, menu USB RATE: whatever the host asks, the one rate described */
+        int ok1 = 1, ok2 = 1;
+        memset(&uac, 0, sizeof uac);
+        usb_rate_mode = 1;
+        for (i = 0; T[i].hz; i++)
+            uac_rate_set(T[i].hz), ok1 &= uac.r48 == 0;
+        usb_rate_mode = 2;
+        uac_rate_set(UAC_RATE);                         /* (SET_CONFIGURATION: "a new configuration starts at 44.1") */
+        ok2 &= uac.r48 == 1;
+        for (i = 0; T[i].hz; i++)
+            uac_rate_set(T[i].hz), ok2 &= uac.r48 == 1;
+        usb_rate_mode = 0;
+        memset(&uac, 0, sizeof uac);
+        check("USB RATE 44.1: always 44.1 (the resampler never runs)", ok1);
+        check("USB RATE 48: 48 from the configuration on, whatever SET_CUR says", ok2);
+    }
+#endif
 }
 
+#if FELUCCA_UAC_48K
 /* the resampler alone: blocks of 32 frames of a sine through uac_tap (48 kHz), the ring drained after each */
 static void test_resampler(void)
 {
@@ -477,14 +509,21 @@ static void test_ring48(void)
           cons_rep == 0 && uac.underruns + uac.overruns == base);
 }
 
+#endif
+
 int main(void)
 {
     printf("-- USB audio input, CDC %s\n", T_CDC == 2 ? "built in, USB SERIAL OFF" : T_CDC ? "on" : "off");
     test_descriptors();
+#if FELUCCA_UAC_48K
+    usb_rate_mode = 0;                                 /* (the rest: AUTO, the rates the host picks) */
+#endif
     test_ring();
     test_rate();
+#if FELUCCA_UAC_48K
     test_resampler();
     test_ring48();
+#endif
     printf(fails ? "UAC TEST FAILED (%d)\n" : "uac: all ok\n", fails);
     return fails != 0;
 }

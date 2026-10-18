@@ -6,6 +6,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SLOOP installer</title>
+<!--PWA--><link rel="manifest" href="../sloop.webmanifest"><meta name="theme-color" content="#000000"><link rel="icon" href="../icon-192.png"><!--/PWA-->
 <style>
   :root { --bg: #000; --fg: #f2f2f2; --dim: #8a8a92; --tile: #16161a; --line: #2a2a30;
           --blue: #287cff; --green: #1ecc70; --yellow: #ffc618; --orange: #ff621a; --red: #ff2c34; }
@@ -41,6 +42,8 @@
   progress::-moz-progress-bar { background: var(--orange); }
   pre { color: var(--dim); font-size: 11px; white-space: pre-wrap; margin-top: 12px; max-height: 160px; overflow: auto; }
   hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0 18px; }
+  [hidden] { display: none !important; }
+  button.ed { font: inherit; color: var(--fg); border: 0; cursor: pointer; }
   .ed { display: inline-block; margin: 8px 0 0; padding: 10px 14px; background: var(--tile); text-decoration: none; }
   details { margin: 22px 0 0; } summary { cursor: pointer; font-weight: 600; }
   button#stock-go { font: 600 14px/1 inherit; font-family: inherit; background: var(--tile); color: var(--fg); border: 1px solid var(--line);
@@ -56,11 +59,11 @@
   <!--STUDIO_GUIDE-->
   <!--BANNER-->
   <h1>Firmware for the M-VAVE FM-1</h1>
-  <p class="lead">A groovebox you play live: four tracks — three synths and a drum machine — 12 synth engines (with six-operator FM and DX7 patches), 153 sounds, 37 drum kits from 808 to techno, amapiano and ambient, your own samples and drum kits, 16 punch-in effects. House, techno, hip-hop, drum &amp; bass, synthwave, lo-fi, ambient: make what you want. No factory patterns, nothing to load: everything you hear, you play.</p>
+  <p class="lead">A groovebox you play live: four tracks — three synths and a drum machine — 12 synth engines (with six-operator FM and DX7 patches), 153 sounds, 37 drum kits from 808 to techno, amapiano and ambient, your own samples and drum kits, 27 punch-in effects. House, techno, hip-hop, drum &amp; bass, synthwave, lo-fi, ambient: make what you want. No factory patterns, nothing to load: everything you hear, you play.</p>
   <div class="tiles">
     <div class="tile" style="--c: var(--blue)"><b>153</b><span>sounds, 12 engines, your samples</span></div>
     <div class="tile" style="--c: var(--green)"><b>37</b><span>drum kits, 909 to afro, + your own</span></div>
-    <div class="tile" style="--c: var(--yellow)"><b>16</b><span>punch-in fx: hold fx + key</span></div>
+    <div class="tile" style="--c: var(--yellow)"><b>27</b><span>punch-in fx: hold fx + key</span></div>
     <div class="tile" style="--c: var(--orange)"><b>rec</b><span>no click: the loop follows you</span></div>
   </div>
   <p data-t="intro"></p>
@@ -70,6 +73,8 @@
   <p id="status"></p>
   <pre id="log"></pre>
   <a class="ed" href="../editor/" data-t="editor"></a>
+  <p class="small"><a href="../editor/sloop-editor.html" download="sloop-editor.html" data-t="edOffline"></a></p>
+  <p><button id="app" class="ed" hidden data-t="appInstall"></button></p>
   <hr>
   <p class="small" data-t="direct"></p>
   <p class="small" data-t="beta"></p>
@@ -101,6 +106,8 @@ const TEXT = {
     warn: "書き込み中は USB を抜かないでください。",
     install: "インストール", other: "English",
     editor: "エディタ（インストール後、パソコンから音色やシーケンスを編集）",
+    edOffline: "エディタをダウンロード（パソコンでインターネットなしで使う：ファイルを Chrome / Edge で開く）",
+    appInstall: "アプリとしてインストール（エディタとインストーラーがオフラインで使える・Android も）",
     direct: "USB ケーブルはパソコンに直接つないでください。Probe や Transporter などの機材は不要です。",
     brick: "万一インストールに失敗して起動しなくなった場合は、復旧に Transporter が必要です:",
     beta: "これはベータ版で、不安定な場合があります。このカスタムファームウェアを使ったことで FM-1 が壊れたり不具合が起きたりしても、作者は一切の責任を負いません。自己責任でお使いください。",
@@ -135,6 +142,8 @@ const TEXT = {
     warn: "Do not unplug the USB cable while writing.",
     install: "Install", other: "日本語",
     editor: "Editor (after installing: edit sounds and sequences from the computer)",
+    edOffline: "Download the editor to use it without internet on a computer (open the file in Chrome or Edge)",
+    appInstall: "Install the app (the editor and the installer offline, Android too)",
     direct: "Connect the USB cable directly to the computer. No probe or Transporter is needed.",
     brick: "If an install fails and the FM-1 no longer starts, recovering it needs a Transporter:",
     beta: "This is a beta and may be unstable. The author accepts no responsibility if your FM-1 is damaged or misbehaves because of this custom firmware. Use it at your own risk.",
@@ -176,6 +185,22 @@ function applyLang() {
 }
 $("lang").addEventListener("click", () => { lang = lang === "ja" ? "en" : "ja"; applyLang(); });
 applyLang();
+/* the site without internet (SLOOP 2.6, webapp/sw.js): opened once online, the installer, the firmware and the
+ * editor work offline too, still on https (Android: a downloaded file opens as content://, where Chrome refuses MIDI) */
+if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol))
+  navigator.serviceWorker.register("../sw.js").catch(() => {});
+{
+  let ask = null;
+  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); ask = e; $("app").hidden = false; });
+  window.addEventListener("appinstalled", () => { ask = null; $("app").hidden = true; });
+  $("app").addEventListener("click", async () => {
+    if (!ask) return;
+    ask.prompt();
+    await ask.userChoice.catch(() => {});
+    ask = null;
+    $("app").hidden = true;
+  });
+}
 const sayK = (k, arg = "") => { lastKey = k; lastArg = arg; $("status").textContent = t(k) + arg; };
 const say = (txt) => { lastKey = null; $("status").textContent = txt; };
 const log = (t) => { $("log").textContent += t + "\n"; };
@@ -194,12 +219,20 @@ window.addEventListener("beforeunload", (e) => { if (writing) { e.preventDefault
 (async () => {
   if (!navigator.requestMIDIAccess) { sayK("nomidi"); return; }
   try {
-    const r = await fetch(meta.pkg);
-    if (!r.ok) throw new Error(`${meta.pkg}: HTTP ${r.status}`);
-    const pkg = new Uint8Array(await r.arrayBuffer());
+    /* (2.7) never the browser's old copy: a new build keeps the file's name (sloop-2.7.fwsc), and a copy kept from the
+       build before is "damaged" here. no-cache asks the server first; a mismatch is fetched once more, bypassing the cache */
+    const sha = async (pkg) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", pkg))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const get = async (cache) => {
+      const r = await fetch(meta.pkg, { cache });
+      if (!r.ok) throw new Error(`${meta.pkg}: HTTP ${r.status}`);
+      return new Uint8Array(await r.arrayBuffer());
+    };
+    const check = meta.sha256 && self.crypto && crypto.subtle;
+    let pkg = await get("no-cache");
+    if (check && (await sha(pkg)) !== meta.sha256) pkg = await get("reload");
     if (productOf(pkg) !== meta.product) { sayK("badpkg"); return; }
-    if (meta.sha256 && self.crypto && crypto.subtle) {   /* a damaged download is never offered (the loader checks its CRC too) */
-      const h = [...new Uint8Array(await crypto.subtle.digest("SHA-256", pkg))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    if (check) {                                       /* a damaged download is never offered (the loader checks its CRC too) */
+      const h = await sha(pkg);
       if (h !== meta.sha256) { sayK("badpkg"); log(`sha256 ${h}, expected ${meta.sha256}`); return; }
     }
     image = logicalImage(pkg);

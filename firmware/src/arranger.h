@@ -65,6 +65,25 @@ static int arr_next(arr_clock_t *r, const arr_config_t *c, uint32_t sample_rate)
     }
     return result;
 }
+/* (SLOOP 2.6) a section erased: the song's steps that played it taken out, the others kept in order; none left: the
+ * default song. 1 if the song changed */
+static int arr_drop_scene(arr_config_t *c, uint32_t scene)
+{
+    uint32_t i, n = 0, count = c->count > ARR_STEPS ? ARR_STEPS : c->count;
+    for (i = 0; i < count; i++)
+        if (c->entry[i].scene != scene)
+            c->entry[n++] = c->entry[i];
+    if (n == count)
+        return 0;
+    for (i = n; i < ARR_STEPS; i++) {
+        c->entry[i].scene = (uint8_t)(i % ARR_SCENES);
+        c->entry[i].bars = 4;
+    }
+    c->count = (uint8_t)n;
+    if (!n)
+        arr_defaults(c);
+    return 1;
+}
 static void arr_elapse(arr_clock_t *r, uint32_t samples, uint32_t bpm)
 {
     if (r->running) r->phase += samples * bpm;

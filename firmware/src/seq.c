@@ -45,33 +45,64 @@ static uint32_t kb_prev;
 /* per key: what its press started, so its release ends the same (whatever the layer or track is now) */
 enum { KS_NONE, KS_NOTE, KS_DRUM, KS_ROLL, KS_ERASE, KS_FX, KS_UI, KS_MOD };   /* KS_MOD: a chord modifier (2.4) */
 static uint8_t kb_kind[27], kb_trk[27], kb_n[27], kb_nt[27][4], kb_root[27];   /* kb_root: a chord key's note (CHORD+) */
+static int8_t kb_oct[27];                   /* the octave buttons when the key went down (arp_add: held_key, #191) */
 static uint8_t last_note = 60;
 static uint8_t pen_n = 1, pen_note[4] = {60};   /* the last chord / note played: the SEQ layer writes it */
 static uint8_t pen_lane;                       /* the last drum lane played: the SEQ layer's lane */
+/* SLOOP 2.6: the MIDI keyboard's notes. mi_pen: the notes held on the selected track (its pen, as the keys: the notes
+ * down together are a chord). step_in_q: every synth note-on / note-off from MIDI, note | on << 7 | track << 8, for the
+ * STEP page's entry (ui_input.c midi_entry): the audio side writes, the UI reads; a full queue drops and says so */
+static uint32_t mi_pen[4];
+#define STEP_IN_Q 32u
+static volatile uint16_t step_in_q[STEP_IN_Q];
+static volatile uint32_t step_in_w;
+static volatile uint8_t step_in_lost;
+static uint32_t step_in_r;
+static volatile uint8_t pc_req[NTRK];          /* (2.6) a MIDI Program Change for the track: number + 1 (ui.c pc_poll) */
+static void step_in_push(uint32_t ev)
+{
+    if (step_in_w - step_in_r >= STEP_IN_Q) {
+        step_in_lost = 1;
+        return;
+    }
+    step_in_q[step_in_w % STEP_IN_Q] = (uint16_t)ev;
+    step_in_w++;
+}
 static volatile uint8_t transport_req;   /* 1 start, 2 stop (from the UI); 3 start from a MIDI START */
 static volatile uint8_t panic_req;       /* bit per track: release every sounding note (preset / engine change) */
+static volatile uint8_t arp_keep_req;    /* (2.7) bit per track: a sound loaded under its running arp: the arp's notes stay */
 
 static uint32_t trk_index(const track_t *t) { return (uint32_t)(t - trk); }
 
-static uint32_t trk_midi_ch(uint32_t i)    /* MIDI channel 0..15 of track i (keys -> MIDI out) */
+static uint32_t trk_midi_ch(uint32_t i)    /* MIDI channel 0..15 of track i (keys -> MIDI out); 2.6: GLO > MIDI */
+{                                          /* (2.6: OFF is OFF, in and out: 0xFF, nothing sent) */
+    int32_t c = i < NPART ? song.g[G_CH1 + i] : song.g[G_DRCH];
+    return c >= 1 && c <= 16 ? (uint32_t)c - 1u : 0xFFu;
+}
+/* a note on (vel > 0) / off to MIDI OUT on channel ch (trk_midi_ch: 0xFF, the track's MIDI OFF: nothing) */
+static void midi_out_note(uint32_t ch, uint32_t note, uint32_t vel)
 {
-    if (i < NPART)
-        return i;
-    return song.g[G_DRCH] ? (uint32_t)song.g[G_DRCH] - 1u : 9u;
+    if (ch > 15u)
+        return;
+    midi_out_event(vel ? 0x09u | (0x90u | ch) << 8 | (note & 127u) << 16 | (vel & 127u) << 24
+                       : 0x08u | (0x80u | ch) << 8 | (note & 127u) << 16);
 }
 
 /* MIDI OUT of what the sequencer, the arp and the rolls play (GLO > SYSTEM > MIDI = SEQ; the keys always
  * go out: key_down / key_up). Notes from a computer or the jack are never echoed (no MIDI loop). A set per
  * track of the notes sent on, so a note is ended once, and STOP or MIDI = KEYS end them all */
 static uint32_t mo_set[NTRK][4];
+static uint8_t mo_ch[NTRK];                /* (2.6) the channel the notes of mo_set went out on: their note-offs too,
+                                            * whatever GLO > MIDI says now (no note left hanging on the other gear) */
 static void seq_out_off(const track_t *t, uint32_t note)
 {
     uint32_t i = trk_index(t) % NTRK;
     if (note > 127u || !(mo_set[i][note >> 5] & (1u << (note & 31u))))
         return;
     mo_set[i][note >> 5] &= ~(1u << (note & 31u));
-    midi_out_event(0x08u | (0x80u | trk_midi_ch(i)) << 8 | note << 16);
+    midi_out_note(mo_ch[i], note, 0);
 }
+static void seq_out_track_off(const track_t *t);
 static uint8_t mo_any;                     /* something was sent on since the last check (events_block) */
 static void seq_out_on(const track_t *t, uint32_t note, uint32_t vel)
 {
@@ -79,9 +110,15 @@ static void seq_out_on(const track_t *t, uint32_t note, uint32_t vel)
     if (!song.g[G_MIDI] || note > 127u)
         return;
     seq_out_off(t, note);                      /* played again while on: off first */
+    if (trk_midi_ch(i) != mo_ch[i]) {          /* (its channel changed: what is on ends where it started) */
+        seq_out_track_off(t);
+        mo_ch[i] = (uint8_t)trk_midi_ch(i);
+    }
+    if (mo_ch[i] > 15u)
+        return;                                /* (MIDI OFF: nothing goes out, nothing to end) */
     mo_set[i][note >> 5] |= 1u << (note & 31u);
     mo_any = 1;
-    midi_out_event(0x09u | (0x90u | trk_midi_ch(i)) << 8 | note << 16 | (vel ? vel & 127u : 1u) << 24);
+    midi_out_note(mo_ch[i], note, (vel ? vel & 127u : 1u));
 }
 static void seq_out_track_off(const track_t *t)      /* every note of the track still on */
 {
@@ -90,7 +127,7 @@ static void seq_out_track_off(const track_t *t)      /* every note of the track 
         for (b = 0; mo_set[i][w]; b++)
             if (mo_set[i][w] & (1u << b)) {
                 mo_set[i][w] &= ~(1u << b);
-                midi_out_event(0x08u | (0x80u | trk_midi_ch(i)) << 8 | (w * 32u + b) << 16);
+                midi_out_note(mo_ch[i], (w * 32u + b), 0);
             }
 }
 static void seq_out_all_off(void)
@@ -141,12 +178,64 @@ static void lk_push(uint32_t layer, uint32_t k, uint32_t down)
 }
 
 /* ------------------------------------------------------------- keys --- */
-/* key k -> note on a synth part (KB_SILENT: none). WHITE (and chord mode): the white keys walk the
- * scale from C4 = the root, the black keys are silent; SNAP: every key, rounded down into the scale */
-static uint32_t kb_map(const track_t *t, uint32_t k)
+/* the keys of track t play through its scale (kb_pitch): not the drum track, not the GM kit, not SLICE (their own maps) */
+static int kb_scaled(const track_t *t)
+{
+    if (is_drum(t))
+        return 0;
+    if (ENGINES[t->eng_req % NENGINES] == &ENG_SAMPLE && drum_set() >= 0 &&   /* (the engine it switches to) */
+        (uint32_t)t->p[P_E0] % SMP_NSETS == (uint32_t)drum_set())
+        return 0;
+#if FELUCCA_SLICE
+    if (ENGINES[t->eng_req % NENGINES] == &ENG_SLICE)
+        return 0;
+#endif
+    return 1;
+}
+/* key k's note on a scaled track with the octave buttons at oct (KB_SILENT: none): QNT, ROOT, SCALE, TRN as they are
+ * now. WHITE (and chord mode): the white keys walk the scale from C4 = the root, the black keys are silent; SNAP: every
+ * key, rounded down into the scale. The keys (kb_map), and the notes the arp holds (arp_list, 2.6 after Felucca 1.5
+ * #191: a latched chord follows TRN, ROOT, SCALE and QNT, in the octave its keys were pressed in) */
+static uint32_t kb_pitch(const track_t *t, uint32_t k, int32_t oct)
 {
     static const int8_t DEGREE[12] = {0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6};
     int32_t n = 53 + (int32_t)k;
+    if (t->p[P_QUANT] == 1 && !t->p[P_CHORD]) {  /* SNAP: every key, rounded down to the scale (the old ON) */
+        uint32_t mask = scale_mask(t), guard = 12;
+        n += 12 * oct + t->p[P_TRANS];
+        while (guard-- && !((mask >> (uint32_t)((n - t->p[P_ROOT] + 120) % 12)) & 1u))
+            n--;
+        return (uint32_t)clamp(n, 0, 127);
+    }
+    if (t->p[P_QUANT] == 2 || t->p[P_CHORD]) {   /* WHITE: white keys walk the scale, black keys are silent */
+        uint32_t mask = t->p[P_CHORD] && !t->p[P_SCALE] ? SCALE_MASK[2] : scale_mask(t), i;
+        int32_t count = 0, degree = DEGREE[n % 12], wo;
+        if (degree < 0)
+            return KB_SILENT;
+        /* C4 is the root. Walk scale degrees on successive white keys, including
+         * below C4; scales with 5, 6, 8 or 12 notes still have no duplicated degrees. */
+        degree += (n / 12 - 5) * 7;
+        for (i = 0; i < 12u; i++)
+            count += (mask >> i) & 1u;
+        wo = degree / count;
+        degree %= count;
+        if (degree < 0) {
+            degree += count;
+            wo--;
+        }
+        for (i = 0; i < 12u; i++)
+            if ((mask >> i) & 1u) {
+                if (!degree)
+                    break;
+                degree--;
+            }
+        n = 60 + t->p[P_ROOT] + 12 * wo + (int32_t)i;
+    }
+    return (uint32_t)clamp(n + 12 * oct + t->p[P_TRANS], 0, 127);
+}
+/* key k -> note on track t (KB_SILENT: none) */
+static uint32_t kb_map(const track_t *t, uint32_t k)
+{
     if (is_drum(t))
         return LANE_NOTE[lane_of_key(k)];
     if (ENGINES[t->eng_req % NENGINES] == &ENG_SAMPLE && drum_set() >= 0 &&   /* (the engine it switches to) */
@@ -156,38 +245,7 @@ static uint32_t kb_map(const track_t *t, uint32_t k)
     if (ENGINES[t->eng_req % NENGINES] == &ENG_SLICE)   /* SLICE: lowest key = slice 0 (C4 + ROOT), no scale */
         return (uint32_t)clamp(SLC_BASE + t->p[P_ROOT] + 12 * song.octave + (int32_t)k, 0, 127);
 #endif
-    if (t->p[P_QUANT] == 1 && !t->p[P_CHORD]) {  /* SNAP: every key, rounded down to the scale (the old ON) */
-        uint32_t mask = scale_mask(t), guard = 12;
-        n += 12 * song.octave + t->p[P_TRANS];
-        while (guard-- && !((mask >> (uint32_t)((n - t->p[P_ROOT] + 120) % 12)) & 1u))
-            n--;
-        return (uint32_t)clamp(n, 0, 127);
-    }
-    if (t->p[P_QUANT] == 2 || t->p[P_CHORD]) {   /* WHITE: white keys walk the scale, black keys are silent */
-        uint32_t mask = t->p[P_CHORD] && !t->p[P_SCALE] ? SCALE_MASK[2] : scale_mask(t), i;
-        int32_t count = 0, degree = DEGREE[n % 12], oct;
-        if (degree < 0)
-            return KB_SILENT;
-        /* C4 is the root. Walk scale degrees on successive white keys, including
-         * below C4; scales with 5, 6, 8 or 12 notes still have no duplicated degrees. */
-        degree += (n / 12 - 5) * 7;
-        for (i = 0; i < 12u; i++)
-            count += (mask >> i) & 1u;
-        oct = degree / count;
-        degree %= count;
-        if (degree < 0) {
-            degree += count;
-            oct--;
-        }
-        for (i = 0; i < 12u; i++)
-            if ((mask >> i) & 1u) {
-                if (!degree)
-                    break;
-                degree--;
-            }
-        n = 60 + t->p[P_ROOT] + 12 * oct + (int32_t)i;
-    }
-    return (uint32_t)clamp(n + 12 * song.octave + t->p[P_TRANS], 0, 127);
+    return kb_pitch(t, k, song.octave);
 }
 
 /* chord mode (P_CHORD): the chord of the scale built on note n (in the scale; CHR: minor), into c[];
@@ -391,6 +449,7 @@ static struct {
     int16_t len;
     uint32_t sess;
     step_t st[NSTEP];
+    int8_t micro[NSTEP];                                 /* (2.7) the nudges too (REC QUANT OFF writes them) */
 } undo;
 static uint32_t undo_sess = 1;           /* UI sessions (seq.c: recording passes use the track's pass) */
 static void undo_mark(const track_t *t, uint32_t sess)
@@ -399,6 +458,7 @@ static void undo_mark(const track_t *t, uint32_t sess)
     if (undo.valid && !undo.undone && undo.trk == i && undo.sess == sess)
         return;                                          /* (this session is marked already) */
     memcpy(undo.st, t->step, sizeof undo.st);
+    memcpy(undo.micro, t->micro, sizeof undo.micro);
     undo.len = t->p[P_SLEN];
     undo.trk = (uint8_t)i;
     undo.sess = sess;
@@ -416,13 +476,31 @@ static uint32_t undo_erase_sess;
 
 /* the step a note played now goes into (as heard: REC_LAT earlier): the one playing, or the next one
  * when it is past the middle of the playing one; *later: it has not played yet (it must not sound twice) */
+static int8_t rec_m;                     /* (2.7) the last rec_target's note off the grid, as a nudge (rec_micro_set) */
 static uint32_t rec_target(const track_t *t, uint32_t *later)
 {
     uint32_t into, slen, abs = trk_grid(t, &into, &slen), half = slen / 2u, lat = REC_LAT * (uint32_t)song.g[G_BPM];
-    if (into > half + (lat < half ? lat : half))
+    int32_t off = (int32_t)into - (int32_t)lat, m;  /* where it was heard, from the start of the playing step */
+    if (into > half + (lat < half ? lat : half)) {  /* (32 bits: a step is 8 beats at most, 8 x FS x 60 x 64 < 2^31) */
         abs++;
+        off -= (int32_t)slen;                       /* (before the next one: early) */
+    }
+    if (off < -(int32_t)slen)
+        off = -(int32_t)slen;
+    m = slen ? (off * 64 + (off >= 0 ? (int32_t)(slen / 2u) : -(int32_t)(slen / 2u))) / (int32_t)slen : 0;
+    rec_m = (int8_t)(m < MICRO_MIN ? MICRO_MIN : m > MICRO_MAX ? MICRO_MAX : m);
     *later = abs != t->seq_abs;
     return abs;
+}
+/* SLOOP 2.7, REC screen QUANT OFF (rec_quant_off, panel.c lights_word bit 31): a note played by hand keeps its timing.
+ * It goes into the nearest step as ever, and how far off the grid it was becomes that step's nudge (1/64 of a step:
+ * at 120 BPM in 1/16, about 2 ms), when the step held nothing before: a step has one nudge, so a chord's later
+ * notes and a second drum sound on a step take the first one's. The arp's notes and the rolls stay on their grid. */
+static uint8_t rec_quant_off;
+static void rec_micro_set(track_t *t, uint32_t idx, int was_empty)
+{
+    if (rec_quant_off && was_empty && idx < NSTEP)
+        t->micro[idx] = rec_m;
 }
 
 /* note into synth step idx (overdub: a step that holds notes gets this one added, a chord of up to 4;
@@ -453,6 +531,55 @@ static void step_add(track_t *t, uint32_t idx, uint32_t note, uint32_t vel, uint
         s->vel = (uint8_t)vel;
 }
 
+/* ---- SLOOP 2.7: overdub over held notes ----
+ * A pattern holds its notes with TIE steps (the notes of the NOTE step before them go on). A note recorded into a TIE
+ * used to make that step a NOTE of its own, which ends the held notes there. Now (POLY parts) the step becomes a NOTE
+ * with the held notes marked as going on (SF_CONT: not played again, not released) and the new note, up to 4 (the
+ * oldest held one makes room); the step after it, when a TIE, becomes the new note's end: a NOTE of the held notes
+ * only, all going on (step_pure_cont). While the new note is held, rec_hold moves that end along. Step entry (SEQ +
+ * key) still replaces what plays. */
+static uint32_t chain_notes(const track_t *t, uint32_t idx, uint8_t *out)   /* what goes on into TIE step idx */
+{
+    uint32_t len = trk_len(t), k;
+    for (k = 1; k < len; k++) {
+        const step_t *s = &t->step[(idx + len - k) % len];
+        if (s->time == ST_TIE)
+            continue;
+        if (s->time == ST_NOTE && s->n && s->n <= 4u) {
+            memcpy(out, s->note, s->n);
+            return s->n;
+        }
+        return 0;
+    }
+    return 0;
+}
+static int step_pure_cont(const step_t *s)      /* a NOTE whose notes all go on: the end of an overdubbed note */
+{
+    return s->time == ST_NOTE && s->n && s->n <= 4u && ((s->flags & SF_CONT_ALL) / SF_CONT0) == (1u << s->n) - 1u;
+}
+static void chain_end(track_t *t, uint32_t j, const uint8_t *keep, uint32_t n)   /* TIE j: only keep goes on */
+{
+    step_t *s = &t->step[j % NSTEP];
+    uint32_t i;
+    if (s->time != ST_TIE || !n)
+        return;
+    memset(s, 0, sizeof *s);
+    for (i = 0; i < n && i < 4u; i++) {
+        s->note[i] = keep[i];
+        s->flags |= (uint8_t)SF_CONT(i);
+    }
+    s->n = (uint8_t)i;
+    s->time = ST_NOTE;
+}
+static uint32_t cont_notes(const step_t *s, uint32_t except, uint8_t *out)   /* its notes going on, but except */
+{
+    uint32_t i, n = 0;
+    for (i = 0; i < s->n && i < 4u; i++)
+        if ((s->flags & SF_CONT(i)) && s->note[i] != except)
+            out[n++] = s->note[i];
+    return n;
+}
+
 /* live recording into a synth part: the nearest step (rec_target). Held on: each further step the
  * sequencer enters while the note is held becomes a TIE (rec_hold), up to the pattern length and
  * never over a step with notes (overdub keeps them); a release before the middle of the last one
@@ -461,8 +588,42 @@ static void step_add(track_t *t, uint32_t idx, uint32_t note, uint32_t vel, uint
 static void rec_note(track_t *t, uint32_t note, uint32_t vel, uint32_t rat, int hold)
 {
     uint32_t len = trk_len(t), later, abs = rec_target(t, &later), idx = abs % len, k;
+    int was_empty = !(t->step[idx % NSTEP].time == ST_NOTE && t->step[idx % NSTEP].n);
+    step_t *st = &t->step[idx % NSTEP];
+    uint8_t ch[4], keep[4];
+    uint32_t nc, nk = 0;
     undo_mark(t, UNDO_REC(t));
-    step_add(t, idx, note, vel, vel_lvl(vel), rat);
+    if (t->p[P_VOICE] == V_POLY && !rat && st->time == ST_TIE && (nc = chain_notes(t, idx, ch)) != 0) {
+        for (k = 0; k < nc; k++)                    /* (2.7) over held notes: they go on, this one starts */
+            if (ch[k] != note)
+                keep[nk++] = ch[k];
+        while (nk > 3u) {                           /* (four at most: the oldest one ends here) */
+            for (k = 0; k + 1u < nk; k++)
+                keep[k] = keep[k + 1u];
+            nk--;
+        }
+        memset(st, 0, sizeof *st);
+        for (k = 0; k < nk; k++) {
+            st->note[k] = keep[k];
+            st->flags |= (uint8_t)SF_CONT(k);
+        }
+        st->note[nk] = (uint8_t)note;
+        st->n = (uint8_t)(nk + 1u);
+        st->time = ST_NOTE;
+        st->vel = (uint8_t)vel;
+        st->lvl = (uint8_t)((vel_lvl(vel) & 3u) << (2u * nk));
+        if ((idx + 1u) % len != idx)
+            chain_end(t, (idx + 1u) % len, keep, nk);
+    } else {
+        step_add(t, idx, note, vel, vel_lvl(vel), rat);
+        for (k = 0; k < st->n; k++)                 /* (2.7) played again: it starts here */
+            if (st->note[k] == note)
+                st->flags &= (uint8_t)~SF_CONT(k);
+        if ((st->flags & SF_CONT_ALL) && (nk = cont_notes(st, note, keep)) != 0 && (idx + 1u) % len != idx)
+            chain_end(t, (idx + 1u) % len, keep, nk);   /* (into an end: the held ones go on past it) */
+    }
+    if (hold)                                       /* (a note played: hold; the arp's and a roll's: not) */
+        rec_micro_set(t, idx, was_empty);
     t->seq_active = 1;
     if (later) {                                    /* it sounds now: the step must not trigger it again */
         if (t->rskip_abs != abs)
@@ -485,11 +646,15 @@ static void rec_note(track_t *t, uint32_t note, uint32_t vel, uint32_t rat, int 
 }
 
 /* live recording into the drum track: lane, level, ratchet */
+static uint8_t roll_rec;                         /* (2.7) a roll's hit is being recorded (roll_hit) */
 static void rec_hit(track_t *t, uint32_t lane, uint32_t lvl, uint32_t rat)
 {
-    uint32_t later, abs = rec_target(t, &later);
+    uint32_t later, abs = rec_target(t, &later), idx = abs % trk_len(t);
+    int was_empty = !(t->dstep[idx % NSTEP].on[0] | t->dstep[idx % NSTEP].on[1]);
     undo_mark(t, UNDO_REC(t));
-    dstep_set(&t->dstep[abs % trk_len(t)], lane, lvl, rat);
+    dstep_set(&t->dstep[idx], lane, lvl, rat);
+    if (!roll_rec)                                  /* (a roll's hits stay on its grid) */
+        rec_micro_set(t, idx, was_empty);
     t->seq_active = 1;
     if (later) {
         if (t->rskip_abs != abs)
@@ -512,6 +677,19 @@ static void rec_hold(track_t *t, uint32_t idx, uint32_t len, uint32_t abs)
     if (idx == t->rh_start)
         return;                                     /* (recorded ahead into the step now starting) */
     s = &t->step[idx];
+    if (step_pure_cont(s)) {                        /* (2.7) the end of a note over held ones: it goes on, the end moves */
+        uint8_t keep[4];
+        uint32_t nk = cont_notes(s, 0x100u, keep);
+        t->rh_bak = *s;
+        t->rh_last = (uint8_t)idx;
+        t->rh_last_abs = abs;
+        t->rh_ties++;
+        memset(s, 0, sizeof *s);
+        s->time = ST_TIE;
+        if ((idx + 1u) % len != t->rh_start)
+            chain_end(t, (idx + 1u) % len, keep, nk);
+        return;
+    }
     if (s->time == ST_NOTE && s->n) {
         t->rh_n = 0;                                /* a step with notes: the hold ends before it */
         return;
@@ -612,7 +790,8 @@ static int project_empty(void)
 static int p_lockable(uint32_t id)
 {
     return id <= P_LD_AMP || id == P_SGATE || (id >= P_DIST && id <= P_REV) || id == P_GLIDE || id == P_PAN ||
-           id == P_DETUNE || (id >= P_SLCR && id <= P_SLDEPTH) || (id >= P_E0 && id <= P_E7) || id == P_TFLT;
+           id == P_DETUNE || (id >= P_SLCR && id <= P_SLDEPTH) || (id >= P_E0 && id <= P_E7) || id == P_TFLT ||
+           (id >= P_IA && id <= P_IMIX);   /* 2.6: the INSERT's values and MIX */
 }
 /* the range of p[id] on track t (the engine that renders: t->engine; the drum track's P_E0: the kit) */
 static const param_desc_t *lock_desc(const track_t *t, uint32_t id)
@@ -847,10 +1026,18 @@ static void ft_close(void)
     }
     for (i = 0; i < ft_n; i++) {                      /* the notes, to the nearest step */
         uint32_t idx = (ft_ev[i].t * len * 2u + T) / (2u * T) % len;
+        int was_empty = is_drum(t) ? !(t->dstep[idx].on[0] | t->dstep[idx].on[1])
+                                   : !(t->step[idx].time == ST_NOTE && t->step[idx].n);
         if (is_drum(t))
             dstep_set(&t->dstep[idx], ft_ev[i].note & 15u, ft_ev[i].vel & 3u, 0);
         else
             step_add(t, idx, ft_ev[i].note, ft_ev[i].vel, vel_lvl(ft_ev[i].vel), 0);
+        if (rec_quant_off && was_empty) {             /* (2.7) QUANT OFF: its time off the grid, as the nudge */
+            uint32_t u = (ft_ev[i].t * len * 128u + T) / (2u * T);   /* its place in 1/64 steps (24 s x 64 steps:
+                                                                      * < 2^29) */
+            int32_t m = (int32_t)u - (int32_t)((ft_ev[i].t * len * 2u + T) / (2u * T)) * 64;
+            t->micro[idx] = (int8_t)(m < MICRO_MIN ? MICRO_MIN : m > MICRO_MAX ? MICRO_MAX : m);
+        }
     }
     if (!is_drum(t))
         for (i = 0; i < ft_n; i++) {                  /* their lengths: TIE steps, up to the next note */
@@ -903,6 +1090,12 @@ static void ft_block(void)
  * every step the sequencer enters while the key is held (MPC style); stopped: from every step. */
 static uint8_t er_trk;
 static uint16_t er_lanes;                     /* drums: lanes held */
+/* the drum track's live mutes (SLOOP 2.6, after Felucca 1.4.1): EDIT + a black key turns the white keys from erasing
+ * into muting (er_mute; back to erasing with a black key again; 2.7: it stays when EDIT is let go), and a white
+ * key then mutes / unmutes its sound: the sequencer skips it (its ratchets too), the keys still play it. Performance
+ * state: never saved, not undone; a project load or NEW clears it */
+static volatile uint16_t drum_mute;
+static volatile uint8_t er_mute;
 static uint32_t er_notes[4];                  /* synth: notes held (bit per MIDI note) */
 static volatile uint8_t er_flash;             /* something was erased (the UI flashes) */
 
@@ -919,13 +1112,14 @@ static void erase_step(track_t *t, uint32_t idx)
             }
     } else {
         step_t *s = &t->step[idx];
-        uint32_t i, k = 0, lv = 0, rt = 0;
+        uint32_t i, k = 0, lv = 0, rt = 0, cf = 0;
         if (s->time != ST_NOTE)
             return;
         for (i = 0; i < s->n; i++)
             if (!er_has(s->note[i])) {
                 lv |= ((s->lvl >> (2u * i)) & 3u) << (2u * k);
                 rt |= ((s->rat >> (2u * i)) & 3u) << (2u * k);
+                cf |= (s->flags & SF_CONT(i)) ? SF_CONT(k) : 0u;   /* (2.7: a note going on stays so) */
                 s->note[k++] = s->note[i];
             }
         if (k == s->n)
@@ -934,6 +1128,7 @@ static void erase_step(track_t *t, uint32_t idx)
         s->n = (uint8_t)k;
         s->lvl = (uint8_t)lv;
         s->rat = (uint8_t)rt;
+        s->flags = (uint8_t)((s->flags & ~SF_CONT_ALL) | cf);
         if (!k) {
             s->time = ST_REST;
             s->flags = 0;
@@ -955,6 +1150,14 @@ static void erase_now(track_t *t)             /* a key just went down */
 static int erasing(const track_t *t) { return trk_index(t) == er_trk && (er_lanes || er_notes[0] || er_notes[1] || er_notes[2] || er_notes[3]); }
 
 /* ------------------------------------------------------------- arp --- */
+/* 2.6 (after Felucca 1.5, #191): where each track's held[i] came from, so the arp maps it again as it plays (arp_list:
+ * TRN, ROOT, SCALE, QNT as they are now). held_key: the key + 1 (bits 0..4) and the octave buttons then + 3 (bits
+ * 5..7); 0: not a key of the track's scale (MIDI IN, the drum track, the GM kit, SLICE), held[i] plays as it is.
+ * held_dt: held[i] above the key's own note (a chord's other notes). in_key: the key (+ 1) whose notes go into
+ * input_on now (key_down, chord_revoice), 0: none */
+static uint8_t held_key[NTRK][16];
+static int8_t held_dt[NTRK][16];
+static uint8_t in_key;
 static void arp_add(track_t *t, uint32_t note)
 {
     uint32_t i;
@@ -964,8 +1167,13 @@ static void arp_add(track_t *t, uint32_t note)
     for (i = 0; i < t->nheld; i++)
         if (t->held[i] == note)
             return;                                 /* repeated note-on: not a new note */
-    if (t->nheld < 16u)
+    if (t->nheld < 16u) {
+        uint32_t k = in_key - 1u, ti = trk_index(t);
+        held_key[ti][t->nheld] = in_key && kb_scaled(t) ? (uint8_t)(in_key | (uint32_t)(kb_oct[k % 27u] + 3) << 5) : 0u;   /* (the
+                                                       * key's octave: a CHORD+ note added after OCT moved, too) */
+        held_dt[ti][t->nheld] = (int8_t)(held_key[ti][t->nheld] ? (int32_t)note - kb_root[k % 27u] : 0);
         t->held[t->nheld++] = (uint8_t)note;
+    }
     if (t->nheld == 1u) {
         t->arp_new = 1;                             /* the first note: now (or on the grid just ahead) */
         t->arp_idx = 0xFFFFFFFFu;
@@ -980,46 +1188,156 @@ static void arp_remove(track_t *t, uint32_t note)
     if (t->p[P_AHOLD])
         return;
     for (i = 0; i < t->nheld; i++)
-        if (t->held[i] != note)
+        if (t->held[i] != note) {
+            held_key[trk_index(t)][k] = held_key[trk_index(t)][i];
+            held_dt[trk_index(t)][k] = held_dt[trk_index(t)][i];
             t->held[k++] = t->held[i];
+        }
     t->nheld = (uint8_t)k;
 }
 
-/* the next note of the arp: the held notes (sorted or as played) over OCT octaves, by MODE */
-static uint32_t arp_next(track_t *t)
+/* the ARP's modes (P_AMODE). Append-only: a stored value keeps its meaning. 2.7, after Felucca 1.4 / 1.5.1 (its
+ * Discussion #95), over the note list (the held notes low to high, or as played with ARP 2 ORD PLAY, across OCT
+ * octaves), C E G held: DNUP G E C E; UP+8 C E G C' (the first note again an octave above the top); CONV C G E
+ * (outside in); DIVG E G C (inside out); PINKY C G E G (the top note between the others); THUMB C E C G (the bottom
+ * one); WALK a random step up or down the list (bouncing off its ends); REPEAT the last note played, again and again;
+ * CHORD all the held notes together (the first 4), an octave higher each step through OCT. ORD (Felucca 1.4) always
+ * plays the notes in the order they were pressed (up to 2.6 it played as UP unless ARP 2 ORD was PLAY) */
+enum { AM_OFF, AM_UP, AM_DN, AM_UPDN, AM_RND, AM_ORD, AM_REPEAT, AM_DNUP, AM_UP8, AM_CONV, AM_DIVG, AM_PINKY,
+       AM_THUMB, AM_WALK, AM_CHORD };
+
+/* the arp's note list (its length returned, 0: nothing to play; up to 64, + 1 for UP+8): the held notes as they play
+ * now (#191), each once (*cnt of them), sorted or as played, over OCT octaves */
+static uint32_t arp_list(const track_t *t, uint32_t *list, uint32_t *cnt)
 {
-    uint32_t cnt, list[64], len = 0, i, j, o;
-    for (i = 0; i < t->nheld; i++)
-        list[i] = t->held[i];
-    cnt = t->nheld;
-    if (!t->p[P_AORDER])
-        for (i = 1; i < cnt; i++)
+    uint32_t n = 0, len = 0, i, j, o, ti = trk_index(t), last = 0, m = (uint32_t)t->p[P_AMODE];
+    for (i = 0; i < t->nheld; i++) {               /* the notes as they play now (#191), each once */
+        uint32_t x = t->held[i], s = held_key[ti][i];
+        if (s) {                                    /* a key: through the scale as it is now */
+            x = kb_pitch(t, (s & 31u) - 1u, (int32_t)(s >> 5) - 3);
+            if (x == KB_SILENT)
+                continue;                           /* (silent now: a black key under WHITE) */
+            x = (uint32_t)clamp((int32_t)x + held_dt[ti][i], 0, 127);
+        }
+        last = x;
+        for (j = 0; j < n && list[j] != x; j++)
+            ;
+        if (j == n)
+            list[n++] = x;
+    }
+    *cnt = n;
+    if (!n)
+        return 0;                                   /* (every key silent now: a black key under WHITE since) */
+    if (m == AM_REPEAT) {                           /* REPEAT: the last note played, no octaves */
+        list[0] = last;
+        return 1;
+    }
+    if (!t->p[P_AORDER] && m != AM_ORD)             /* (ORD: as pressed, held[] keeps that order) */
+        for (i = 1; i < n; i++)
             for (j = i; j > 0 && list[j - 1] > list[j]; j--) {
                 uint32_t x = list[j];
                 list[j] = list[j - 1];
                 list[j - 1] = x;
             }
     for (o = 0; o < (uint32_t)t->p[P_AOCT]; o++)
-        for (i = 0; i < cnt && len < 64u; i++)
+        for (i = 0; i < n && len < 64u; i++)
             list[len++] = (uint32_t)clamp((int32_t)list[i] + 12 * (int32_t)o, 0, 127);
+    return len;
+}
+
+/* the place in the note list (len notes) the step arp_idx plays, by MODE; UP+8 adds its note to the list */
+static uint32_t arp_pick(track_t *t, uint32_t *list, uint32_t len)
+{
+    uint32_t i = t->arp_idx, m = (uint32_t)t->p[P_AMODE], cyc, k, w;
+    if (m == AM_UP8)                                /* UP+8: the first note again over the top (list[] has room) */
+        list[len++] = (uint32_t)clamp((int32_t)list[0] + 12 * t->p[P_AOCT], 0, 127);
+    cyc = len > 1u ? 2u * len - 2u : 1u;
+    k = i % cyc;
+    switch (m) {
+    case AM_DN:
+        return len - 1u - i % len;
+    case AM_UPDN:
+        return k < len ? k : cyc - k;
+    case AM_DNUP:
+        return k < len ? len - 1u - k : k - (len - 1u);
+    case AM_RND:
+        return rng() % len;
+    case AM_CONV:
+    case AM_DIVG:
+        k = i % len;
+        if (m == AM_DIVG)
+            k = len - 1u - k;
+        return (k & 1u) ? len - 1u - k / 2u : k / 2u;
+    case AM_PINKY:
+        return len < 2u ? 0u : (k & 1u) ? len - 1u : k / 2u;
+    case AM_THUMB:
+        return len < 2u ? 0u : (k & 1u) ? 1u + k / 2u : 0u;
+    case AM_WALK:
+        w = t->arp_walk;
+        if (!i)
+            w = 0;                                  /* (from the bottom) */
+        else if (w >= len)
+            w = len - 1u;                           /* (notes let go) */
+        else if (len > 1u)
+            w = !w ? 1u : w == len - 1u ? w - 1u : (rng() >> 7) & 1u ? w + 1u : w - 1u;
+        t->arp_walk = (uint8_t)w;
+        return w;
+    default:                                        /* UP, ORD, REPEAT */
+        return i % len;
+    }
+}
+
+/* the sounding arp note(s) end (CHORD: all of them) */
+static void arp_end(track_t *t)
+{
+    uint32_t i;
+    for (i = 0; i < 3u; i++)
+        if (t->arp_ch[i]) {
+            trk_note_off(t, t->arp_ch[i]);
+            seq_out_off(t, t->arp_ch[i]);
+            t->arp_ch[i] = 0;
+        }
+    if (t->arp_note) {
+        trk_note_off(t, t->arp_note);
+        seq_out_off(t, t->arp_note);
+        t->arp_note = 0;
+    }
+}
+
+/* an arp note starts (recorded while recording: what you hear) */
+static void arp_play(track_t *t, uint32_t n)
+{
+    trk_note_on(t, n, 100);
+    seq_out_on(t, n, 100);
+    if (((song.rec >> trk_index(t)) & 1u) && song.playing)
+        rec_note(t, n, 100, 0, 0);
+}
+
+/* an arp step: the next note of the list by MODE, or (CHORD) the first 4 notes together, OCT octaves in turn. 1: it
+ * plays (arp_note set), 0: nothing to play */
+static int arp_step(track_t *t)
+{
+    uint32_t list[65], cnt, len = arp_list(t, list, &cnt), i, o, top = 0;
+    if (!len)
+        return 0;
     t->arp_idx++;
-    switch (t->p[P_AMODE]) {
-    case 2:
-        j = len - 1u - t->arp_idx % len;
-        break;
-    case 3: {
-        uint32_t cyc = len > 1u ? 2u * len - 2u : 1u, k = t->arp_idx % cyc;
-        j = k < len ? k : cyc - k;
-        break;
+    if (t->p[P_AMODE] != AM_CHORD) {
+        t->arp_note = (uint8_t)list[arp_pick(t, list, len)];
+        arp_play(t, t->arp_note);
+        return 1;
     }
-    case 4:
-        j = rng() % len;
-        break;
-    default:
-        j = t->arp_idx % len;
-        break;
+    o = t->arp_idx % (uint32_t)(t->p[P_AOCT] > 0 ? t->p[P_AOCT] : 1);
+    for (i = 0; i < cnt && i < 4u; i++) {          /* the held notes (sorted or as played), o octaves up */
+        uint32_t nt = (uint32_t)clamp((int32_t)list[i] + 12 * (int32_t)o, 0, 127);
+        if (nt == 127u && top++)
+            continue;                               /* (notes clamped onto the top one: once) */
+        if (!t->arp_note)
+            t->arp_note = (uint8_t)nt;
+        else
+            t->arp_ch[i - 1u] = (uint8_t)nt;
+        arp_play(t, nt);
     }
-    return list[j];
+    return 1;
 }
 
 /* the arp, once per block: on the transport's grid of RATE (with its SWING) while playing, from the
@@ -1030,19 +1348,14 @@ static void arp_tick(track_t *t, uint32_t adv)
     uint32_t div = (uint32_t)t->p[P_ARATE] % NDIV_SHORT, u = div_units(div), into, slen, abs = 0, fire = 0;
     if (t->arp_note) {
         if (t->arp_off <= adv) {
-            trk_note_off(t, t->arp_note);
-            seq_out_off(t, t->arp_note);
-            t->arp_note = 0;
+            arp_end(t);
         } else {
             t->arp_off -= adv;
         }
     }
     if (!t->p[P_AMODE] || !t->nheld) {
-        if (!t->nheld && t->arp_note) {
-            trk_note_off(t, t->arp_note);
-            seq_out_off(t, t->arp_note);
-            t->arp_note = 0;
-        }
+        if (!t->nheld && t->arp_note)
+            arp_end(t);
         t->arp_new = 0;
         return;
     }
@@ -1059,34 +1372,28 @@ static void arp_tick(track_t *t, uint32_t adv)
             abs = t->arp_abs;                       /* ARP SWG turned up inside an odd step: no replay */
         fire = abs != t->arp_abs;
         t->arp_abs = abs;
-    } else {
+    } else {                                        /* stopped: from the first key; (2.7) ARP SWG too: the odd
+                                                     * steps sw late, as on the grid while playing */
+        uint32_t sw = swings(div) ? swing_units(t->p[P_ASWING], u) : 0u, lim;
         if (t->arp_new) {
             t->arp_new = 0;
-            t->arp_pos = u;
+            t->arp_odd = 0;
+            t->arp_pos = u - sw;                    /* (the first note now: the even step's limit) */
         }
-        slen = u;
+        lim = t->arp_odd ? u + sw : u - sw;         /* to an odd step: late; to an even one: back on the grid */
         t->arp_pos += adv;
-        if (t->arp_pos >= u) {
-            t->arp_pos = t->arp_pos - u < u ? t->arp_pos - u : 0;
+        if (t->arp_pos >= lim) {
+            t->arp_pos = t->arp_pos - lim < lim ? t->arp_pos - lim : 0;
+            t->arp_odd ^= 1u;
             fire = 1;
         }
+        slen = t->arp_odd ? u + sw : u - sw;        /* (the note's step: to the next) */
     }
     if (!fire)
         return;
-    if (t->arp_note) {
-        trk_note_off(t, t->arp_note);
-        seq_out_off(t, t->arp_note);
-    }
-    t->arp_note = 0;
-    if ((uint32_t)(rng() & 127u) <= (uint32_t)t->p[P_APROB]) {
-        uint32_t n = arp_next(t);
-        t->arp_note = (uint8_t)n;
+    arp_end(t);
+    if ((uint32_t)(rng() & 127u) <= (uint32_t)t->p[P_APROB] && arp_step(t))
         t->arp_off = slen * (uint32_t)t->p[P_AGATE] / 128u;
-        trk_note_on(t, n, 100);
-        seq_out_on(t, n, 100);
-        if (((song.rec >> trk_index(t)) & 1u) && song.playing)
-            rec_note(t, n, 100, 0, 0);
-    }
 }
 
 /* ------------------------------------------------------- note input --- */
@@ -1111,16 +1418,100 @@ static void arm_start(track_t *t)
 }
 
 static void drum_input(uint32_t lane, uint32_t lvl, uint32_t rat, int rec);
+/* SLOOP 2.7, GLO > MIDI 3 > DR MAP: the drum sound a MIDI note plays. GM: the General MIDI note of each sound (the nearest
+ * one for the others, drums.c lane_of_note), as before; 1-16: 16 notes in a row are the 16 sounds in order, from note 36
+ * (KICK, KICK 2, SNARE, CLAP, HAT…) and again every 16 notes, so any keyboard or row of pads plays them all */
+/* SLOOP 2.7, GLO > MIDI 3 > REMOTE: on that channel CC 102 + k (64 and above: down, below: up) holds button k, in the
+ * order FX SEL ENV LFO EDIT GLO HOME SAVE ARP SEQ PLAY REC OCT- OCT+ (panel.c B_*). Kept here by label (the audio ISR);
+ * the UI turns them into the panel's buttons (ui_input.c remote_poll). An up waits until the down was seen, so a tap
+ * sent as two messages at once is still a tap */
+#define REMOTE_CC0 102u
+static volatile uint32_t remote_lbl, remote_up;   /* labels held, labels let go (not yet seen down) */
+static void remote_cc(uint32_t k, uint32_t value)
+{
+    uint32_t bit = 1u << k;
+    if (value >= 64u) {
+        remote_lbl |= bit;
+        remote_up &= ~bit;
+    } else if (remote_lbl & bit) {
+        remote_up |= bit;
+    }
+}
+static uint32_t midi_drum_lane(uint32_t note)
+{
+    return song.g[G_DRMAP] ? (note + 128u - 36u) % 16u : lane_of_note(note);
+}
 static const uint8_t *in_chord;                    /* input_on's note is note in_chord_i of in_chord (CHORD+) */
 static uint32_t in_chord_n, in_chord_i;
+/* SLOOP 2.6: the sustain pedal (MIDI CC 64, on the track its channel plays): while it is down, a synth track's notes let
+ * go keep sounding (their note-off waits: the arp keeps them, a recording holds them) until it is up; a note played
+ * again meanwhile is held by its key again. Per track: the pedal, the notes waiting */
+static uint8_t sus_on[NTRK];
+static uint32_t sus_wait[NTRK][4];
+static void input_off_now(track_t *t, uint32_t note);
+/* 2.7, KBD HOLD: ARP 2 > HOLD ON with ARP MODE OFF (a synth track). The notes played (keys, MIDI) go on sounding when let
+ * go; the next note played with none down replaces them (a new chord), notes played with keys down join them; HOLD OFF,
+ * ARP on, another sound or a panic ends them. A key's MIDI note-off waits with its note (the other gear holds too).
+ * Recorded as heard: a note ends where it was replaced. (Up to 2.6 HOLD did nothing with the arp OFF) */
+static uint32_t kh_set[NTRK][4];                   /* the notes held (bit per MIDI note) */
+static uint32_t kh_mo[NTRK][4];                    /* .. of them, a key's: its MIDI note-off waits */
+static uint8_t kh_mc[NTRK];                        /* .. on this channel */
+static uint8_t kh_phys[NTRK];                      /* note-ons still down (a chord key: one per note) */
+static int kh_on(const track_t *t) { return !t->p[P_AMODE] && t->p[P_AHOLD] && !is_drum(t); }
+static int kh_has(const track_t *t, uint32_t note)
+{
+    return (kh_set[trk_index(t) % NTRK][(note >> 5) & 3u] >> (note & 31u)) & 1u;
+}
+static int kh_any(const track_t *t)
+{
+    const uint32_t *m = kh_set[trk_index(t) % NTRK];
+    return (m[0] | m[1] | m[2] | m[3]) != 0u;
+}
+static void kh_release(track_t *t)                  /* every held note ends */
+{
+    uint32_t ti = trk_index(t) % NTRK, w, b;
+    for (w = 0; w < 4u; w++)
+        for (b = 0; b < 32u; b++)
+            if ((kh_set[ti][w] >> b) & 1u) {
+                uint32_t n = w * 32u + b;
+                if (ft_on && t == &trk[ft_trk % NTRK])
+                    ft_note_off(n);
+                rec_release(t, n);
+                trk_note_off(t, n);
+                if ((kh_mo[ti][w] >> b) & 1u)
+                    midi_out_note(kh_mc[ti], n, 0);
+            }
+    memset(kh_set[ti], 0, sizeof kh_set[ti]);
+    memset(kh_mo[ti], 0, sizeof kh_mo[ti]);
+    kh_phys[ti] = 0;
+}
 static void input_on(track_t *t, uint32_t note, uint32_t vel)
 {
     if (is_drum(t)) {                             /* (a GM note on the drum track: its lane) */
-        drum_input(lane_of_note(note), vel_lvl(vel), 0, 1);
+        drum_input(midi_drum_lane(note), vel_lvl(vel), 0, 1);
         return;
     }
     last_note = (uint8_t)note;
+    {   /* (2.6) played again under the pedal: the note-off it waited with first (the arp's key count, a recording's
+         * note end), then this one held by its key */
+        uint32_t *w = &sus_wait[trk_index(t) % NTRK][(note >> 5) & 3u], bit = 1u << (note & 31u);
+        if (*w & bit) {
+            *w &= ~bit;
+            input_off_now(t, note);
+        }
+    }
     arm_start(t);
+    if (kh_on(t)) {                               /* (2.7) KBD HOLD (before the free take's note: the held notes end
+                                                   * there first, then this one starts) */
+        uint32_t ti = trk_index(t) % NTRK;
+        if (!kh_phys[ti])
+            kh_release(t);                        /* the first note down: a new chord replaces the held one */
+        if (kh_phys[ti] < 255u)
+            kh_phys[ti]++;
+        if (kh_has(t, note))
+            return;                               /* (already held, in this chord: it sounds) */
+        kh_set[ti][(note >> 5) & 3u] |= 1u << (note & 31u);
+    }
     if (ft_on && t == &trk[ft_trk % NTRK])
         ft_note_on(note, vel);
     if (t->p[P_AMODE]) {
@@ -1139,9 +1530,22 @@ static void input_off(track_t *t, uint32_t note)
 {
     if (is_drum(t)) {
         if (ft_on && ft_trk == TRK_DRUM)
-            ft_note_off(lane_of_note(note));
+            ft_note_off(midi_drum_lane(note));
         return;
     }
+    if (kh_on(t) && kh_has(t, note)) {             /* (2.7) KBD HOLD: it goes on sounding */
+        if (kh_phys[trk_index(t) % NTRK])
+            kh_phys[trk_index(t) % NTRK]--;
+        return;
+    }
+    if (sus_on[trk_index(t) % NTRK]) {               /* the pedal down: it waits for the pedal (2.6) */
+        sus_wait[trk_index(t) % NTRK][(note >> 5) & 3u] |= 1u << (note & 31u);
+        return;
+    }
+    input_off_now(t, note);
+}
+static void input_off_now(track_t *t, uint32_t note)
+{
     if (ft_on && t == &trk[ft_trk % NTRK])
         ft_note_off(note);
     rec_release(t, note);
@@ -1208,7 +1612,9 @@ static void roll_hit(uint32_t r)
         roll[r].rec_abs = abs;
     }
     if (is_drum(t)) {
+        roll_rec = 1;
         drum_input(roll[r].note, roll[r].lvl, rat, rec || !armed);
+        roll_rec = 0;
         seq_out_on(t, LANE_NOTE[roll[r].note & 15u], lvl_vel(roll[r].lvl, 100));
         return;
     }
@@ -1324,20 +1730,56 @@ static void chord_revoice(uint32_t sel)
             for (j = 0; j < nn && nw[j] != kb_nt[k][i]; j++)
                 ;
             if (j == nn) {
-                input_off(t, kb_nt[k][i]);
-                midi_out_event(0x08u | (0x80u | mc) << 8 | (uint32_t)kb_nt[k][i] << 16);
+                uint32_t n = kb_nt[k][i], ti = sel % NTRK;
+                if (kh_on(t) && kh_has(t, n)) {     /* (2.7) KBD HOLD: a note the chord loses ends, held or not */
+                    kh_set[ti][(n >> 5) & 3u] &= ~(1u << (n & 31u));
+                    kh_mo[ti][(n >> 5) & 3u] &= ~(1u << (n & 31u));
+                    if (kh_phys[ti])
+                        kh_phys[ti]--;
+                    input_off_now(t, n);
+                } else {
+                    input_off(t, n);
+                }
+                midi_out_note(mc, n, 0);
             }
         }
         for (j = 0; j < nn; j++) {                  /* the notes it gains */
             for (i = 0; i < kb_n[k] && kb_nt[k][i] != nw[j]; i++)
                 ;
             if (i == kb_n[k]) {
+                in_key = (uint8_t)(k + 1u);         /* (a chord's new note: of this key, #191) */
                 input_on(t, nw[j], 100);
-                midi_out_event(0x09u | (0x90u | mc) << 8 | (uint32_t)nw[j] << 16 | 100u << 24);
+                in_key = 0;
+                midi_out_note(mc, (uint32_t)nw[j], 100u);
             }
         }
         memcpy(kb_nt[k], nw, nn);
         kb_n[k] = (uint8_t)nn;
+    }
+}
+
+/* 2.7: the punch-in FX over MIDI. On GLO > MIDI 3's FX CH, the notes F3 .. G5 (53 .. 79) are the FM-1's 27 keys with
+ * FX held: a note on holds its effect (white keys 1..16, black keys 17..27), its note off lets it go. A key of the
+ * FM-1's own (FX + key) takes over at once, and its release ends it; a note off then leaves it alone */
+static uint8_t mfx_key;                          /* the key the FX channel holds, + 1 (0: none) */
+static void midi_fx(uint32_t note, int on)
+{
+    int32_t fx;
+    uint32_t k;
+    if (note < 53u || note > 79u)
+        return;
+    k = note - 53u;
+    fx = punch_fx_of_key(k);
+    if (fx < 0 || fx >= (int32_t)PUNCH_NFX)
+        return;
+    if (on) {
+        punch.req = (int8_t)fx;
+        punch.keybit = 0;                        /* (no FM-1 key holds it: a key's release does not end it) */
+        mfx_key = (uint8_t)(k + 1u);
+    } else if (mfx_key == k + 1u) {
+        mfx_key = 0;
+        if (!punch.keybit)                       /* (an FM-1 key took it over: its release ends it) */
+            punch.req = -1;
     }
 }
 
@@ -1349,8 +1791,8 @@ static void key_down(uint32_t k)
     kb_trk[k] = (uint8_t)sel;
     kb_n[k] = 0;
     switch (layer) {
-    case LY_FX: {                                     /* FX held: the white keys pick a punch-in effect */
-        int32_t fx = punch_key(k);
+    case LY_FX: {                                     /* FX held: the keys pick a punch-in effect (white and black) */
+        int32_t fx = punch_fx_of_key(k);
         kb_kind[k] = KS_FX;
         if (fx >= 0 && fx < (int32_t)PUNCH_NFX) {
             punch.req = (int8_t)fx;
@@ -1367,6 +1809,14 @@ static void key_down(uint32_t k)
         lk_push(layer, k, 1);
         return;
     case LY_ERASE:
+        if (is_drum(t) && punch_key(k) < 0) {        /* (2.6) a black key: erase <-> mute */
+            er_mute = (uint8_t)!er_mute;
+            return;
+        }
+        if (is_drum(t) && er_mute) {                  /* MUTE: the white key's sound off / on in the sequencer */
+            drum_mute ^= (uint16_t)(1u << lane_of_key(k));
+            return;
+        }
         kb_kind[k] = KS_ERASE;
         if (!erasing(t) || er_trk != sel)
             undo_erase_sess = (undo_sess += 4u) | 2u;  /* a new erase: one undo */
@@ -1412,7 +1862,7 @@ static void key_down(uint32_t k)
         kb_kind[k] = KS_DRUM;
         drum_input(lane, lvl, 0, 1);
         mc = trk_midi_ch(sel);
-        midi_out_event(0x09u | (0x90u | mc) << 8 | (uint32_t)LANE_NOTE[lane] << 16 | lvl_vel(lvl, 100) << 24);
+        midi_out_note(mc, (uint32_t)LANE_NOTE[lane], lvl_vel(lvl, 100));
         return;
     }
     {
@@ -1433,6 +1883,7 @@ static void key_down(uint32_t k)
         }
         kb_kind[k] = KS_NOTE;
         kb_root[k] = (uint8_t)n;
+        kb_oct[k] = (int8_t)song.octave;
         if (t->p[P_CHORD]) {
             kb_n[k] = (uint8_t)chord_play_notes(t, n, chord_mods(), kb_nt[k]);   /* (the modifiers held, voiced) */
         } else {
@@ -1440,14 +1891,16 @@ static void key_down(uint32_t k)
             kb_n[k] = 1;
         }
         mc = trk_midi_ch(sel);
+        in_key = (uint8_t)(k + 1u);                 /* (the arp keeps the key: arp_add, #191) */
         for (i = 0; i < kb_n[k]; i++) {
             in_chord = kb_n[k] > 1u ? kb_nt[k] : 0;
             in_chord_n = kb_n[k];
             in_chord_i = i;
             input_on(t, kb_nt[k][i], 100);
             in_chord = 0;
-            midi_out_event(0x09u | (0x90u | mc) << 8 | (uint32_t)kb_nt[k][i] << 16 | 100u << 24);
+            midi_out_note(mc, (uint32_t)kb_nt[k][i], 100u);
         }
+        in_key = 0;
         /* the pen of the SEQ layer: the keys down now (a chord), else this note */
         if (!(kb_prev & ~(1u << k)) || pen_n >= 4u)
             pen_n = 0;
@@ -1489,15 +1942,21 @@ static void key_up(uint32_t k)
     case KS_NOTE:
         mc = trk_midi_ch(kb_trk[k] % NTRK);
         for (i = 0; i < kb_n[k]; i++) {
-            input_off(t, kb_nt[k][i]);
-            midi_out_event(0x08u | (0x80u | mc) << 8 | (uint32_t)kb_nt[k][i] << 16);
+            uint32_t n = kb_nt[k][i];
+            input_off(t, n);
+            if (kh_on(t) && kh_has(t, n)) {         /* (2.7) KBD HOLD: its MIDI note-off waits with it */
+                kh_mo[kb_trk[k] % NTRK][(n >> 5) & 3u] |= 1u << (n & 31u);
+                kh_mc[kb_trk[k] % NTRK] = (uint8_t)mc;
+            } else {
+                midi_out_note(mc, n, 0);
+            }
         }
         return;
     case KS_DRUM:
         if (ft_on && ft_trk == TRK_DRUM)
             ft_note_off(kb_nt[k][0]);
         mc = trk_midi_ch(TRK_DRUM);
-        midi_out_event(0x08u | (0x80u | mc) << 8 | (uint32_t)LANE_NOTE[kb_nt[k][0] & 15u] << 16);
+        midi_out_note(mc, (uint32_t)LANE_NOTE[kb_nt[k][0] & 15u], 0);
         return;
     default:
         return;
@@ -1538,9 +1997,11 @@ static void keyboard_block(void)
 {
     uint32_t cur = fm1_in.notes, ch = cur ^ kb_prev, k, r;
     audition_block();
+    /* (2.7: MUTE mode stays when EDIT is let go, until a black key again: the mutes at hand, live; 2.6 went back to
+     * erasing) */
     if (!(layer_buttons() & ly_bit[LY_ROLL]))         /* ARP up (and not locked): the rolls end (the keys stay silent) */
         for (r = 0; r < NROLL; r++)
-            if (roll[r].on)
+            if (roll[r].on && roll[r].key < 27u)        /* (2.7: not the LIVE page's, key 0x80 + note: its pad ends them) */
                 roll_end(r);
     if (!ch)
         return;
@@ -1781,7 +2242,9 @@ static void seq_step(track_t *t, const step_t *s, uint32_t slen, uint32_t skip)
 {
     uint32_t i, j, gate = slen * (uint32_t)t->p[P_SGATE] / 128u;
     uint32_t slide_in = t->seq_hold && t->seq_n;
-    uint32_t next_tie = t->step[(t->seq_idx + 1u) % trk_len(t)].time == ST_TIE;
+    const step_t *nx = &t->step[(t->seq_idx + 1u) % trk_len(t)];
+    uint32_t next_tie = nx->time == ST_TIE || (nx->time == ST_NOTE && (nx->flags & SF_CONT_ALL));   /* (2.7: notes going on
+                                                     * into the next step: held to it, it says which end) */
     if (s->time == ST_TIE) {
         if (t->seq_n) {
             t->seq_off = gate + slen / 2u;
@@ -1791,6 +2254,34 @@ static void seq_step(track_t *t, const step_t *s, uint32_t slen, uint32_t skip)
     }
     if (s->time == ST_REST || !s->n) {
         seq_release(t);
+        return;
+    }
+    if (s->flags & SF_CONT_ALL) {                   /* (2.7) notes going on: kept; the others end, the new ones start */
+        uint8_t old[4];
+        uint32_t no = t->seq_n > 4u ? 4u : t->seq_n, kept = 0;
+        memcpy(old, t->seq_notes, no);
+        for (j = 0; j < no; j++) {
+            for (i = 0; i < s->n && !((s->flags & SF_CONT(i)) && s->note[i] == old[j] && !((kept >> i) & 1u)); i++)
+                ;
+            if (i < s->n) {
+                kept |= 1u << i;
+            } else {
+                trk_note_off(t, old[j]);
+                seq_out_off(t, old[j]);
+            }
+        }
+        t->slide_glide = 0;
+        for (i = 0; i < s->n; i++)
+            if (!((kept >> i) & 1u) && !((skip >> i) & 1u) && !roll_has(t, s->note[i])) {
+                trk_note_on(t, s->note[i], step_vel(s, i));   /* (a note going on that was not playing: from here) */
+                seq_out_on(t, s->note[i], step_vel(s, i));
+            }
+        t->seq_n = 0;
+        for (i = 0; i < s->n; i++)
+            if (!((skip >> i) & 1u))
+                t->seq_notes[t->seq_n++] = s->note[i];
+        t->seq_off = gate;
+        t->seq_hold = (s->flags & SF_SLIDE) != 0 || next_tie;
         return;
     }
     if (s->rat) {                                   /* ratchets: each hit its share of the step */
@@ -1835,7 +2326,7 @@ static void seq_step(track_t *t, const step_t *s, uint32_t slen, uint32_t skip)
 /* play one drum step: each lane a hit (skip: lanes already played by live recording, or rolling) */
 static void drum_step(track_t *t, const dstep_t *s, uint32_t skip)
 {
-    uint32_t l, m = dstep_mask(s) & ~skip & ~roll_lanes(t);
+    uint32_t l, m = dstep_mask(s) & ~skip & ~roll_lanes(t) & ~(uint32_t)drum_mute;
     seq_out_track_off(t);                           /* the last step's hits end here */
     for (l = 0; m; l++, m >>= 1)
         if (m & 1u) {
@@ -1852,7 +2343,7 @@ static void seq_ratchets(track_t *t, uint32_t into, uint32_t slen)
         return;                                     /* (its condition failed: no hit at all) */
     if (is_drum(t)) {
         const dstep_t *s = &t->dstep[t->seq_idx % NSTEP];
-        uint32_t m = dstep_mask(s) & ~roll_lanes(t);
+        uint32_t m = dstep_mask(s) & ~roll_lanes(t) & ~(uint32_t)drum_mute;
         for (i = 0; m; i++, m >>= 1) {
             uint32_t hits = 1u + dstep_rat(s, i), h, done;
             if (!(m & 1u) || hits == 1u)
@@ -1991,29 +2482,75 @@ static void seq_tick(track_t *t, uint32_t adv)
         seq_ratchets(t, rel < 0 ? 0u : (uint32_t)rel, slen);
 }
 
-/* MIDI in: the track a channel plays (0..15) */
-static track_t *midi_track(uint32_t ch)
+/* MIDI in: the track that has channel ch (0..15) as its own: the drum track's GLO > DRUMS > CH, synth track i's
+ * GLO > MIDI > CHi (2.6; 1, 2, 3 as before; a channel two tracks have: the first of them), else 0 */
+static track_t *midi_own(uint32_t ch)
 {
+    uint32_t i;
     if (song.g[G_DRCH] && ch + 1u == (uint32_t)song.g[G_DRCH])
         return TDRUM;
-    return ch < NPART ? &trk[ch] : TSEL;
+    for (i = 0; i < NPART; i++)
+        if (ch + 1u == (uint32_t)song.g[G_CH1 + i])
+            return &trk[i];
+    return 0;
+}
+/* the track a channel plays: its own, or (GLO > MIDI > OTHER = SEL) the selected one; 0: none (OTHER = OFF) */
+static track_t *midi_track(uint32_t ch)
+{
+    track_t *t = midi_own(ch);
+    return t ? t : song.g[G_CHOTH] ? 0 : TSEL;
 }
 
 /* a channel that plays the selected track: its note-off goes to the track its note-on went to,
  * even when another track was selected in between (else that note would hang) */
-static uint8_t midi_sel_on[16][128];                  /* per channel and note: track + 1, 0 = none */
+static uint8_t midi_sel_on[16][64];                   /* per channel and note, a nibble: track + 1, 0 = none (sloop-lab:
+                                                       * 1 KB, not 2: the value is 0..NTRK) */
+static inline uint32_t midi_sel_get(uint32_t ch, uint32_t note)
+{
+    return (midi_sel_on[ch & 15u][(note & 127u) >> 1] >> (4u * (note & 1u))) & 15u;
+}
+static inline void midi_sel_set(uint32_t ch, uint32_t note, uint32_t v)
+{
+    uint8_t *b = &midi_sel_on[ch & 15u][(note & 127u) >> 1];
+    uint32_t sh = 4u * (note & 1u);
+    *b = (uint8_t)((*b & ~(15u << sh)) | ((v & 15u) << sh));
+}
 static track_t *midi_route(uint32_t ch, uint32_t note, int on)
 {
-    track_t *t = midi_track(ch);
-    if (ch < NPART || (song.g[G_DRCH] && ch + 1u == (uint32_t)song.g[G_DRCH]))
-        return t;                                     /* a part's own channel, or the drum channel */
+    track_t *t = midi_own(ch);
+    if (t)
+        return t;                                     /* a track's own channel (GLO > MIDI, GLO > DRUMS > CH) */
+    if (song.g[G_CHOTH] && (on || !midi_sel_get(ch, note)))
+        return 0;                                     /* OTHER = OFF: nothing (a note-off only ends what a note-on of
+                                                       * that channel started on the selected track, before) */
+    t = TSEL;
     if (on)
-        midi_sel_on[ch & 15u][note & 127u] = (uint8_t)(song.sel + 1u);
-    else if (midi_sel_on[ch & 15u][note & 127u]) {
-        t = &trk[(midi_sel_on[ch & 15u][note & 127u] - 1u) % NTRK];
-        midi_sel_on[ch & 15u][note & 127u] = 0;
+        midi_sel_set(ch, note, song.sel + 1u);
+    else if (midi_sel_get(ch, note)) {
+        t = &trk[(midi_sel_get(ch, note) - 1u) % NTRK];
+        midi_sel_set(ch, note, 0);
     }
     return t;
+}
+
+/* (2.6) the pedal and the wheel of a channel: the track they act on is remembered (track + 1), so a pedal let up or a
+ * wheel let go after another track got selected (a SEL channel, IN = CH n) still lets go of the one they held */
+static uint8_t ch_sus[16], ch_bend[16];
+static void sus_set(track_t *t, int on);
+static void midi_pedal(uint32_t ch, track_t *t, uint32_t value)
+{
+    uint32_t was = ch_sus[ch & 15u];
+    if (was && was - 1u != trk_index(t))
+        sus_set(&trk[(was - 1u) % NTRK], 0);           /* (the pedal's other track: let go there) */
+    ch_sus[ch & 15u] = (uint8_t)(value >= 64u ? trk_index(t) + 1u : 0u);
+}
+static void midi_bend(uint32_t ch, track_t *t, uint32_t d1, uint32_t d2)
+{
+    uint32_t was = ch_bend[ch & 15u];
+    if (was && was - 1u != trk_index(t))
+        trk[(was - 1u) % NTRK].bend = 0;                /* (the wheel's other track: back to its pitch, gliding) */
+    t->bend = (int16_t)((int32_t)(d1 | d2 << 7) - 8192);
+    ch_bend[ch & 15u] = (uint8_t)(trk_index(t) + 1u);
 }
 
 /* SLOOP 2.5: MIDI CCs set track parameters, after Felucca 1.1.5's standard CC map (#103, Leo Kuroshita).
@@ -2024,21 +2561,125 @@ static track_t *midi_route(uint32_t ch, uint32_t note, int on)
  * below a low-pass, above a high-pass: on every engine and the drums), 91 / 93 / 94 the reverb, chorus and
  * delay sends. The drum track takes 7, 91 and 94 as GLO > DRUMS LVL, REV and DLY (2.5), and 10 and 74. */
 #define MCC_RES 0xFFu
+#define MCC_CUT 0xFEu                             /* (2.7) CC 74: the engine's own cutoff / brightness, else FILTER */
 static const uint8_t MIDI_CC_MAP[][2] = {
-    {5, P_GLIDE}, {7, P_LEVEL}, {10, P_PAN}, {71, MCC_RES}, {72, P_REL}, {73, P_ATK}, {74, P_TFLT}, {75, P_DEC},
+    {5, P_GLIDE}, {7, P_LEVEL}, {10, P_PAN}, {71, MCC_RES}, {72, P_REL}, {73, P_ATK}, {74, MCC_CUT}, {75, P_DEC},
     {91, P_REV}, {93, P_CHOR}, {94, P_DLY},
 };
+/* MIDI LEARN (SLOOP 2.6, after Felucca 1.5 by Leo Kuroshita, Discussion #170): up to ML_N CCs, each set to one
+ * parameter of one track, whatever channel it comes on (a channel IN ignores stays ignored) and whichever track that
+ * channel plays. Kept with the settings (project.c settings_write, after the SYN kits), an entry 16 bits: bits 0..6
+ * the CC, 7..8 the track, 9..15 the parameter's code, 0 = an empty entry: a common parameter its P_* id + 1 (their
+ * ids never move, new ones go before P_E0), an engine parameter ML_E0 + k for P_E0 + k (P_E0 moves when common ones
+ * are added). A learned CC no longer reaches the standard map on any channel: the controller is the user's now. The
+ * CCs with a meaning of their own (0 / 32 bank select, 1 mod wheel, 6 / 38 data entry, 11 expression, 64 sustain,
+ * 96..101, 120..127 the channel modes) are never learned. The UI (ui_input.c ml_*) writes the entries with the
+ * interrupts off; ml_arm / ml_heard hand it a CC heard while learning */
+#define ML_N 16u
+#define ML_E0 120u
+_Static_assert(P_E0 < ML_E0 && P_COUNT - P_E0 == 8, "MIDI LEARN: a code per parameter");
+static volatile uint16_t ml_tab[ML_N];
+static volatile uint8_t ml_arm, ml_heard;  /* the UI waits for a CC; the CC that came meanwhile + 1 (0 none) */
+static uint32_t ml_id(uint32_t code)        /* an entry's code -> P_* id, P_COUNT: none this firmware knows */
+{
+    return code >= ML_E0 ? (code - ML_E0 < 8u ? P_E0 + code - ML_E0 : P_COUNT) : code && code <= P_E0 ? code - 1u : P_COUNT;
+}
+static int ml_free_cc(uint32_t cc)
+{
+    return cc && cc < 120u && cc != 1u && cc != 6u && cc != 11u && cc != 32u && cc != 38u && cc != 64u &&
+           (cc < 96u || cc > 101u);
+}
+/* parameter id of track t from a CC value, as a knob over its range */
+/* the pedal on track t: up, its waiting notes end now */
+static void sus_set(track_t *t, int on)
+{
+    uint32_t ti = trk_index(t) % NTRK, n;
+    if (is_drum(t))
+        return;
+    sus_on[ti] = (uint8_t)(on != 0);
+    if (on)
+        return;
+    for (n = 0; n < 128u; n++)
+        if ((sus_wait[ti][n >> 5] >> (n & 31u)) & 1u) {
+            sus_wait[ti][n >> 5] &= ~(1u << (n & 31u));
+            input_off(t, n);
+        }
+}
+static void midi_cc_set(track_t *t, uint32_t id, uint32_t value)
+{
+    const param_desc_t *d = is_drum(t) && id == P_E0 ? &DRUM_KIT_DESC
+                            : id >= P_E0 ? &ENGINES[t->eng_req % NENGINES]->edit[(id - P_E0) & 7u] : &TP[id % P_COUNT];
+    if (d->max > d->min)
+        t->p[id % P_COUNT] = (int16_t)(d->min + ((int32_t)(value & 127u) * (d->max - d->min) + 63) / 127);
+}
+/* 1: cc is learned (set here) or taken by MIDI LEARN waiting for one */
+static int __attribute__((noinline)) midi_learned(uint32_t cc, uint32_t value)
+{
+    uint32_t i, e, id, hit = 0;
+    if (!ml_free_cc(cc)) {
+        if (ml_arm && !ml_heard)
+            ml_heard = (uint8_t)(cc + 1u);              /* (the UI says CC NOT LEARNABLE; the CC does its own job) */
+        return 0;
+    }
+    if (ml_arm) {
+        if (!ml_heard)
+            ml_heard = (uint8_t)(cc + 1u);
+        return 1;
+    }
+    for (i = 0; i < ML_N; i++) {
+        e = ml_tab[i];
+        if ((e >> 9) && (e & 127u) == cc) {
+            if ((id = ml_id(e >> 9)) < P_COUNT)
+                midi_cc_set(&trk[(e >> 7) & 3u], id, value);
+            hit = 1;
+        }
+    }
+    return hit;
+}
+
+/* SLOOP 2.7, after renebohne's pull request #71 (Felucca 1.1.5's standard CC map, discussion #103): CC 74 ("brightness",
+ * the cutoff knob of most controllers) sweeps the engine's own cutoff or brightness over its range, from dark to bright,
+ * where it has one; the others (DIGITAL, VOICE, WHEEL) and the drum track keep the track FILTER (64 off, as before).
+ * The engine's EDIT slot, by its name */
+static uint32_t cc74_slot(const engine_t *e)      /* 0..7, or 8: none */
+{
+    static const struct { const char *name; uint8_t slot; } T[] = {
+        {"ANALOG", 4}, {"PHASE", 2}, {"LOFI", 7}, {"SAMPLE", 4}, {"TRIO", 5}, {"GRAIN", 7}, {"FM6", 2}, {"PHYS", 2},
+        {"NOISE", 2}, {"SLICE", 7}};
+    uint32_t i;
+    for (i = 0; i < NELEM(T); i++)
+        if (str_eq(e->name, T[i].name) && e->edit[T[i].slot].max > e->edit[T[i].slot].min &&
+            !e->edit[T[i].slot].names)
+            return T[i].slot;
+    return 8u;
+}
 static void __attribute__((noinline)) midi_cc(track_t *t, uint32_t cc, uint32_t value)
 {
     const param_desc_t *d = 0;
     int16_t *slot = 0;
     uint32_t i, id = 0xFFFFu;
+    if (midi_learned(cc, value))                       /* (a learned CC is the user's: not the map's) */
+        return;
+    if (cc == 64u) {                                   /* the sustain pedal (2.6): >= 64 down */
+        sus_set(t, value >= 64u);
+        return;
+    }
     for (i = 0; i < NELEM(MIDI_CC_MAP); i++)
         if (MIDI_CC_MAP[i][0] == cc)
             id = MIDI_CC_MAP[i][1];
     if (id == 0xFFFFu)
         return;
-    if (is_drum(t)) {
+    if (id == MCC_CUT) {                               /* (2.7) the engine's cutoff, else the track FILTER */
+        uint32_t k = is_drum(t) ? 8u : cc74_slot(ENGINES[t->eng_req % NENGINES]);
+        if (k < 8u) {
+            d = &ENGINES[t->eng_req % NENGINES]->edit[k];
+            slot = &t->p[P_E0 + k];
+        } else {
+            id = P_TFLT;
+        }
+    }
+    if (d) {
+    } else if (is_drum(t)) {
         if (id == P_LEVEL || id == P_REV || id == P_DLY) {
             id = id == P_LEVEL ? G_DRLVL : id == P_REV ? G_DRREV : G_DRDLY;
             d = &GP[id];
@@ -2147,6 +2788,37 @@ static uint32_t mclk_adv(uint32_t n)               /* units to advance this bloc
     return adv;
 }
 
+/* 2.7, GLO > MIDI 3 > CLK OUT: SLOOP the clock master on USB. The MIDI clock, 24 pulses a beat at the tempo, sent
+ * stopped too (the other gear knows the tempo before PLAY); START as the sequencer starts (after a count-in: when it
+ * starts), with the pulse of its downbeat; STOP when it stops (CLK OUT or SYNC changed while playing: STOP too). Only
+ * while SYNC is INT: a FM-1 that follows a clock never sends one back (no loop through a computer). A pulse goes out
+ * in the block it falls in: < 1 ms late */
+static uint32_t mco_u;                            /* units since the last pulse */
+static uint8_t mco_play;                          /* the other gear was told START */
+static void clkout_block(uint32_t n)
+{
+    if (!song.g[G_CLKOUT] || song.g[G_SYNC]) {
+        if (mco_play)
+            midi_out_event(0x0Fu | 0xFCu << 8);       /* STOP */
+        mco_play = 0;
+        mco_u = 0;
+        return;
+    }
+    if (song.playing && !mco_play) {
+        midi_out_event(0x0Fu | 0xFAu << 8);           /* START, then the downbeat's pulse */
+        midi_out_event(0x0Fu | 0xF8u << 8);
+        mco_u = 0;
+    } else if (!song.playing && mco_play) {
+        midi_out_event(0x0Fu | 0xFCu << 8);           /* STOP */
+    }
+    mco_play = (uint8_t)(song.playing != 0);
+    mco_u += n * (uint32_t)song.g[G_BPM];
+    while (mco_u >= MCLK_PULSE_U) {
+        mco_u -= MCLK_PULSE_U;
+        midi_out_event(0x0Fu | 0xF8u << 8);           /* a pulse */
+    }
+}
+
 /* everything that happens between two rendered blocks: transport, input, the steps of every
  * track at the clock, the click, the rolls and the arps; then the clock moves on by n samples */
 static void events_block(uint32_t n)
@@ -2207,6 +2879,7 @@ static void events_block(uint32_t n)
     if (rec_wait && song.playing)
         rec_begin();                                /* started some other way: record now */
     adv = mclk_on() && song.playing ? mclk_adv(n) : n * (uint32_t)song.g[G_BPM];   /* (after a START) */
+    clkout_block(n);                                  /* (2.7) CLK OUT */
     ft_block();
 #if FELUCCA_ARRANGER
     if (song.playing && arrangement_clock.running) {
@@ -2230,15 +2903,65 @@ static void events_block(uint32_t n)
         fill_arm = 0;
     }
     fill_now = (uint8_t)(fill_held || fill_bar_on);
+    {   /* GLO > SYSTEM > IN changed to or from CH n, or a channel of GLO > MIDI / DRUMS (2.6): what the other routing
+         * started is released (its note-offs would go elsewhere now: stuck notes), the pedals and wheels too */
+        static uint8_t route_was;
+        static uint32_t chans_was = 0xFFFFFFFFu;
+        uint32_t rt = (uint32_t)song.g[G_ROUTE];
+        uint32_t chans = (uint32_t)(song.g[G_CH1] & 31) | (uint32_t)(song.g[G_CH2] & 31) << 5 |
+                         (uint32_t)(song.g[G_CH3] & 31) << 10 | (uint32_t)(song.g[G_CHOTH] & 1) << 15 |
+                         (uint32_t)(song.g[G_DRCH] & 31) << 16 | (uint32_t)(song.g[G_FXCH] & 31) << 21;   /* (2.7: FX CH too:
+                                                       * its channel's notes go to the effects from then on) */
+        if ((rt != route_was && (rt >= 2u || route_was >= 2u)) || (chans != chans_was && chans_was != 0xFFFFFFFFu)) {
+            panic_req = (uint8_t)((1u << NTRK) - 1u);
+            seq_out_all_off();                        /* (MIDI OUT: the notes on end on the channels they went out on) */
+            memset(midi_sel_on, 0, sizeof midi_sel_on);
+            memset(ch_sus, 0, sizeof ch_sus);
+            memset(ch_bend, 0, sizeof ch_bend);
+            for (i = 0; i < NTRK; i++)
+                trk[i].bend = 0;
+        }
+        route_was = (uint8_t)rt;
+        chans_was = chans;
+    }
     pr = panic_req;
     panic_req = 0;
+    {
+        uint32_t ak = arp_keep_req;
+        arp_keep_req = 0;
+        if (pr == (1u << NTRK) - 1u)
+            ak = 0;                                   /* (all of it: a project, NEW: no arp goes on) */
+        arp_keep_req = (uint8_t)ak;                   /* (read below, cleared after) */
+    }
+    if (pr)
+        mi_pen[0] = mi_pen[1] = mi_pen[2] = mi_pen[3] = 0;   /* (the MIDI pen's notes held: never stuck either) */
+    if (pr == (1u << NTRK) - 1u) {                    /* (2.6) all of it (a project, NEW, the MIDI routing): the
+                                                       * wheels back to the middle too */
+        memset(ch_bend, 0, sizeof ch_bend);
+        memset(ch_sus, 0, sizeof ch_sus);
+        for (i = 0; i < NTRK; i++)
+            trk[i].bend = 0;
+    }
     for (i = 0; i < NTRK; i++) {
         track_t *t = &trk[i];
         if ((pr >> i) & 1u) {
-            trk_all_off(t);
-            t->nheld = 0;
-            t->arp_phys = 0;
-            t->arp_note = 0;
+            kh_release(t);                            /* (2.7) KBD HOLD: what it held ends */
+            if (t->pold) {                            /* (2.6) a preset loaded: the notes keep sounding as they are
+                                                       * and fade out with the old sound (voice.c sound_change):
+                                                       * no release cut short (an organ's key-off) under the fade */
+                strum_cancel(t, 0, 1);
+                t->nmono = 0, t->mono_note = 0, t->xp_n = 0;
+            } else {
+                trk_all_off(t);
+            }
+            sus_wait[i][0] = sus_wait[i][1] = sus_wait[i][2] = sus_wait[i][3] = 0;   /* (what the pedal held: gone too, */
+            sus_on[i] = 0;                                                         /* and the pedal: never stuck) */
+            if (!((arp_keep_req >> i) & 1u)) {   /* (2.7: a sound loaded under a running arp:
+                                                       * it keeps its notes, ui.c apply_preset_to) */
+                t->nheld = 0;
+                t->arp_phys = 0;
+                t->arp_note = t->arp_ch[0] = t->arp_ch[1] = t->arp_ch[2] = 0;
+            }
         }
         if (i < NPART)
             engine_block(t);                          /* engine switch: fade, then switch (voice.c) */
@@ -2247,15 +2970,15 @@ static void events_block(uint32_t n)
             t->nheld = 0;
             if (!t->p[P_AMODE])
                 t->arp_phys = 0;
-            if (t->arp_note) {
-                trk_note_off(t, t->arp_note);
-                seq_out_off(t, t->arp_note);
-                t->arp_note = 0;
-            }
+            arp_end(t);
         }
+        if (kh_any(t) && !kh_on(t))
+            kh_release(t);                            /* (2.7) KBD HOLD off (HOLD OFF, ARP on): the held notes end */
         t->armp = t->p[P_AMODE];
         t->aholdp = t->p[P_AHOLD];
     }
+    if (pr)
+        arp_keep_req = 0;
     keyboard_block();
     drum_audition_poll();                             /* (the editor's DRUM SYNTH page) */
     strum_block(n);                                   /* (voice.c: the strummed notes due) */
@@ -2268,23 +2991,91 @@ static void events_block(uint32_t n)
             mclk_event((pkt >> 8) & 0xFFu, ((pkt >> 4) & 15u) ? 2u : 1u);
             continue;
         }
-        if (st == 0xB0u) {                            /* a CC (IN = CLOCK: none) */
-            if (!song.g[G_ROUTE])
-                midi_cc(midi_track(ch), d1, d2);
+        if (song.g[G_RMCH] && ch == (uint32_t)song.g[G_RMCH] - 1u && st == 0xB0u && d1 >= REMOTE_CC0 &&
+            d1 < REMOTE_CC0 + 14u) {                  /* 2.7: REMOTE (GLO > MIDI 3): the buttons over MIDI */
+            remote_cc(d1 - REMOTE_CC0, d2);
             continue;
         }
-        if (st != 0x90u && st != 0x80u)
+        if (song.g[G_FXCH] && ch == (uint32_t)song.g[G_FXCH] - 1u && song.g[G_ROUTE] != 1 &&
+            (st == 0x90u || st == 0x80u)) {           /* 2.7: the punch-in FX's channel (GLO > MIDI 3), before IN = CH n */
+            midi_fx(d1, st == 0x90u && d2);
             continue;
-        if (song.g[G_ROUTE] && st == 0x90u && d2)
-            continue;                                 /* GLO > SYSTEM > IN = CLOCK: no notes (the note-offs still
-                                                       * end what was held when it was set) */
-        t = midi_route(ch, d1, st == 0x90u && d2);
+        }
+        if (song.g[G_ROUTE] >= 2) {                   /* 2.6: IN = CH n: that channel only, on the selected
+                                                       * track (notes and CCs); every other channel ignored */
+            if (ch != (uint32_t)song.g[G_ROUTE] - 2u)
+                continue;
+            if (st == 0xB0u) {
+                if (d1 == 64u)
+                    midi_pedal(ch, TSEL, d2);
+                midi_cc(TSEL, d1, d2);
+                continue;
+            }
+            if (st == 0xE0u) {                        /* pitch bend (2.6) */
+                if (!is_drum(TSEL))
+                    midi_bend(ch, TSEL, d1, d2);
+                continue;
+            }
+            if (st == 0xC0u) {                        /* Program Change (2.6): the selected track's sound */
+                pc_req[song.sel % NTRK] = (uint8_t)(d1 + 1u);
+                continue;
+            }
+            if (st != 0x90u && st != 0x80u)
+                continue;
+            if (st == 0x90u && d2) {
+                midi_sel_set(ch, d1, song.sel + 1u);
+                t = TSEL;
+            } else {                                  /* the note-off: the track its note-on went to */
+                t = midi_sel_get(ch, d1) ? &trk[(midi_sel_get(ch, d1) - 1u) % NTRK] : TSEL;
+                midi_sel_set(ch, d1, 0);
+            }
+        } else {
+            if (st == 0xB0u) {                            /* a CC (IN = CLOCK: none) */
+                if (!song.g[G_ROUTE] && (t = midi_track(ch)) != 0) {
+                    if (d1 == 64u)
+                        midi_pedal(ch, t, d2);
+                    midi_cc(t, d1, d2);
+                }
+                else if (!song.g[G_ROUTE])
+                    (void)midi_learned(d1, d2);           /* (OTHER = OFF: a learned CC still works, on any channel) */
+                continue;
+            }
+            if (st == 0xC0u) {                            /* Program Change (2.6): the sound of the track its channel
+                                                           * plays (IN = CLOCK, OTHER = OFF and nobody's channel: none) */
+                if (!song.g[G_ROUTE] && (t = midi_track(ch)) != 0)
+                    pc_req[trk_index(t) % NTRK] = (uint8_t)(d1 + 1u);
+                continue;
+            }
+            if (st == 0xE0u) {                            /* pitch bend (2.6): the track its channel plays (IN = CLOCK:
+                                                           * none) */
+                if (!song.g[G_ROUTE] && (t = midi_track(ch)) != 0 && !is_drum(t))
+                    midi_bend(ch, t, d1, d2);
+                continue;
+            }
+            if (st != 0x90u && st != 0x80u)
+                continue;
+            if (song.g[G_ROUTE] && st == 0x90u && d2)
+                continue;                                 /* GLO > SYSTEM > IN = CLOCK: no notes (the note-offs still
+                                                           * end what was held when it was set) */
+            t = midi_route(ch, d1, st == 0x90u && d2);
+            if (!t)
+                continue;                                 /* (GLO > MIDI > OTHER = OFF: a channel no track has) */
+        }
         if (is_drum(t)) {
             if (st == 0x90u && d2)
-                drum_input(lane_of_note(d1), vel_lvl(d2), 0, 1);
+                drum_input(midi_drum_lane(d1), vel_lvl(d2), 0, 1);
         } else if (st == 0x90u && d2) {
+            if (t == TSEL) {                          /* the SEQ layer's pen: this note, or the chord held (2.6) */
+                if (!(mi_pen[0] | mi_pen[1] | mi_pen[2] | mi_pen[3]) || pen_n >= 4u)
+                    pen_n = 0;
+                pen_note[pen_n++] = (uint8_t)d1;
+                mi_pen[d1 >> 5] |= 1u << (d1 & 31u);
+            }
+            step_in_push(d1 | 0x80u | trk_index(t) << 8);
             input_on(t, d1, d2);
         } else {
+            mi_pen[d1 >> 5] &= ~(1u << (d1 & 31u));
+            step_in_push(d1 | trk_index(t) << 8);
             input_off(t, d1);
         }
     }

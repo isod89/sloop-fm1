@@ -71,6 +71,9 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
             audio_block(o + 2u * b, CTL);
         fm1_audio_ack_half();
         audio_halves++;
+#if FELUCCA_CPU1
+        cpu1_load_half(HALF_FRAMES * 1000000u / FS);     /* core 1's load and core 0's wait for it (fx.c) */
+#endif
         {   /* the deadline sees the render and TIMER5 nested in it (the USB audio stream); the load
              * figures the render alone (after Felucca 1.0) */
             uint32_t all = fm1_ticks() - t0;

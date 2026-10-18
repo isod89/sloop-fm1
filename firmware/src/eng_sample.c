@@ -10,8 +10,10 @@ typedef struct {
     uint32_t rate;               /* source rate / 44100, Q16 */
     int16_t root16;              /* root pitch in 1/16 semitone */
     int16_t pred;                /* ADPCM state at the loop start */
-    uint8_t idx, lo, hi, looped;
+    uint8_t idx, lo, hi, looped; /* looped: 0 one-shot, 1 loops [ls, le] (the factory sets), 2 (2.7, user slots: the
+                                  * editor's LOOP and LOOP+TAIL) loops while the note is held, then plays on to the end */
 } smp_zone_t;
+#define SMP_LOOP_HELD 2u
 typedef struct {
     const char *name;
     uint16_t z0, nz;
@@ -125,7 +127,7 @@ static inline int32_t sample_next(const smp_zone_t *z, voice_t *v, int loop)
     v->s[0] = clamp(v->s[0] + ((code & 8u) ? -vd : vd), -32768, 32767);
     v->s[1] = clamp(v->s[1] + IMA_IDX[code & 7u], 0, 88);
     pos++;
-    if (pos > z->le && z->looped && loop) {
+    if (pos > z->le && z->looped && loop && (z->looped != SMP_LOOP_HELD || v->gate)) {   /* (HELD, let go: the tail) */
         pos = z->ls;
         v->s[0] = z->pred;
         v->s[1] = z->idx;
