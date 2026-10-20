@@ -574,11 +574,11 @@ A muted track fades out in a few milliseconds and plays no new notes; its patter
 
 | Action | How |
 | --- | --- |
-| **Undo / redo** | **EDIT + OCT−** / **EDIT + OCT+**. One level: the last recording pass, erase, clear, step or pattern edit |
+| **Undo / redo** | **EDIT + OCT−** / **EDIT + OCT+**. Up to 8 pattern edit sessions: recording, erase, clear, notes, nudges, locks and fills. Redo is available until the next edit |
 | **Clear the selected track** | **hold REC** ~2 s (after 0.7 s a ring fills; let go before it is full: nothing). Undo brings it back |
 | **Clear the pattern** | SAVE → TOOLS → **CLRSQ** (GO) |
 | **Reset the sound** | SAVE → TOOLS → **INIT** (GO): the engine's defaults and first preset |
-| **New loop** | SAVE → TOOLS → **NEW** (GO): the four tracks of your working loop back to their power-on sounds, empty patterns, 90 BPM (*NEW LOOP, A-D KEPT*: the saved sections are not touched; stop the song first in song mode; undo brings back only the last track's pattern, so save a section first if in doubt) |
+| **New loop** | SAVE → TOOLS → **NEW** (GO): the four tracks of your working loop back to their power-on sounds, empty patterns, 90 BPM (*NEW LOOP, A-D KEPT*: the saved sections are not touched; stop the song first in song mode; NEW clears history because it also resets sounds and globals; save a section first) |
 | **Save the loop as a section** | **SAVE + key 5–8** (A–D) |
 | **Save / load a section** | SAVE → SECTION: **SECT** A–D, **LOAD** (GO), **SAVE** (GO) |
 | **Erase a saved section** (2.6) | SAVE → SECTION: **SECT** A–D, **ERASE** on KNOB 2 (GO), the song stopped: the slot is *EMPTY* again and its section key goes dark. The steps of the song that played it are taken out (the others keep their order; none left: the default song A B C D). Your working loop is not touched. No undo: save it into another slot first if in doubt |
