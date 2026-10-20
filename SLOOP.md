@@ -335,11 +335,11 @@ Changing a sound (PRESETS, a user preset) never changes the key, the chord mode,
 
 ## Undo, clear, save, autosave
 
-- **Undo / redo:** hold EDIT, press OCT− / OCT+. One level: the last recording pass, erase, clear, step or pattern edit; redo takes it back again.
+- **Undo / redo:** hold EDIT, press OCT− / OCT+. Up to eight pattern edit sessions (recording passes, erase, clear, steps, nudges, locks and fills). New edits discard redo; loading a project/section or NEW clears history.
 - **Clear a track:** hold REC. After 0.7 s the press is cancelled and a ring fills; keep holding ~1.3 s more and the selected track is cleared (*TRACK 2 CLEARED*). Let go before: nothing. Undo brings it back.
 - **Save:** SAVE + keys 5–8 save the loop into section / project A–D (= SLOT 1–4); SAVE → PROJECT has SLOT, LOAD, SAVE too.
 - **Autosave:** when the transport is stopped and you have not touched anything for 2.5 s (at most every 20 s), the working project is kept in flash; at power-on SLOOP comes back exactly as you left it.
-- **New project:** SAVE → TOOLS → NEW (turn to GO): the four tracks back to their power-on sounds, empty patterns (undoable).
+- **New project:** SAVE → TOOLS → NEW (turn to GO): the four tracks back to their power-on sounds, empty patterns (save a section first: NEW clears undo history).
 
 ## Master: DUST, DUCK, FILT (and TEXTURE)
 

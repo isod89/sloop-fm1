@@ -282,16 +282,11 @@ static void t_erase_undo(void)
         printf("seq2:   erase: %u hats left, %u kicks; %d %d\n", left, kept, dstep_has(&TDRUM->dstep[5], 4), dstep_has(&TDRUM->dstep[9], 4));
     check(left == 12u && kept == 4u && !dstep_has(&TDRUM->dstep[5], 4) && dstep_has(&TDRUM->dstep[9], 4),
           "EDIT + hat while playing steps 4..7: those hats gone, the rest and the kicks kept");
-    {   /* undo (ui.c undo_swap): the hats back */
-        step_t tmp[NSTEP];
-        memcpy(tmp, TDRUM->step, sizeof tmp);
-        memcpy(TDRUM->step, undo.st, sizeof tmp);
-        memcpy(undo.st, tmp, sizeof tmp);
-    }
+    check(undo_apply(0), "undo: recorded erase has a snapshot");
     left = 0;
     for (i = 0; i < 16u; i++)
         left += dstep_has(&TDRUM->dstep[i], 4);
-    check(left == 16u && undo.trk == TRK_DRUM, "undo: the erased hats are back");
+    check(left == 16u && undo_can(1), "undo: the erased hats are back");
     transport_req = 2;
     run_block();
     fm1_in.buttons = ly_bit[LY_ERASE];               /* stopped: every hat of the pattern */
@@ -303,6 +298,59 @@ static void t_erase_undo(void)
     for (i = 0; i < 16u; i++)
         left += dstep_has(&TDRUM->dstep[i], 4);
     check(left == 0u, "EDIT + hat while stopped: every hat gone");
+}
+
+
+/* Eight edits in an FM-1 RAM budget: undo/redo order, other tracks, branching, sessions and wrap. */
+static void t_undo_history(void)
+{
+    track_t *a, *b;
+    uint32_t i;
+    reset(120); undo_clear();
+    a = &trk[0]; b = &trk[1];
+    a->step[0].n = b->step[0].n = 0u;
+    undo_mark(a, 101u); a->step[0].n = 1u;
+    undo_mark(a, 102u); a->step[0].n = 2u;
+    undo_mark(b, 103u); b->step[0].n = 3u;
+    check(undo.count == 3u && undo_apply(0) && b->step[0].n == 0u && a->step[0].n == 2u,
+          "history: latest track undone first");
+    check(undo_apply(0) && a->step[0].n == 1u && undo_apply(0) && a->step[0].n == 0u && !undo_can(0),
+          "history: two more undos exhaust history");
+    check(undo_apply(1) && a->step[0].n == 1u && undo_apply(1) && a->step[0].n == 2u &&
+          undo_apply(1) && b->step[0].n == 3u && !undo_can(1), "history: redo in order");
+    undo_apply(0); undo_apply(0);
+    undo_mark(a, 104u); a->step[0].n = 9u;
+    check(!undo_can(1) && undo.count == 2u && undo_apply(0) && a->step[0].n == 1u,
+          "history: editing after undo discards redo");
+    undo_clear(); a->step[0].n = 0u;
+    undo_mark(a, 201u); a->step[0].n = 1u;
+    undo_mark(a, 201u); a->step[0].n = 2u;
+    check(undo.count == 1u && undo_apply(0) && a->step[0].n == 0u,
+          "history: continuous edit session coalesces");
+    undo_clear(); a->step[0].n = 0u;
+    for (i = 1u; i <= 12u; i++) {
+        undo_mark(a, 300u + i);
+        a->step[0].n = (uint8_t)i;
+    }
+    check(undo.count == UNDO_DEPTH, "history: bounded to eight actions");
+    for (i = 0u; i < UNDO_DEPTH; i++) undo_apply(0);
+    check(a->step[0].n == 4u && !undo_can(0), "history: oldest evicted on wrap");
+    for (i = 0u; i < UNDO_DEPTH; i++) undo_apply(1);
+    check(a->step[0].n == 12u && !undo_can(1), "history: redo after ring wrap");
+    undo_clear(); steps_clear(a); a->p[P_SLEN] = 16;
+    undo_mark(a, 500u);
+    a->step[0].note[0] = 60; a->step[0].n = 1; a->step[0].time = ST_NOTE;
+    a->micro[0] = 7;
+    a->lock[0].step = 0; a->lock[0].param = P_E0; a->lock[0].val = 42;
+    a->fill[0] = 2u; a->p[P_SLEN] = 32;
+    check(undo_apply(0) && !a->step[0].n && a->micro[0] == 0 &&
+          a->lock[0].step == LOCK_FREE && a->fill[0] == 0u && a->p[P_SLEN] == 16,
+          "history: undo restores notes/micro/locks/fills/length");
+    check(undo_apply(1) && a->step[0].n == 1u && a->micro[0] == 7 &&
+          a->lock[0].step == 0u && a->lock[0].val == 42 && a->fill[0] == 2u &&
+          a->p[P_SLEN] == 32, "history: redo restores full state");
+    undo_clear();
+    check(!undo_can(0) && !undo_can(1), "history: new project/section invalidates history");
 }
 
 static void t_levels(void)
@@ -1158,7 +1206,7 @@ static void t_recquant(void)
     ok = s->step[4].time == ST_NOTE && s->micro[4] >= 7 && s->micro[4] <= 9;
     undo_mark(s, 12345u);
     s->micro[4] = 0;                                 /* (undo: the marked nudges back) */
-    ok &= undo.micro[4] >= 7 && undo.micro[4] <= 9;
+    ok &= undo_at(undo.pos - 1u)->micro[4] >= 7 && undo_at(undo.pos - 1u)->micro[4] <= 9;
     check(ok, "2.7 QUANT OFF: a played note an eighth step late: nudge +8; undo keeps the nudges");
     input_off(s, 60);
     transport_req = 2; run_block();
@@ -1839,6 +1887,7 @@ int main(void)
     t_ratchet();
     t_roll();
     t_erase_undo();
+    t_undo_history();
     t_levels();
     t_chords();
     t_mute();

@@ -345,7 +345,7 @@ UI_SMALL static void step_edit(uint32_t slot, int32_t steps)
         if (step_on(st)) {
             static uint32_t len_sess, len_cur = 0xFFFFu;  /* the turns of LEN on one step: one undo */
             uint32_t was = note_len(TSEL, ui.cursor), n;
-            if (len_cur != ui.cursor || !undo.valid || undo.undone || undo.sess != len_sess) {
+            if (len_cur != ui.cursor || undo_last_sess() != len_sess) {
                 len_sess = (undo_sess += 4u) | 3u;
                 len_cur = ui.cursor;
             }
@@ -374,9 +374,9 @@ UI_SMALL static void project_new(void)
     uint32_t i;
     transport_req = 2;
     panic_req = (1u << NTRK) - 1u;
+    undo_clear();  /* NEW resets sounds and globals too: a partial pattern undo is unsafe */
     for (i = 0; i < NTRK; i++) {
         track_t *t = &trk[i];
-        undo_mark(t, (undo_sess += 4u) | 3u);
         fm1_irq_off();
         if (i < NPART)
             sound_change(t);                            /* (2.6: what sounds fades out with its own sound) */

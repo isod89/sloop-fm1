@@ -488,6 +488,7 @@ UI_SMALL static void proj_capture(project_t *p)        /* what is playing now, a
 static void proj_apply(const project_t *p, int all)
 {
     uint32_t i, k;
+    undo_clear();  /* switching project/section invalidates old snapshots */
     for (i = 0; i < PROJ_NG; i++)
         if (all ? i != G_SLOT && i != G_LOAD && i != G_SAVE && i != G_SYNC && i != G_MIDI && i != G_ROUTE && i != G_DRCH &&
                       i != G_INFO

@@ -442,29 +442,8 @@ static uint32_t trk_grid(const track_t *t, uint32_t *into, uint32_t *len)
 static uint32_t trk_len(const track_t *t) { return t->p[P_SLEN] > 0 ? (uint32_t)t->p[P_SLEN] : 1u; }
 
 /* ------------------------------------------------------------- undo --- */
-/* One step back (and forward again) for the pattern of one track: what it was before the last
- * recording pass, erase, step edit, tool or clear (a session: one mark). EDIT + OCT- / OCT+. */
-static struct {
-    uint8_t valid, undone, trk;
-    int16_t len;
-    uint32_t sess;
-    step_t st[NSTEP];
-    int8_t micro[NSTEP];                                 /* (2.7) the nudges too (REC QUANT OFF writes them) */
-} undo;
-static uint32_t undo_sess = 1;           /* UI sessions (seq.c: recording passes use the track's pass) */
-static void undo_mark(const track_t *t, uint32_t sess)
-{
-    uint32_t i = trk_index(t);
-    if (undo.valid && !undo.undone && undo.trk == i && undo.sess == sess)
-        return;                                          /* (this session is marked already) */
-    memcpy(undo.st, t->step, sizeof undo.st);
-    memcpy(undo.micro, t->micro, sizeof undo.micro);
-    undo.len = t->p[P_SLEN];
-    undo.trk = (uint8_t)i;
-    undo.sess = sess;
-    undo.valid = 1;
-    undo.undone = 0;
-}
+/* EDIT + OCT- / OCT+: eight bounded pattern edit sessions, in firmware/src/undo_history.h. */
+#include "undo_history.h"
 #define UNDO_REC(t) (((t)->pass << 2) | 1u)      /* a recording pass of track t */
 static uint32_t undo_erase_sess;
 
