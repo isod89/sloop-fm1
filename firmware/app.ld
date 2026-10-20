@@ -28,8 +28,14 @@ SECTIONS
     _c1_load = LOADADDR(.c1_text);
     _rt_end = _c1_end;                  /* the guard's RAM code window covers both (fm1_cpu1.h) */
     /* the SRAM left below the RAM region: section(".lowram") buffers and the second core's stacks (fm1_cpu1.S
-     * .bss.c1stack), outside the guard's RAM code window; zeroed at boot as .pool is (main.c lowram_test) */
-    .lowram (NOLOAD) : { . = ALIGN(8); _lr_start = .; *(.bss.c1stack) *(.lowram*) . = ALIGN(4); _lr_end = .; } > RAMTEXT
+     * .bss.c1stack), outside the guard's RAM code window; zeroed at boot as .pool is (main.c lowram_test).
+     * (after 2.7.1) The stacks come last, over 1 KB left free and a 256-byte red zone (_c1_red): core 1's stack
+     * grows down, so a job that went too deep would write the red zone, then free SRAM, never .c1_text or the flash
+     * driver below them (which it would overwrite if the stacks came first). Hardening: the deepest job today is
+     * 1,580 B of the 2,816 (static, no recursion). fm1_cpu1_start marks the red zone with the stack; cpu1.c checks
+     * it after every half (tools/build.py checks this layout) */
+    .lowram (NOLOAD) : { . = ALIGN(8); _lr_start = .; *(.lowram*) . = ALIGN(8); . += 1024; _c1_red = .; . += 256;
+                         *(.bss.c1stack) . = ALIGN(4); _lr_end = .; } > RAMTEXT
     .data : { . = ALIGN(4); _data_start = .; *(.data*) *(.sdata*) . = ALIGN(4); _data_end = .; } > RAM AT > XIP
     _data_load = LOADADDR(.data);
     .bss (NOLOAD) : { _bss_start = .; *(.bss*) *(.sbss*) *(COMMON) . = ALIGN(4); _bss_end = .; } > RAM

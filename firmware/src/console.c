@@ -181,6 +181,15 @@ static void con_status(void)
     con_kv("cpu1", (int32_t)cpu1_state);                 /* 1 did not start, 2 self-test failed, 3 running (cpu1.c) */
     con_kx("cpu1_trace", fm1_c1_trace);
     con_kv("cpu1_timeouts", (int32_t)cpu1_timeouts);
+    con_kv("cpu1_why", (int32_t)cpu1_why);               /* held: 1 late, 2 its stack, 3 a fault, 4 a wrong read; not
+                                                         * started: 5 barred after a hold or a crash, 6 a failed boot */
+    con_kx("cpu1_fault_pc", fm1_c1_fault_pc);            /* where it faulted (cpu1_trace 0xC1DEADvv, vv the vector) */
+    con_kx("cpu1_fault_emu", fm1_c1_fault_emu);          /* (after 2.7.1) why: its EMU_MSG, bit 0 misaligned, 1 illegal, 3 its
+                                                          * stack limit (cpu1_why 2) */
+    con_kv("cpu1_bad", (int32_t)fm1_c1_mb.bad);          /* jobs it would not run: a wrong read (fm1_cpu1.h) */
+    con_kx("cpu1_busflags", fm1_c1_busflags);            /* bus-invalid flags a hold raised (DBG_MSG bits 4, 5, 16..21) */
+    con_kx("cpu1_busflags_cut", fm1_c1_busflags_cut);    /* (after 2.7.1) the same right after the hold, before core 0's
+                                                          * writes: the cut's own (hal/fm1_cpu1.h) */
     con_kv("cpu1_units", cpu1_units);                    /* the render units it gets: -1 its share, else a mask (fx.c) */
     con_kv("cpu1_busy_pct", (int32_t)(cpu1_busy_q8 * 100u / 256u));   /* its time in the render, of a half (fx.c) */
     con_kv("cpu1_wait_pct", (int32_t)(cpu1_wait_q8 * 100u / 256u));   /* core 0's time waiting for it */
@@ -241,6 +250,7 @@ static void con_crash(void)
     con_kx("pc", fm1_crash.pc);
     con_kx("rets", fm1_crash.rets);
     con_kx("emu", fm1_crash.emu);
+    con_kx("dbg", fm1_crash.dbg);                        /* (after 2.7.1) DBG_MSG: a bus or PC-limit flag (either core's) */
     con_kx("sp", fm1_crash.sp);
     con_kx("psr", fm1_crash.psr);
     con_kv("uptime_ms", (int32_t)fm1_crash.uptime_ms);
@@ -261,7 +271,8 @@ static void con_params(void)
 static void con_exec(const char *p)
 {
     if (con_word(&p, "help") || con_word(&p, "?"))
-        con_puts("status  dbg  crash  params  memr ADDR [LEN]  flr OFF [LEN]  cpu1 units MASK|auto  uboot yes\r\n");
+        con_puts("status  dbg  crash  params  memr ADDR [LEN]  flr OFF [LEN]  cpu1 units MASK|auto  cpu1 late  cpu1 fault"
+                 "  fault yes  uboot yes\r\n");
     else if (con_word(&p, "status"))
         con_status();
     else if (con_word(&p, "dbg"))
@@ -275,6 +286,20 @@ static void con_exec(const char *p)
 #if FELUCCA_CPU1
     else if (con_word(&p, "cpu1")) {                     /* cpu1 units MASK | auto: the render units core 1 gets (fx.c
                                                          * units_split: bit k = synth part k, bit 3 = the drums), live */
+        if (con_word(&p, "late")) {                      /* (after 2.7.1) the next job late on purpose: the hold of a busy
+                                                         * core 1 and the render's fallback, tried on the FM-1 (then
+                                                         * one core until power-off, as after a real one) */
+            cpu1_late_test = 1;
+            con_puts("cpu1: the next job runs late\r\n");
+            return;
+        }
+        if (con_word(&p, "fault")) {                     /* (after 2.7.1) the next job goes past core 1's stack (fx.c
+                                                         * cpu1_deep): its stack limit, the fault park in RAM and the
+                                                         * hold, tried on the FM-1 (then one core until power-off) */
+            cpu1_fault_test = 1;
+            con_puts("cpu1: the next job goes past its stack\r\n");
+            return;
+        }
         if (con_word(&p, "units")) {
             int ok;
             uint32_t v;
@@ -294,6 +319,16 @@ static void con_exec(const char *p)
     else if (con_word(&p, "flr"))
         con_flr(p);
 #endif
+    else if (con_word(&p, "fault")) {                    /* (after 2.7.1) fault yes: a fault on core 0 on purpose, a write into
+                                                         * the stack guard band (fm1_guard.h): the crash screen, its restart
+                                                         * (fm1_reboot, not the watchdog) and, with 2 CORES, one core after it */
+        if (con_word(&p, "yes")) {
+            con_puts("fault: writing the stack guard band\r\n");
+            fm1_guard_test_write();
+        } else {
+            con_puts("type 'fault yes'\r\n");
+        }
+    }
     else if (con_word(&p, "uboot")) {
         if (con_word(&p, "yes")) {
             con_puts("entering UBOOT\r\n");

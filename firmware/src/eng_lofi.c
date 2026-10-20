@@ -87,9 +87,13 @@ static int32_t lofi_amp(track_t *t, voice_t *v, int32_t adsr)
         return 0;
     if (v->stage == 3u) {
         if (v->env < (1 << 24) / 100 || (b >= 1 && b <= 16 && !vol)) {
+            v->active = 0;                              /* (after 2.7.1) ended first, as voice.c env_tick: held in between (a
+                                                         * late job on core 1), a STEP voice is never left active at stage 0,
+                                                         * kept at full by the branch below through STOP */
+            __asm__ volatile("" ::: "memory");
+            CPU1_HOLD_POINT(lofi_end);
             v->env = 0;
             v->stage = 0;
-            v->active = 0;
             return 0;
         }
     } else {

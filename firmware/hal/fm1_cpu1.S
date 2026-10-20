@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Charles Vestal: from X0X (github.com/charlesvestal/fm1-x0x, commit 00bff73),
  * after Melodee's dual-core audio by Kerem Kilic (github.com/keremimo/melodee). Brought into SLOOP
- * unchanged but for this notice (the SLOOP dualcore branch, github.com/andrerezemini/sloop-lab). */
+ * unchanged but for this notice (the SLOOP dualcore branch, github.com/andrerezemini/sloop-lab); after 2.7.1
+ * _c1_sstack_top is global (sloop-lab fix-core: core 1's stack limit). */
 /* The AC79's second core: its entry, as the AC79 SDK's cpu.a/startup.S.o (and Melodee's dual-core
  * audio) have it: interrupts off, no interrupt configuration, its own user and supervisor stacks,
  * then out of the start-up interrupt into fm1_c1_main (in RAM, fm1_cpu1.h), which never returns.
@@ -30,4 +31,5 @@ _c1_ustack:			/* after rti the core runs on this one: the render's (filled with 
 _c1_ustack_top:
 _c1_sstack:			/* exceptions only (no interrupts on this core) */
 	.space 256
+	.globl _c1_sstack_top		/* (after 2.7.1) for the stack limit fm1_c1_main sets */
 _c1_sstack_top:

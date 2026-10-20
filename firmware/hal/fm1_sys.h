@@ -62,6 +62,10 @@ static void fm1__p33_op(uint32_t op, uint32_t a, uint8_t d)   /* 0 wr, 1 or, 2 a
     FM1_P33_CON &= ~((1u << 0) | (1u << 8));
 }
 
+/* (after 2.7.1) a fault report starts here: a P33 transfer the fault interrupted (the main loop's watchdog feed) left
+ * its chip select on, and the report's own P33 writes (the watchdog, the reset) must start a new frame */
+FM1_INLINE void fm1_p33_end_frame(void) { FM1_P33_CON &= ~((1u << 0) | (1u << 8)); }
+
 static uint8_t fm1_p33_read(uint32_t a)
 {
     uint8_t v;
@@ -179,6 +183,11 @@ static void fm1_enter_uboot(void)
     static const char k[16] = "usb_update_mode";
     uint32_t i;
     __asm__ volatile("cli");
+#if !FELUCCA_LOADER
+    fm1_cpu1_halt();                                   /* the second core held, as fm1_reboot and fm1_enter_update do (it
+                                                        * may be running: UPDATE MODE, the editor's UBOOT); the update
+                                                        * loader has it held already, and stays as it was */
+#endif
     /* CPU0 write limits (fm1_guard.h) may cover the mailbox: drop them all */
     if (!(*(volatile uint32_t *)0x1EEE240u & 1u))
         *(volatile uint32_t *)0x1EEE240u = 0xE7u;

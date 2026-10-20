@@ -25,15 +25,19 @@
 #define memcmp felucca_memcmp
 #include "felucca_tables.h"
 #include "../firmware/src/libc.c"
+#ifndef HOST_OWN_MEM                    /* (after 2.7.1) defined: the firmware's own byte loops stay (the TSan build of
+                                         * tests/cpu1_modes.sh: this toolchain's TSan does not check libc's memcpy) */
 #undef memset
 #undef memcpy
 #undef memcmp
+#endif
 static struct { volatile uint32_t notes, buttons; } fm1_in;
 static volatile uint32_t fm1_remote_btn;           /* (2.7, fm1_input.h: the buttons held over MIDI) */
 static void fm1_irq_off(void) {}                 /* (the host: one thread) */
 static void fm1_irq_on(void) {}
 #include "../firmware/src/core.h"
 #include "../firmware/src/cpu1.h"
+#define C1H_RNG_STATE rng_state           /* the host double checks core 1 never draws */
 #include "cpu1_host.c"                  /* the second core on the host: CORES=1 inline, CORES=2 a thread */
 #include "../firmware/src/engines.c"
 #include "../firmware/src/drums.c"

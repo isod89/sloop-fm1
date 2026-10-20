@@ -66,12 +66,10 @@ static __attribute__((noinline)) void px_symp_block(px_symp_t *Y, const uint32_t
     if (Y->key[0] == (int32_t)f[0] && Y->key[1] == (int32_t)f[1] && Y->key[2] == (int32_t)f[2] && Y->key[3] == brightness &&
         Y->key[4] == damping && Y->key[5] == amount)
         return;
-    Y->key[0] = (int32_t)f[0];
-    Y->key[1] = (int32_t)f[1];
-    Y->key[2] = (int32_t)f[2];
-    Y->key[3] = brightness;
-    Y->key[4] = damping;
-    Y->key[5] = amount;
+    Y->key[5] = ~amount;                                 /* (after 2.7.1) no match while the coefficients are rebuilt (a part
+                                                          * on core 1 held half way, fx.c); the key is written last */
+    __asm__ volatile("" ::: "memory");
+    CPU1_HOLD_POINT(symp_coef);
     b = px_m(b, 131072 - b, 16);                         /* b (2 - b), twice */
     b = 32768 + (b >> 1);                                /* the FIR: 0.5 .. 1 */
     lfd = px_m(dd, 131072 - dd, 16);
@@ -101,6 +99,13 @@ static __attribute__((noinline)) void px_symp_block(px_symp_t *Y, const uint32_t
         B->h[k][2] = px_m(c, px_m(65536 - b, fr, 16), 16);
         B->on |= 1u << k;
     }
+    __asm__ volatile("" ::: "memory");
+    Y->key[0] = (int32_t)f[0];
+    Y->key[1] = (int32_t)f[1];
+    Y->key[2] = (int32_t)f[2];
+    Y->key[3] = brightness;
+    Y->key[4] = damping;
+    Y->key[5] = amount;
 }
 
 /* n (<= 32, even) samples: out[i] = in[i] (the main string) + the sympathetic strings it drives. They run at half

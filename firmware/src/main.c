@@ -129,8 +129,16 @@ UI_SMALL static void hexs(char *b, uint32_t v)
 UI_SMALL static void fm1_fault(const fm1_crash_t *c)
 {
     char b[12];
-    uint32_t t0;
+    uint32_t t0, t1;
     fm1_audio_stop();
+    fm1_cpu1_halt();                                    /* (after 2.7.1) core 1 held at once (registers only; this runs on
+                                                         * core 0: fm1_fault_c), not only by fm1_reboot after the wait */
+#if FELUCCA_CPU1
+    if (cpu1_state == CPU1_OK)
+        cpu1_bar = CPU1_BAR;                            /* a crash while core 1 ran, in a job or between jobs (as X0X 1.0.9:
+                                                         * fm1-x0x#21's misreads come with both cores running, core 0's
+                                                         * too): one core after this reset, until power-off (cpu1.c) */
+#endif
     lcd_fill(0, 0, 240, 240, RGB(160, 0, 0));
     draw_text_box(0, 8, 240, &FONT_S, "FELUCCA CRASH", C_WHITE, 1);
     hexs(b, c->vec);
@@ -151,11 +159,19 @@ UI_SMALL static void fm1_fault(const fm1_crash_t *c)
         fmt_int(t + str_len(t), (int32_t)cpu1_state);
         str_cpy(t + str_len(t), " LATE ", 7);
         fmt_int(t + str_len(t), (int32_t)(cpu1_timeouts > 99u ? 99u : cpu1_timeouts));
+        str_cpy(t + str_len(t), " W", 3);               /* why: 1 late, 2 its stack, 3 a fault, 4 a wrong read; not
+                                                         * started: 5 barred, 6 a failed boot (cpu1.c) */
+        fmt_int(t + str_len(t), (int32_t)cpu1_why);
         draw_text_box(10, 162, 220, &FONT_S, t, C_WHITE, 0);
     }
-    t0 = fm1_ticks();
-    while ((uint32_t)(fm1_ticks() - t0) < 10000u * 1000u * FM1_TICKS_PER_US)   /* (2.7.1: 10 s, time for a photo) */
-        ;
+    t0 = t1 = fm1_ticks();
+    while ((uint32_t)(fm1_ticks() - t0) < 10000u * 1000u * FM1_TICKS_PER_US) {   /* (2.7.1: 10 s, time for a photo) */
+        if ((uint32_t)(fm1_ticks() - t1) >= 1000u * 1000u * FM1_TICKS_PER_US) {
+            t1 = fm1_ticks();
+            fm1_wdt_feed();                             /* (after 2.7.1) the watchdog is ~8 s (fm1_wdt_arm 0x0D): fed, so the
+                                                         * screen stays its 10 s and fm1_reboot ends it, not a reset */
+        }
+    }
     fm1_reboot();
 }
 
@@ -256,6 +272,17 @@ UI_SMALL static void fm1_main(void)
         if ((uint32_t)(m - healthy_since) >= 30000u && bootguard.pending) {
             bootguard_clear(&bootguard);     /* 30 s of this boot, even if TIMER4 survived reset */
         }
+#if FELUCCA_CPU1
+        {   /* (after 2.7.1) core 1 held for good while playing (late, its stack, a fault, a wrong read), or not started
+             * after a crash or a failed boot (cpu1.c): said once */
+            static uint8_t told;
+            uint8_t why = *(volatile uint8_t *)&cpu1_why;
+            if (!told && why) {
+                told = 1;
+                ui_message(why < 5u ? "2ND CORE STOPPED" : "1 CORE: AFTER A CRASH");
+            }
+        }
+#endif
         {
             int32_t b = fm1_adc_read(FM1_ADC_BATT);     /* battery: slow IIR */
             if (b > 0)
@@ -365,6 +392,11 @@ UI_SMALL static void fm1_main(void)
 UI_SMALL void fm1_cstart(void)
 {
     uint32_t *s, *d, p3, src, wdt, boot_mode;
+    fm1_cpu1_halt();                            /* (after 2.7.1; after Jangada, X0X and Felucca 1.6.1) the second core
+                                                 * held before anything is rewritten: after a reset that does not reset
+                                                 * it (the core reset of fm1_fault_c, fm1_core_reset's note) it would
+                                                 * still run its loop in RAM while .bss and .c1_text are cleared and
+                                                 * copied below it. A no-op at power-on (fm1_sys.h) */
     fm1_time_init();
     fm1_supplies_stock();                       /* (2.7) VDC14 1.60 V, SYSVDD 1.38 V, as M-VAVE's firmware: both cores
                                                  * read the flash and SRAM right on every unit (fm1_sys.h) */
@@ -373,8 +405,10 @@ UI_SMALL void fm1_cstart(void)
     src = fm1_boot.rst_src;
     wdt = fm1_boot.wdt_con;
     fm1_wdt_arm(0x0D);
-    if ((p3 & 1u) && !(p3 & (4u | 0x40u)))
+    if ((p3 & 1u) && !(p3 & (4u | 0x40u))) {
         bootguard_clear(&bootguard);           /* a power-on (not a watchdog or soft reset): no failed boot to count */
+        cpu1_bar = 0;                          /* (after 2.7.1) nor a second core barred (cpu1.c) */
+    }
     boot_mode = bootguard_begin(&bootguard);
     if (boot_mode == BOOT_ROM) {
         fm1_enter_uboot();

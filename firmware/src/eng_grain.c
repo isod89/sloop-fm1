@@ -144,9 +144,12 @@ static int32_t gr_find(uint32_t src, uint32_t note)
 static void gr_reset(gr_part_t *P, uint32_t src, uint32_t stamp)
 {
     uint32_t i, tot = 0, nz = gr_nz(src);
-    P->src = (uint8_t)(src + 1u);
-    P->stamp = stamp;
+    P->src = 0;                                         /* (after 2.7.1) invalid while it is rebuilt (a part on core 1 held half
+                                                         * way, fx.c): grain_block marks it valid once the voices are re-found */
+    (void)stamp;
+    __asm__ volatile("" ::: "memory");
     P->nz = (uint8_t)(nz < GR_MAXZ ? nz : GR_MAXZ);
+    CPU1_HOLD_POINT(grain_index);                       /* (the zones not counted yet: src is 0) */
     for (i = 0; i < GR_NG; i++)
         P->g[i].owner = 0;
     for (i = 0; i < P->nz; i++) {
@@ -268,10 +271,10 @@ static void gr_spawn(gr_part_t *P, const track_t *t, uint32_t vi, uint32_t zl, u
     g->zl = (uint8_t)zl;
     ov = len / (iv ? iv : 1u);
     g->gain = GR_NORM[ov < 1u ? 1u : ov > GR_NG ? GR_NG : ov];
-    g->owner = (uint8_t)(vi + 1u);
     if (rev) {
         int16_t *rb = P->rb[g - P->g];
         g->pos = (uint32_t)pos;
+        CPU1_HOLD_POINT(grain_spawn);                   /* (its new position, its old window: not its voice's yet) */
         gr_fill(P, g, rb, zl, (uint32_t)pos + 1u);
         g->a = rb[g->pos - g->rlo];
         g->b = rb[g->pos + 1u - g->rlo];
@@ -281,6 +284,10 @@ static void gr_spawn(gr_part_t *P, const track_t *t, uint32_t vi, uint32_t zl, u
         g->b = gr_dec(z, (uint32_t)pos + 1u, &g->pred, &g->idx);
         g->pos = (uint32_t)pos + 2u;
     }
+    __asm__ volatile("" ::: "memory");
+    g->owner = (uint8_t)(vi + 1u);                      /* (after 2.7.1) the grain is its voice's only once its position,
+                                                         * window and decoder are there: a part on core 1 held half way
+                                                         * (fx.c, a late job) leaves no live grain reading a stale window */
 }
 
 static inline int32_t gr_win(uint32_t wph)         /* the Hann window, Q15 */
@@ -329,7 +336,7 @@ static int gr_run(gr_part_t *P, gr_grain_t *g, int32_t *acc, uint32_t n)
                 b = a;
                 if (pos) {                          /* (fitted: always) */
                     pos--;
-                    if (pos < g->rlo)
+                    if (pos < g->rlo || pos - g->rlo >= GR_RB)   /* (after 2.7.1: a window left stale, also) */
                         gr_fill(P, g, rb, g->zl, pos);
                 }
                 a = rb[pos - g->rlo];
@@ -369,9 +376,13 @@ static void grain_block(track_t *t)
         P->rng = 0x2545F491;
     if (P->src != src + 1u || P->stamp != st) {
         gr_reset(P, src, st);
+        CPU1_HOLD_POINT(grain_zones);                   /* (the voices' zones not found again yet: src is 0) */
         for (i = 0; i < NVOICE; i++)
             if (t->v[i].active)
                 t->v[i].s[0] = gr_find(src, t->v[i].note);
+        __asm__ volatile("" ::: "memory");
+        P->stamp = st;
+        P->src = (uint8_t)(src + 1u);                   /* (the last store: the index and the voices' zones are there) */
     }
     for (i = 0; i < GR_NG; i++)
         if (P->g[i].owner && !t->v[(P->g[i].owner - 1u) % NVOICE].active)

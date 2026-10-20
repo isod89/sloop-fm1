@@ -71,7 +71,9 @@ static int phys_render_draws(const track_t *t, int32_t model)   /* model: the MO
         return 0;
     if (eng_arena_own[p] != ENGI_PHYS + 1u || phys_lay[p] != big + 1u)
         return 1;
-    for (i = 0; i < phys_poly(t); i++)
+    for (i = 0; i < (big ? 2u : 3u); i++)              /* (after 2.7.1) the slots of the MODEL rendered, not of
+                                                         * t->p's (phys_poly): they differ while an engine fades, and the
+                                                         * larger count read past the arena */
         if (t->v[i].active && ((const phys_slot_t *)(a + i * sz))->model != md)
             return 1;
     return 0;

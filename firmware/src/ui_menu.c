@@ -101,6 +101,10 @@ UI_SMALL static void draw_menu(void)
                    settings.zoom * 104729u + lights_lvl * 1299709u + lights_keys * 15485863u + ml_count() * 2654435u +
                    lights_notes * 32452843u + usb_full * 49979687u + usb_serial * 86028121u + usb_rate * 15486719u + theme_shown() * 32452867u + theme.crc + cpu1_off * 122949829u +
                    knob_accel_off * 179424673u;
+#if FELUCCA_CPU1
+    sig += (uint32_t)cpu1_state * 7368787u + (uint32_t)(cpu1_units + 1) * 2750159u;   /* (after 2.7.1) core 1 held while the
+                                                         * page shows: its row and ABOUT's label redrawn (cpu1.c) */
+#endif
     if (!ui.force && sig == ui.menu_sig)
         return;
     ui.menu_sig = sig;

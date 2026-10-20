@@ -43,6 +43,9 @@ static void audio_block(int32_t *out, uint32_t n)       /* mix (fx.c), then Q15 
     }
 }
 
+#if FELUCCA_CPU1
+static void cpu1_guard_half(void);                      /* cpu1.c */
+#endif
 /* overload: shed_voice (voice.c) */
 static volatile uint8_t shed_req;
 static uint8_t shed_over;                      /* bit k: the half k halves ago was over 85 % */
@@ -73,6 +76,7 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
         audio_halves++;
 #if FELUCCA_CPU1
         cpu1_load_half(HALF_FRAMES * 1000000u / FS);     /* core 1's load and core 0's wait for it (fx.c) */
+        cpu1_guard_half();                               /* its stack and a fault it parked on (cpu1.c), core 1 idle */
 #endif
         {   /* the deadline sees the render and TIMER5 nested in it (the USB audio stream); the load
              * figures the render alone (after Felucca 1.0) */

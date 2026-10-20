@@ -238,10 +238,14 @@ static void fm6_sync(const track_t *t)
         if (k == 7u)
             return;
     }
+    fm6_eff[tr].ok = 0;                                  /* (after 2.7.1) invalid while it is rebuilt: a part on core 1 held
+                                                          * half way (fx.c, a late job) must not leave it marked valid */
+    __asm__ volatile("" ::: "memory");
     fm6_eff[tr].gen = fm6_pgen[tr];
     memcpy(fm6_eff[tr].p, fm6_patch[tr], FP_SIZE);
     for (k = 0; k < 7u; k++)
         fm6_eff[tr].e[k] = e[k];
+    CPU1_HOLD_POINT(fm6_cache);                          /* (its key written, the macros not applied yet: ok is 0) */
     {
         uint8_t *p = fm6_eff[tr].p;
         uint32_t alg = e[0] >= 1 && e[0] <= 32 ? (uint32_t)e[0] - 1u : p[FP_ALG] & 31u;
@@ -267,7 +271,8 @@ static void fm6_sync(const track_t *t)
         }
         fm6_lfo_reset(&fm6_lfo[tr], p);
     }
-    fm6_eff[tr].ok = 1;
+    __asm__ volatile("" ::: "memory");
+    fm6_eff[tr].ok = 1;                                  /* (the last store: the whole cache is there) */
 }
 
 /* --------------------------------------------------------------- voice --- */

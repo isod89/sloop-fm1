@@ -17,13 +17,15 @@ static struct { volatile uint32_t notes, buttons; } fm1_in;
 static void fm1_irq_off(void) {}
 static void fm1_irq_on(void) {}
 #include "../src/core.h"
+#include "../src/cpu1.h"                        /* (2.7) no second core in the browser: every unit renders here; (after 2.7.1)
+                                                 * before the engines: CPU1_HOLD_POINT is nothing here */
 #include "../src/engines.c"
 #include "../src/drums.c"
 #include "../src/params.c"
 #include "../src/voice.c"
 #include "../src/slicer.c"
-#include "../src/cpu1.h"                        /* (2.7) no second core in the browser: every unit renders here */
 static int cpu1_run(cpu1_job_t fn, uint32_t arg) { (void)fn; (void)arg; return 0; }
+static void cpu1_late_end(void) {}
 static int cpu1_wait(void) { return 0; }
 static int cpu1_on(void) { return 0; }
 static uint32_t cpu1_ticks(void) { return 0; }

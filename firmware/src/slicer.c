@@ -118,11 +118,15 @@ static void sl_seg(const track_t *t, sl_t *s, int16_t *buf, int32_t *b, uint32_t
         s->gc += clamp(tg - s->gc, -SL_SLOPE, SL_SLOPE);
         s->w += clamp(tw - s->w, -SL_SLOPE, SL_SLOPE);
         y = s->gc ? x - mulq16(x, (uint32_t)s->gc << 1) : x;
-        if (s->rec_on) {                            /* 2:1, the pair's mean; Q15 >> 2 (the mix's headroom) */
+        if (s->rec_on && s->rec < SL_LEN) {         /* 2:1, the pair's mean; Q15 >> 2 (the mix's headroom). (after 2.7.1:
+                                                     * the bound here too: a part on core 1 held between rec and rec_on,
+                                                     * fx.c's late path, must not write past the recording) */
             if ((s->half_n++) & 1u) {
                 buf[s->rec] = (int16_t)clamp((s->half + x) >> 3, -32768, 32767);
-                if (++s->rec >= SL_LEN)
+                if (++s->rec >= SL_LEN) {
+                    CPU1_HOLD_POINT(slicer_rec);        /* (rec at the end, rec_on not cleared yet) */
                     s->rec_on = 0;
+                }
             } else {
                 s->half = x;
             }

@@ -34,6 +34,7 @@ enum { FM1_IRQ_EXCEPTION = 1, FM1_IRQ_ALNK0 = 11, FM1_IRQ_SPI1 = 16, FM1_IRQ_UAR
        FM1_IRQ_SARADC = 24, FM1_IRQ_SPI2 = 37, FM1_IRQ_TIMER5 = 63, FM1_IRQ_SOFT0 = 120 };
 
 static inline uint32_t fm1_icfg(void) { uint32_t v; __asm__ volatile("%0 = icfg" : "=r"(v)); return v; }
+static inline uint32_t fm1_cnum(void) { uint32_t v; __asm__ volatile("%0 = cnum" : "=r"(v)); return v; }   /* this core: 0, 1 */
 static inline void fm1_icfg_set(uint32_t v) { __asm__ volatile("icfg = %0" ::"r"(v) : "memory"); }
 static inline void fm1_irq_off(void) { __asm__ volatile("cli" ::: "memory"); }
 static inline void fm1_irq_on(void) { __asm__ volatile("csync\n\tsti" ::: "memory"); }
@@ -51,6 +52,7 @@ fm1_crash_t fm1_crash __attribute__((section(".noinit")));
 
 extern const char fm1_fatal_stubs[];
 static void fm1_fault(const fm1_crash_t *c);   /* application: report, then reset */
+void fm1_c1_fault(uint32_t vec, uint32_t pc);  /* fm1_cpu1.h: a fault on the second core parks it (in RAM) */
 
 static void fm1_irq_init(void)
 {
@@ -94,11 +96,25 @@ static void fm1_irq_enable_all(void)
 void fm1_fault_c(uint32_t *f)
 {
     static volatile uint32_t in_fault;
-    uint32_t i, count = fm1_crash.magic == FM1_CRASH_MAGIC ? fm1_crash.count : 0;
-    uint32_t early = fm1_crash.magic == FM1_CRASH_MAGIC ? fm1_crash.early : 0;
+    uint32_t i, count, early;
+    if (fm1_cnum() != 0u) {                   /* (after 2.7.1; the core-1 fault path after Jangada, X0X and Felucca 1.6.1)
+                                               * the second core: not this report (it would stop the audio, draw over core 0
+                                               * and hold itself in fm1_reboot): a breadcrumb, then it parks (fm1_cpu1.h), in
+                                               * RAM: through a pointer, out of a call's reach from the flash */
+        void (*volatile park)(uint32_t, uint32_t) = fm1_c1_fault;
+        park((f[19] - (uint32_t)(uintptr_t)fm1_fatal_stubs) / 6u - 1u, f[16]);
+    }
+    count = fm1_crash.magic == FM1_CRASH_MAGIC ? fm1_crash.count : 0;
+    early = fm1_crash.magic == FM1_CRASH_MAGIC ? fm1_crash.early : 0;
     fm1_irq_off();
-    if (in_fault++)                           /* fault while reporting: reset at once */
+    fm1_p33_end_frame();                      /* (after 2.7.1) a P33 transfer the fault cut short (fm1_sys.h) */
+    if (in_fault++) {                         /* fault while reporting: reset at once (the core reset, PWR_CON: the second
+                                               * core held first, as fm1_core_reset does: it would keep running) */
+        fm1_cpu1_halt();
         *(volatile uint32_t *)0x10000u |= 1u << 4;
+        for (;;)                              /* (after 2.7.1) the reset comes: never the report again over the first */
+            ;
+    }
     fm1_crash.magic = FM1_CRASH_MAGIC;
     fm1_crash.count = count + 1u;
     fm1_crash.vec = (f[19] - (uint32_t)(uintptr_t)fm1_fatal_stubs) / 6u - 1u;

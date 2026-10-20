@@ -264,6 +264,29 @@ def check(img, syms, dis, rt):
         errors.append("RAM region overflow")
     if 0x54000 - pool < 8192:                     # keep >= 8 KiB of the pool spare
         errors.append(f"pool headroom {0x54000 - pool} B < 8192 B")
+    if sym("_lr_end") > 0x01C07F00:               # crt0.S writes the SPL's state at 0x01C07F20
+        errors.append(f".lowram ends at {sym('_lr_end'):#x}, past 0x01C07F00")
+    red, ust = sym("_c1_red"), sym("_c1_ustack")
+    if red or ust:                                # the second core's stacks: last in .lowram, over the red zone (app.ld)
+        objs = re.findall(r"^([0-9a-f]+) .*\s\.lowram\s+([0-9a-f]+) (\S+)$", syms, re.M)
+        above = [n for a, z, n in objs if int(z, 16) and int(a, 16) + int(z, 16) > red]
+        if ust != red + 256 or above:
+            errors.append(f"core 1's stack is not last in .lowram over its 256-byte red zone (red {red:#x}, "
+                          f"stack {ust:#x}, above the red zone: {above[:3]})")
+        else:
+            notes.append(f"core 1's stack: last in .lowram at {ust:#x}, the red zone below it, "
+                         f"{ust - sym('_c1_end')} B above its loop")
+    if (os.environ.get("FELUCCA_CPU1") != "0" and re.search(r"\scpu1_bar$", syms, re.M)
+            and str(0x43314241) not in dis):      # (after 2.7.1) cpu1.c (FELUCCA_CPU1=0: nothing sets the bar)
+        errors.append("cpu1_bar lost its word magic (folded to a byte flag: garbage at power-on would bar core 1)")
+    fc = re.search(r"^fm1_fault_c:\n((?:(?!^\S+:$).*\n)+)", dis, re.M)
+    if fc:                                        # a fault on core 1 must not run core 0's report (hal/fm1_irq.h)
+        body = fc.group(1)
+        first = [body.find(w) for w in ("call", "fm1_crash") if body.find(w) >= 0]
+        if body.find("cnum") < 0 or (first and body.find("cnum") > min(first)):
+            errors.append("fm1_fault_c does not read cnum before its report")
+        else:
+            notes.append("fm1_fault_c: cnum read first (a fault on core 1 parks it)")
     return errors, notes
 
 

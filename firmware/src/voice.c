@@ -684,9 +684,12 @@ static int32_t env_tick(track_t *t, voice_t *v)
     case 3:
         v->env -= mulq16(v->env, ek[2]);
         if (v->env < (1 << 12)) {
+            v->active = 0;                              /* (after 2.7.1) ended first: held in between (a late job on core 1),
+                                                         * a voice is never left at stage 0 still active, sounding forever */
+            __asm__ volatile("" ::: "memory");
+            CPU1_HOLD_POINT(env_end);
             v->env = 0;
             v->stage = 0;
-            v->active = 0;
         }
         break;
     case 4:                                             /* given up for another part: faded out over KILL_BLOCKS */
@@ -694,14 +697,18 @@ static int32_t env_tick(track_t *t, voice_t *v)
             v->env -= v->env / v->kill;
             v->kill--;
         } else {
+            v->active = 0;                              /* (after 2.7.1: ended first, as above) */
+            __asm__ volatile("" ::: "memory");
             v->env = 0;
             v->stage = 0;
-            v->active = 0;
             v->kill = 0;
         }
         break;
-    default:
+    default:                                            /* (after 2.7.1) a voice active at stage 0, which only a hold in the
+                                                         * middle of an end leaves (no start or end writes one): ended here,
+                                                         * never rendered on */
         v->env = 0;
+        v->active = 0;
         break;
     }
     return v->env >> 9;
@@ -722,11 +729,13 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
     int16_t pe_new[8];
     for (i = 0; i < n; i++)
         out[i] = 0;
-    if (fade)                                           /* engine switch: the old engine, its own values */
+    if (fade) {                                         /* engine switch: the old engine, its own values */
         for (i = 0; i < 8u; i++) {
             pe_new[i] = t->p[P_E0 + i];
             t->p[P_E0 + i] = t->pe_old[i];
         }
+        CPU1_HOLD_POINT(fade_engine);                   /* (swapped: never on core 1, fx.c units_split) */
+    }
     track_lfo_tick(t);
     esync_coef(t);                                      /* this block's envelope steps for env_tick (ENV SYNC) */
     t->bend_s = (int16_t)(t->bend_s + ((t->bend - t->bend_s) >> 2) + (t->bend > t->bend_s) - (t->bend < t->bend_s));

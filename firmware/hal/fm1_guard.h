@@ -126,3 +126,7 @@ static void fm1_guard_unlock_top(void)
     FM1_C0_WR_LIMIT_EN &= ~4u;
     fm1__dbg_lock();
 }
+
+/* (after 2.7.1) a write into the first stack guard band on purpose (the console's "fault yes", FELUCCA_CDC builds): the
+ * write limit's exception, the crash report and its restart, tried on the device */
+static void fm1_guard_test_write(void) { *(volatile uint32_t *)(uintptr_t)_guard0 = 0; }

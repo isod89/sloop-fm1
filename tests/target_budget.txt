@@ -7,6 +7,9 @@
 # SLOOP 2.4: FM6 (fm6_op_run, fm6_op_fb: the per-sample operator loops; fm6_render: the voice's output loop)
 # are in FUNCS without a budget yet: the engine was ported on a host without the pi32v2 toolchain; the
 # next ./build.sh + BUDGET_UPDATE=1 adds their lines (until then they print "no budget", not a failure).
+# SLOOP 2.7.1, measured on the clean release tree (the file was left at 2.6's): drums_mix 6153 -> 6793 (2.7's drum TUNE
+# and DECAY fade and the LEVEL / PAN glide, in the per-sample loop), fm1_alnk0_irq 174 -> 276 (stale since 2.5:
+# the audio interrupt's half loop and the load figures; +8 with the second core's guard after each half), and FM6's three lines as the toolchain measures them.
 analog_render 638
 digital_render 333
 phase_render 79
@@ -20,5 +23,8 @@ drawbar_block 102
 grain_render 1734
 grain_block 138
 slicer_track 825
-drums_mix 6153
-fm1_alnk0_irq 174
+drums_mix 6793
+fm1_alnk0_irq 276
+fm6_op_run 72
+fm6_op_fb 26
+fm6_render 362
