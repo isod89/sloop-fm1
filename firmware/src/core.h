@@ -8,9 +8,13 @@
 #include <stdint.h>
 #define NVOICE 8                 /* voices per part, and the budget shared by all parts */
 #define NPOLY 8
-#define NPART 3                  /* synth parts: tracks 1..3 */
-#define NTRK 4                   /* + the drum track */
-#define TRK_DRUM 3
+#define NPART 5                  /* synth parts: tracks 1..5 (six tracks; 3 before) */
+#define NTRK 6                   /* + the drum track */
+#define TRK_DRUM 5
+/* what kept a track in 2 bits (projects, MIDI LEARN, the visualiser's four) holds tracks 1..3 and the
+ * drums as before (the drums at 3); tracks 4 and 5 have no such slot */
+#define TRK_LEGACY(i) ((uint32_t)(i) == TRK_DRUM ? 3u : (uint32_t)(i) < 3u ? (uint32_t)(i) : 0xFFu)
+#define TRK_FROM_LEGACY(s) ((uint32_t)(s) == 3u ? (uint32_t)TRK_DRUM : (uint32_t)(s))
 enum { V_POLY, V_MONO, V_LEGATO, V_UNISON };   /* P_VOICE */
 #define NSTEP 64
 #define HALF_FRAMES 256          /* I2S half buffer: 5.8 ms at 44.1 kHz */
@@ -105,6 +109,7 @@ enum {                          /* global parameters */
                                  * while SYNC is INT (seq.c clkout_block; a setting of the FM-1, kept in DR MAP's byte) */
     G_FXFADE,                   /* SLOOP 2.7.2, the FX layer (FX held), SELECT: how fast a punch-in FX fades in and out, 0 (instant, as
                                  * before) .. 15 (punch.c; a setting of the FM-1, kept in BEND's byte) */
+    G_CH4, G_CH5,               /* GLO > MIDI: the MIDI channels of synth tracks 4 and 5 (settings of the FM-1) */
     G_COUNT
 };
 

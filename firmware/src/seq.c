@@ -77,7 +77,7 @@ static uint32_t trk_index(const track_t *t) { return (uint32_t)(t - trk); }
 
 static uint32_t trk_midi_ch(uint32_t i)    /* MIDI channel 0..15 of track i (keys -> MIDI out); 2.6: GLO > MIDI */
 {                                          /* (2.6: OFF is OFF, in and out: 0xFF, nothing sent) */
-    int32_t c = i < NPART ? song.g[G_CH1 + i] : song.g[G_DRCH];
+    int32_t c = i < 3u ? song.g[G_CH1 + i] : i == 3u ? song.g[G_CH4] : i == 4u ? song.g[G_CH5] : song.g[G_DRCH];   /* */
     return c >= 1 && c <= 16 ? (uint32_t)c - 1u : 0xFFu;
 }
 /* a note on (vel > 0) / off to MIDI OUT on channel ch (trk_midi_ch: 0xFF, the track's MIDI OFF: nothing) */
@@ -2605,7 +2605,7 @@ static track_t *midi_own(uint32_t ch)
     if (song.g[G_DRCH] && ch + 1u == (uint32_t)song.g[G_DRCH])
         return TDRUM;
     for (i = 0; i < NPART; i++)
-        if (ch + 1u == (uint32_t)song.g[G_CH1 + i])
+        if (ch + 1u == (uint32_t)song.g[i < 3u ? G_CH1 + i : i == 3u ? G_CH4 : G_CH5])   /* (CH4, CH5) */
             return &trk[i];
     return 0;
 }
@@ -2747,7 +2747,7 @@ static int __attribute__((noinline)) midi_learned(uint32_t cc, uint32_t value)
         e = ml_tab[i];
         if ((e >> 9) && (e & 127u) == cc) {
             if ((id = ml_id(e >> 9)) < P_COUNT)
-                midi_cc_set(&trk[(e >> 7) & 3u], id, value);
+                midi_cc_set(&trk[TRK_FROM_LEGACY((e >> 7) & 3u)], id, value);
             hit = 1;
         }
     }

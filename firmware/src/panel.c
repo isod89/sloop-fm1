@@ -84,9 +84,9 @@ static uint8_t lights_mout;                    /* GLO > SYSTEM > MIDI (G_MIDI): 
 static uint8_t lights_min;                     /* GLO > SYSTEM > IN (G_ROUTE): 0 NOTES, 1 CLOCK only, 2..17 (2.6) CH 1..16 only */
 /* 2.6: GLO > MIDI CH1 CH2 CH3, GLO > DRUMS > CH, GLO > MIDI > OTHER: settings of the FM-1 (kept with the MIDI LEARN map
  * after the SYN kits: project.c midi_part), mirrored in song.g (felucca_init) */
-#define MIDI_SET_DEF {1, 2, 3, 10, 0, 2, 0, 0, 0, 0}   /* CH1 CH2 CH3, drums, OTHER, (2.6) BEND, (2.7) FX CH, DR MAP, REMOTE,
+#define MIDI_SET_DEF {1, 2, 3, 10, 0, 2, 0, 0, 0, 0, 4, 5}   /* CH1 CH2 CH3, drums, OTHER, (2.6) BEND, (2.7) FX CH, DR MAP, REMOTE,
                                                      * CLK OUT */
-static uint8_t midi_set[10] = MIDI_SET_DEF;
+static uint8_t midi_set[12] = MIDI_SET_DEF;   /* ([10], [11] CH4, CH5) */
 static uint8_t fxfade;                          /* (2.7.2) FX layer SELECT (FX held): the punch-in FX fade, 0..15 (punch.c);
                                                  * a setting of the FM-1, mirrored in song.g[G_FXFADE], kept in BEND's byte */
 static const uint16_t LIGHTS_NS[LIGHTS_N] = {0u, 500u, 1000u, 2000u};   /* the backlight pulse a frame (ns): a lit

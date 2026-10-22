@@ -30,6 +30,13 @@ static uint8_t sync_reload;                  /* engine / preset / project / user
 
 #define ACC C_HI                   /* amber everywhere; white is the only accent */
 #define VAL(c) ((c) == ui.hot_col && ui.hot_t ? C_WHITE : TE_COL[(c) & 3u])   /* LIVE: one colour per knob */
+/* a track's colour: tracks 1..3 and the drums as ever, tracks 4 and 5 violet and pink */
+static uint16_t trk_col(uint32_t i)
+{
+    return i == TRK_DRUM ? TE_COL[3] : i < 3u ? TE_COL[i] : i == 3u ? RGB(176, 104, 255) : RGB(255, 86, 168);
+}
+static uint16_t trk_mid(uint32_t i) { return i == TRK_DRUM ? TE_MID[3] : i < 3u ? TE_MID[i] : rgb565_scale(trk_col(i), 2u, 3u); }
+static uint16_t trk_dim(uint32_t i) { return i == TRK_DRUM ? TE_DIM[3] : i < 3u ? TE_DIM[i] : rgb565_scale(trk_col(i), 1u, 3u); }
 #define RATIO(d, v) ((d)->max > (d)->min ? ((int32_t)(v) - (d)->min) * 1000 / ((d)->max - (d)->min) : -1)
 /* layout: four 60 px columns, 4 px inset */
 /* Terminus 8x16 (S) and 16x32 (L) */
@@ -124,7 +131,7 @@ UI_SMALL static void page_entered(void)
 {
     const page_t *pg = cur_page();
     song.seq_mode = !ui.home && pg->fam == FAM_SEQ;
-    if (!ui.home && pg->fam == FAM_GLO && pg->id[0] == G_CH1 && song.g[G_ROUTE]) {   /* (2.6) GLO > MIDI while MIDI 2 >
+    if (!ui.home && pg->fam == FAM_GLO && (pg->id[0] == G_CH1 || pg->id[0] == G_CH5) && song.g[G_ROUTE]) {   /* (2.6) GLO > MIDI while MIDI 2 >
                                                                                    * IN sets the channels aside */
         if (song.g[G_ROUTE] == 1)
             ui_message("IN = CLOCK: NO NOTES");
@@ -145,10 +152,10 @@ UI_SMALL static void page_entered(void)
  * turned, and says whose it was. Every frame (ui_input) */
 UI_SMALL static void midi_chan_fix(void)
 {
-    static const uint8_t ID[4] = {G_CH1, G_CH2, G_CH3, G_DRCH};
-    static int16_t was[4] = {-1, -1, -1, -1};
+    static const uint8_t ID[NTRK] = {G_CH1, G_CH2, G_CH3, G_CH4, G_CH5, G_DRCH};   /* (the six, by track) */
+    static int16_t was[NTRK] = {-1, -1, -1, -1, -1, -1};
     uint32_t k, j;
-    for (k = 0; k < 4u; k++) {
+    for (k = 0; k < NTRK; k++) {
         int32_t v = song.g[ID[k]], dir, owner = -1;
         if (was[k] < 0 || v == was[k] || !v) {
             was[k] = (int16_t)v;
@@ -157,7 +164,7 @@ UI_SMALL static void midi_chan_fix(void)
         dir = v > was[k] ? 1 : -1;
         for (;;) {
             int32_t o = -1;
-            for (j = 0; j < 4u; j++)
+            for (j = 0; j < NTRK; j++)
                 if (j != k && song.g[ID[j]] == v)
                     o = (int32_t)j;
             if (o < 0)
@@ -175,10 +182,13 @@ UI_SMALL static void midi_chan_fix(void)
             }
         }
         if (owner >= 0) {
-            char b[8];
+            char b[8], o[12];
             str_cpy(b, "CH ", sizeof b);
             fmt_int(b + 3, song.g[ID[k]]);
-            ui_say(b, owner == 3 ? " = DRUMS" : owner == 0 ? " = TRACK 1" : owner == 1 ? " = TRACK 2" : " = TRACK 3");
+            str_cpy(o, owner == (int32_t)TRK_DRUM ? " = DRUMS" : " = TRACK 1", sizeof o);
+            if (owner != (int32_t)TRK_DRUM)
+                o[9] = (char)('1' + owner);
+            ui_say(b, o);
             song.g[ID[k]] = (int16_t)v;
         }
         was[k] = (int16_t)v;
@@ -527,7 +537,7 @@ UI_SMALL static void go_home(void)
  * writes the sequencer: every pattern is the one the player records or enters. */
 
 /* the parts' sounds at power-on (engine, preset): bass, pad, lead */
-static const uint8_t TRK_DEF[NPART][2] = {{0, 0}, {1, 0}, {4, 5}};   /* ANALOG 808 BOOM, DIGITAL RHODES, SAMPLE LOFI FLUTE */
+static const uint8_t TRK_DEF[NPART][2] = {{0, 0}, {1, 0}, {4, 5}, {1, 3}, {1, 2}};   /* ANALOG 808 BOOM, DIGITAL RHODES, SAMPLE LOFI FLUTE; DIGITAL CLAV, WURLI (light engines) */
 UI_SMALL static uint32_t trk_def_engine(uint32_t i) { return i < NPART ? TRK_DEF[i][0] : 0u; }
 
 UI_SMALL static int seq_is_empty(const track_t *t) { return track_empty(t); }
@@ -1016,8 +1026,9 @@ UI_SMALL static uint32_t ml_count(void)
 UI_SMALL static uint32_t ml_learn(uint32_t cc, uint32_t k, uint32_t id)
 {
     uint32_t i, e;
-    if (!ml_free_cc(cc) || k >= NTRK || id >= P_COUNT)
-        return 2;
+    if (!ml_free_cc(cc) || k >= NTRK || TRK_LEGACY(k) > 3u || id >= P_COUNT)
+        return 2;                                           /* (tracks 4, 5 cannot learn yet) */
+    k = TRK_LEGACY(k);
     for (i = 0; i < ML_N; i++)
         if ((e = ml_tab[i]) >> 9 && ((e & 127u) == cc || ((e >> 9) == ml_code(id) && ((e >> 7) & 3u) == k)))
             ml_put(i, 0);
@@ -1078,7 +1089,7 @@ UI_SMALL static void ml_poll(void)
     cc--;
     r = ml_learn(cc, mlu.trk, mlu.id);
     if (r != 1u) {
-        ui_message(r ? "CC NOT LEARNABLE" : "LEARN FULL");
+        ui_message(r && TRK_LEGACY(mlu.trk) > 3u ? "LEARN: TRACKS 1-3, DRUMS" : r ? "CC NOT LEARNABLE" : "LEARN FULL");
         return;
     }
     str_cpy(a, "CC", 4);

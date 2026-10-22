@@ -572,7 +572,8 @@ UI_SMALL static int ed_backup(uint32_t cmd, const uint8_t *a, uint32_t na)   /* 
     if (cmd == ED_BK_LIST) {
         rc = !flash_ok ? 4u : 0u;
         if (!rc) {
-            proj_capture((project_t *)ED_BK_RAW);           /* the working project, as it is now */
+            if (!proj_capture((project_t *)ED_BK_RAW))      /* the working project, as it is now */
+                memset(ED_BK_RAW, 0, sizeof(project_t));    /* (too dense to pack: none) */
             persist_fill(&ed_bk_set);
             midi_part_fill(ed_bk_ml);
             ed_bk_valid = 1;

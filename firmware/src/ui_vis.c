@@ -21,7 +21,7 @@ static int16_t vis_re[VIS_FFT] __attribute__((section(".pool"))), vis_im[VIS_FFT
 #define vis_r (main_scratch.vis[1])
 _Static_assert(sizeof main_scratch.vis[0] == VIS_FFT * sizeof(int16_t), "the scratch holds the snapshot");
 static uint8_t vis_sg[VIS_SG_H][VIS_SG_W] __attribute__((section(".pool")));
-static uint8_t vis_lj[3][256][2];                   /* Lissajous: the last three frames' points */
+static uint8_t vis_lj[3][256][2] __attribute__((section(".pool")));   /* Lissajous: the last three frames' points (in the pool) */
 static struct {
     int32_t scale, ljscale, peak;                   /* auto-scales (smoothed peaks), this frame's peak */
     int16_t bar[32], cap[32], capv[32];             /* spectrum: bars, caps and their fall speed (0..1000) */
@@ -220,7 +220,7 @@ static void vis_update(void)
     }
     /* the tracks' peaks since the last look (as the TRACKS meters take them) and the notes that started */
     fm1_irq_off();
-    for (i = 0; i < NPART; i++) {
+    for (i = 0; i < 3u; i++) {                       /* (the visualiser's four are tracks 1..3 and the drums) */
         pk[i] = trk[i].peak;
         trk[i].peak = 0;
     }
@@ -234,7 +234,7 @@ static void vis_update(void)
     }
     fm1_irq_on();
     for (i = 0; i < 4u; i++) {
-        int32_t v = trk_level(i) && !trk[i].p[P_MUTE] ? vis_lvl(pk[i]) : 0;   /* (as the TRACKS meters) */
+        int32_t v = trk_level(TRK_FROM_LEGACY(i)) && !trk[TRK_FROM_LEGACY(i)].p[P_MUTE] ? vis_lvl(pk[i]) : 0;   /* (as the TRACKS meters) */
         vs.lvl[i] = (int16_t)v;
         if ((hit >> i) & 1u) {
             vs.flash[i] = 8;

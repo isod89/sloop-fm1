@@ -128,17 +128,17 @@ UI_SMALL static uint32_t keys_lit(void)
         if (lights_notes)                          /* NOTES: the scale goes dim (keys_notes_dim), what sounds lit */
             return (blink ? scale_keys(1) : 0u) | keys_sounding(t) | fm1_in.notes;
         return scale_keys(0) & ~(blink ? 0u : scale_keys(1));
-    case LY_MIX:                                   /* tracks heard: 1..4; soloed: 5..8; a fill: 9, armed / on: 10; tap: the beat */
-        for (i = 0; i < 4u; i++) {
+    case LY_MIX:                                   /* tracks heard: 1..6; soloed: 7..12; a fill: 13, armed / on: 14; tap: the beat */
+        for (i = 0; i < NTRK; i++) {
             if (!trk_silent(&trk[i]))
                 m |= 1u << key_of_white(i);
             if ((song.solo >> i) & 1u)
-                m |= 1u << key_of_white(4u + i);
+                m |= 1u << key_of_white(NTRK + i);
         }
         if (fill_now)
-            m |= 1u << key_of_white(8);
+            m |= 1u << key_of_white(2u * NTRK);
         if (fill_arm || fill_bar_on)
-            m |= 1u << key_of_white(9);
+            m |= 1u << key_of_white(2u * NTRK + 1u);
         if (play_led())
             m |= 1u << key_of_white(15);
         return m;
@@ -481,7 +481,7 @@ UI_SMALL static void project_new(void)
     drum_mute = 0;                                      /* (2.6: the live mutes) */
     for (i = 0; i < G_COUNT; i++)
         if (i != G_SLOT && i != G_DRCH && i != G_SYNC && i != G_MIDI && i != G_ROUTE && (i < G_CH1 || i > G_CHOTH) &&
-            i != G_BEND && i != G_FXCH && i != G_DRMAP && i != G_RMCH && i != G_CLKOUT && i != G_FXFADE)                                                                     /* (the
+            i != G_BEND && i != G_FXCH && i != G_DRMAP && i != G_RMCH && i != G_CLKOUT && i != G_FXFADE && i != G_CH4 && i != G_CH5)                                                                     /* (the
                                                                  * FM-1's settings: GLO > MIDI 2.6) */
             song.g[i] = GP[i].def;
     song.solo = 0;
