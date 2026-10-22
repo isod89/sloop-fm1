@@ -4,13 +4,14 @@
  * its screen as ever, then the visualiser comes back. The keys, PLAY and REC work as always.
  *   1 OSCILLOSCOPE  2 SPECTRUM  3 SPECTROGRAM  4 LISSAJOUS  5 VU METERS  6 CIRCLE
  *   7 TAPE  8 LCD  9 BOUNCE  10 ORBIT  11 WIRES  12 SLOOP (the logo: the sail's bands are the tracks)
+ *   13 CHORDS (the chord a synth track plays, its notes and a keyboard; chord.c)
  * It reads what the audio already leaves for the UI: the scope buffers (audio.c, the mix at 22 kHz, left and
  * right, as if MASTER were all the way up: the picture does not follow the volume knob, even at 0), the tracks' peaks (fx.c / drums.c, as the TRACKS meters read them), the notes that started
  * (voice.c vis_hit) and the transport clock. Everything is drawn in the main loop, every other frame, in two
  * bands of 120 rows (the canvas holds 124): no cost to the audio. */
-#define VIS_N 12u
+#define VIS_N VIS_STYLES                           /* (panel.c: kept with the settings) */
 static const char *const VIS_NAME[VIS_N] = {"OSCILLOSCOPE", "SPECTRUM", "SPECTROGRAM", "LISSAJOUS", "VU METERS",
-                                            "CIRCLE", "TAPE", "LCD", "BOUNCE", "ORBIT", "WIRES", "SLOOP"};
+                                            "CIRCLE", "TAPE", "LCD", "BOUNCE", "ORBIT", "WIRES", "SLOOP", "CHORDS"};
 /* vis_on, vis_shown_last, vis_name_t: ui_draw.c; vis_style: panel.c (kept with the settings) */
 #define VIS_FFT 512u
 #define VIS_SG_W 48u                                /* spectrogram: 48 columns of 5 px, 72 rows of 3 px */
@@ -599,6 +600,104 @@ static void vis_sloop(void)
     }
 }
 
+/* 13 CHORDS: the chord the followed synth track plays (chord.c) big, its degree in the track's
+ * scale, its notes, and a keyboard that lights them. Let go: the last chord stays, dimmed. The chord's root is
+ * the screen font at 4x (FONT_XL), its quality and bass at 2x (FONT_L) */
+static const uint8_t FONT_XL_ADV[64] = {[0 ... 63] = 32}, FONT_XL_BW[64] = {[0 ... 63] = 48};
+static const felucca_font_t FONT_XL = {64, 8, 32, 95, 2, FONT_XL_ADV, FONT_XL_BW, FONT_S_OFF, FONT_S_DATA, 1};
+static void vis_chords(void)
+{
+    static const uint8_t WHITE[7] = {0, 2, 4, 5, 7, 9, 11}, BLACK_AFTER[5] = {0, 1, 3, 4, 5}, BLACK[5] = {1, 3, 6, 8, 10};
+    uint32_t tr = chd.trk < NPART ? chd.trk : song.sel < NPART ? song.sel : 0u, i, j, oct, lo, nw;
+    const track_t *t = &trk[tr];
+    uint16_t col = chd.live ? TE_COL[tr] : TE_MID[tr], txt = chd.live ? C_WHITE : TE_G3;
+    int32_t kw, x0, x;
+    char b[40], r[4];
+    {   /* the track followed, and its key */
+        char n[2] = {(char)('1' + tr), 0};
+        cv_rect(8, 26, 16, 16, TE_COL[tr]);
+        cv_text(12, 26, &FONT_S, n, C_BLACK);
+        trk_short_name(tr, b);
+        cv_text(32, 26, &FONT_S, b, TE_G4);
+        if (t->p[P_SCALE]) {
+            str_cpy(b, N_NOTE[clamp(t->p[P_ROOT], 0, 11)], sizeof b);
+            str_cpy(b + str_len(b), " ", sizeof b - str_len(b));
+            str_cpy(b + str_len(b), N_SCALE[clamp(t->p[P_SCALE], 0, (int32_t)NSCALES - 1)], sizeof b - str_len(b));
+            cv_text(232 - text_w(&FONT_S, b), 26, &FONT_S, b, TE_G3);
+        }
+    }
+    if (!chd.n) {
+        cv_text(120 - text_w(&FONT_S, "PLAY A CHORD") / 2, 90, &FONT_S, "PLAY A CHORD", TE_G3);
+    } else if (chd.n == 1u || chd.ok) {                 /* a chord (or one note): root 4x, quality / octave 2x */
+        const char *q = chd.n == 1u ? "" : chd.q;
+        const felucca_font_t *qf = &FONT_L;
+        char sl[6] = {0};
+        int32_t wr, wq, ws, w;
+        str_cpy(r, N_NOTE[chd.n == 1u ? chd.note[0] % 12u : chd.root], sizeof r);
+        if (chd.n == 1u)
+            fmt_int(sl, (int32_t)(chd.note[0] / 12u) - 1);
+        else if (chd.bass != chd.root) {
+            sl[0] = '/';
+            str_cpy(sl + 1, N_NOTE[chd.bass], sizeof sl - 1u);
+        }
+        wr = text_w(&FONT_XL, r);
+        wq = text_w(qf, q);
+        ws = text_w(&FONT_L, sl);
+        if (wr + 2 + wq + ws > 232) {
+            qf = &FONT_S;
+            wq = text_w(qf, q);
+        }
+        w = wr + 2 + wq + ws;
+        x = (240 - w) / 2;
+        cv_text(x, 58, &FONT_XL, r, txt);
+        cv_text(x + wr + 2, 60, qf, q, col);
+        cv_text(x + wr + 2 + wq, 90, &FONT_L, sl, chd.n == 1u ? TE_G3 : txt);
+    } else {                                            /* no chord: the notes, 2x */
+        chd_label(b, 14);
+        cv_text(120 - text_w(&FONT_L, b) / 2, 74, &FONT_L, b, txt);
+    }
+    if (chd.n > 1u && chd_degree(t)[0]) {             /* its degree in the scale */
+        str_cpy(b, chd_degree(t), sizeof b);
+        str_cpy(b + str_len(b), " IN ", sizeof b - str_len(b));
+        str_cpy(b + str_len(b), N_NOTE[clamp(t->p[P_ROOT], 0, 11)], sizeof b - str_len(b));
+        str_cpy(b + str_len(b), " ", sizeof b - str_len(b));
+        str_cpy(b + str_len(b), N_SCALE[clamp(t->p[P_SCALE], 0, (int32_t)NSCALES - 1)], sizeof b - str_len(b));
+        cv_text(120 - text_w(&FONT_S, b) / 2, 130, &FONT_S, b, col);
+    }
+    b[0] = 0;                                           /* the notes, low to high */
+    for (i = 0; i < chd.n && str_len(b) + 5u < 29u; i++) {
+        if (i)
+            str_cpy(b + str_len(b), " ", sizeof b - str_len(b));
+        note_name(b + str_len(b), chd.note[i]);
+    }
+    cv_text(120 - text_w(&FONT_S, b) / 2, 150, &FONT_S, b, TE_G4);
+    /* the keyboard: from the C below the lowest note, two to four octaves */
+    lo = chd.n ? chd.note[0] / 12u * 12u : 48u;
+    oct = chd.n ? (chd.note[chd.n - 1u] - lo) / 12u + 1u : 2u;
+    oct = oct < 2u ? 2u : oct > 4u ? 4u : oct;
+    nw = 7u * oct;
+    kw = 232 / (int32_t)nw;
+    x0 = (240 - kw * (int32_t)nw) / 2;
+    for (i = 0; i < nw; i++) {
+        uint32_t note = lo + i / 7u * 12u + WHITE[i % 7u], lit = 0;
+        for (j = 0; j < chd.n; j++)
+            lit |= chd.note[j] == note;
+        cv_rect(x0 + (int32_t)i * kw, 178, kw - 1, 56, lit ? col : te_gray(RGB(150, 150, 158)));
+        if (lit && note % 12u == (chd.ok ? chd.root : 99u))
+            cv_rect(x0 + (int32_t)i * kw + kw / 2 - 2, 224, 4, 4, C_WHITE);   /* the root */
+    }
+    for (i = 0; i < oct * 5u; i++) {
+        uint32_t note = lo + i / 5u * 12u + BLACK[i % 5u], lit = 0;
+        int32_t bw = kw * 6 / 10, bx = x0 + (int32_t)(i / 5u * 7u + BLACK_AFTER[i % 5u] + 1u) * kw - bw / 2 - 1;
+        for (j = 0; j < chd.n; j++)
+            lit |= chd.note[j] == note;
+        cv_rect(bx - 1, 178, bw + 2, 35, C_BLACK);
+        cv_rect(bx, 178, bw, 34, lit ? col : te_gray(RGB(30, 30, 34)));
+        if (lit && note % 12u == (chd.ok ? chd.root : 99u))
+            cv_rect(bx + bw / 2 - 2, 204, 4, 4, C_WHITE);
+    }
+}
+
 /* the visualiser, every other frame: the update, then both bands */
 static void vis_draw(void)
 {
@@ -625,7 +724,8 @@ static void vis_draw(void)
         case 8: vis_bounce(); break;
         case 9: vis_orbit(); break;
         case 10: vis_wires(); break;
-        default: vis_sloop(); break;
+        case 11: vis_sloop(); break;
+        default: vis_chords(); break;
         }
         if (!pass && (vis_name_t || ui.msg_t)) {    /* the style's name a second (or a message) */
             char n[8];
@@ -634,7 +734,8 @@ static void vis_draw(void)
             cv_text(120 - text_w(&FONT_S, s) / 2, 2, &FONT_S, s, C_WHITE);
             if (!ui.msg_t) {
                 fmt_int(n, (int32_t)(vis_style % VIS_N) + 1);
-                str_cpy(n + str_len(n), "/12", 4);
+                str_cpy(n + str_len(n), "/", 4);
+                fmt_int(n + str_len(n), (int32_t)VIS_N);
                 cv_text(4, 2, &FONT_S, n, C_DIM);
             }
         }

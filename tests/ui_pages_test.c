@@ -1398,7 +1398,7 @@ int main(int argc, char **argv)
         tap(B_HOME); frames(2);
         check(vis_shown() && vis_on, "visualiser: HOME on HOME opens it");
         vis_style = 0; ui.force = 1;
-        for (st = 0; st < 12u; st++) {
+        for (st = 0; st < VIS_N; st++) {
             char nm[80];
             frames(st == 0u ? 40u : 70u);           /* (past the name's second) */
             ui.force = 1; frames(2);
@@ -1422,11 +1422,11 @@ int main(int argc, char **argv)
             check(op < 64u && pk > 2000u && lit > 1500u, "visualiser: MASTER at 0: no sound, the picture as at full volume");
             song.master_q12 = m0; frames(4);
         }
-        check(vis_style == 0u, "visualiser: SELECT goes round (12 -> 1)");
+        check(vis_style == 0u, "visualiser: SELECT goes round (13 -> 1)");
         encs[panel.enc[EN_SELECT]] = -1; frames(2);
-        check(vis_style == 11u && (lights_word() >> 17 & 15u) == 11u, "visualiser: SELECT left: SLOOP (12), kept in the settings word");
+        check(vis_style == 12u && (lights_word() >> 17 & 15u) == 12u, "visualiser: SELECT left: CHORDS (13), kept in the settings word");
         lights_from_word(lights_word());
-        check(vis_style == 11u, "visualiser: the style read back");
+        check(vis_style == 12u, "visualiser: the style read back");
         { int16_t bpm = song.g[G_BPM], lv = trk[0].p[P_LEVEL];
           encs[panel.enc[EN_K2]] = 5; frame();
           check(trk[0].p[P_LEVEL] == lv && song.g[G_BPM] == bpm, "visualiser: KNOB 2 (the hidden TRACKS screen) edits nothing, SELECT is not the tempo"); }
@@ -1442,6 +1442,76 @@ int main(int argc, char **argv)
         transport_req = 2; frames(4);
         for (j = 0; j < NTRK; j++) steps_clear(&trk[j]);
         vis_style = 0; song.sel = 0; go_home(); frames(20);
+    }
+
+    {   /* the notes and chord a synth track plays (chord.c): named, on its TRACKS row, CHORDS */
+        static const struct { uint8_t n, note[5]; const char *want; } NAMES[] = {
+            {3, {60, 64, 67}, "C"}, {3, {57, 60, 64}, "A MIN"}, {4, {55, 59, 62, 65}, "G7"},
+            {3, {64, 67, 72}, "C/E"}, {4, {60, 64, 67, 69}, "C6"}, {4, {57, 60, 64, 67}, "A MIN7"},
+            {4, {60, 64, 67, 71}, "C MAJ7"}, {3, {59, 62, 65}, "B DIM"}, {4, {62, 66, 69, 73}, "D MAJ7"},
+            {3, {62, 67, 69}, "D SUS4"}, {3, {48, 55, 60}, "C5"}, {4, {60, 64, 70, 74}, "C9"},
+            {4, {57, 60, 67, 71}, "A MIN9"}, {4, {59, 62, 65, 69}, "B MIN7B5"}, {4, {61, 64, 67, 70}, "C# DIM7"},
+            {4, {55, 60, 62, 65}, "G7SUS4"}, {3, {67, 71, 74}, "G"}, {3, {71, 74, 79}, "G/B"},
+            {4, {64, 67, 70, 73}, "E DIM7"}, {4, {52, 59, 62, 67}, "E MIN7"}, {4, {50, 57, 60, 65}, "D MIN7"},
+            {1, {52}, "E3"}, {2, {60, 62}, "C D"}, {3, {60, 61, 62}, "C C# D"},
+        };
+        char lab[24], nm[96];
+        uint32_t k, lit, x, ok = 1;
+        for (k = 0; k < sizeof NAMES / sizeof NAMES[0]; k++) {
+            chd.n = NAMES[k].n;
+            memcpy(chd.note, NAMES[k].note, chd.n);
+            chd_name();
+            chd_label(lab, sizeof lab);
+            if (strcmp(lab, NAMES[k].want)) {
+                printf("ui:   chord %u: got %s, want %s\n", k, lab, NAMES[k].want);
+                ok = 0;
+            }
+        }
+        check(ok, "chords: names (triads, sevenths, 9ths, sus, dim7, inversions as C/E, C6 over A MIN7/C)");
+        int16_t vce = trk[0].p[P_VOICE];
+        trk[0].p[P_VOICE] = V_POLY;                      /* (the default sound of track 1 is MONO: one note) */
+        song.sel = 0; trk[0].p[P_SCALE] = 0; go_home(); frames(130);
+        check(chd.trk == 0u && !chd.live && !chd.hold, "chords: quiet: nothing on the row");
+        trk_note_on(&trk[0], 60, 100); trk_note_on(&trk[0], 64, 100); trk_note_on(&trk[0], 67, 100); trk_note_on(&trk[0], 71, 100);
+        frames(3);
+        chd_label(lab, sizeof lab);
+        check(chd.live && !strcmp(lab, "C MAJ7"), "chords: keys held: C MAJ7, live");
+        ppm("chords-1-tracks-row");
+        trk_note_off(&trk[0], 71); frames(2); chd_label(lab, sizeof lab);
+        check(!strcmp(lab, "C MAJ7"), "chords: a note let go: the chord stays (not renamed on the way out)");
+        trk_note_on(&trk[0], 69, 100); frames(2); chd_label(lab, sizeof lab);
+        check(!strcmp(lab, "C6"), "chords: a note added: renamed (C E G A: C6)");
+        trk_note_off(&trk[0], 60); trk_note_off(&trk[0], 64); trk_note_off(&trk[0], 67); trk_note_off(&trk[0], 69);
+        frames(3); chd_label(lab, sizeof lab);
+        check(!chd.live && chd.hold && !strcmp(lab, "C6"), "chords: all let go: kept, not live");
+        frames(130);
+        check(!chd.hold, "chords: the TRACKS row lets it go after ~2 s");
+        tap(B_HOME); frames(2);
+        vis_style = 12; ui.force = 1; frames(70);
+        ppm("chords-2-vis-empty-or-held");
+        trk[0].p[P_ROOT] = 0; trk[0].p[P_SCALE] = 1;      /* C MAJ */
+        trk_note_on(&trk[0], 60, 100); trk_note_on(&trk[0], 65, 100); trk_note_on(&trk[0], 69, 100);
+        frames(4); chd_label(lab, sizeof lab);
+        check(!strcmp(lab, "F/C") && !strcmp(chd_degree(&trk[0]), "IV"), "chords: F/C in C MAJ: degree IV");
+        for (lit = 0, x = 0; x < 240u * 240u; x++) lit += screen[x] != 0;
+        snprintf(nm, sizeof nm, "chords: CHORDS draws (%u px lit)", lit);
+        check(vis_shown() && lit > 3000u, nm);
+        ppm("chords-3-vis-F-over-C");
+        trk_note_off(&trk[0], 60); trk_note_off(&trk[0], 65); trk_note_off(&trk[0], 69); frames(4);
+        trk_note_on(&trk[0], 57, 100); trk_note_on(&trk[0], 60, 100); trk_note_on(&trk[0], 64, 100); trk_note_on(&trk[0], 67, 100); trk_note_on(&trk[0], 71, 100);
+        frames(4); ppm("chords-4-vis-A-MIN9-live");
+        trk_note_off(&trk[0], 57); trk_note_off(&trk[0], 60); trk_note_off(&trk[0], 64); trk_note_off(&trk[0], 67); trk_note_off(&trk[0], 71);
+        frames(6); ppm("chords-5-vis-A-MIN9-held");
+        trk_note_on(&trk[0], 73, 100); trk_note_on(&trk[0], 76, 100); trk_note_on(&trk[0], 80, 100); trk_note_on(&trk[0], 84, 100);
+        frames(4); chd_label(lab, sizeof lab);
+        check(!strcmp(lab, "C# MIN MAJ7"), "chords: C# MIN MAJ7 (long quality)");
+        ppm("chords-6-vis-long-name");
+        trk_note_off(&trk[0], 73); trk_note_off(&trk[0], 76); trk_note_off(&trk[0], 80); trk_note_off(&trk[0], 84);
+        trk_note_on(&trk[0], 52, 100); frames(4); ppm("chords-7-vis-one-note"); trk_note_off(&trk[0], 52);
+        song.sel = TRK_DRUM; frames(4);
+        check(chd.trk == 0u, "chords: the drum track selected: still the synth track before");
+        tap(B_HOME); frames(2);
+        trk[0].p[P_SCALE] = 0; trk[0].p[P_VOICE] = vce; vis_style = 0; song.sel = 0; go_home(); frames(140);
     }
 
     {   /* 2.6, after Felucca 1.4 / 1.5 (Leo Kuroshita): STEP LEN, SEQ VEL, the drum mutes (EDIT + a black key), MIDI
