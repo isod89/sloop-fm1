@@ -232,7 +232,7 @@ static void punch_freeze_feed(int32_t *rev, const int32_t *l, const int32_t *r, 
 static void punch_process(int32_t *l, int32_t *r, uint32_t n)
 {
     uint32_t i;
-    int32_t want = punch.req;
+    int32_t want = punch.req, pstep;
     uint32_t beat, step, echo_d, binc, fdec;
     static int32_t kl[CTL], kr[CTL];                    /* (static: the ISR stack is small) */
     tsvf_t c1, c2;
@@ -291,6 +291,13 @@ static void punch_process(int32_t *l, int32_t *r, uint32_t n)
             tsvf_coef(&c1, fx == PX_LPF ? punch.cut : fx == PX_HPF ? (127 << 8) - punch.cut + (40 << 8) : 96 << 8, 90);
             tsvf_coef(&c2, 58 << 8, 40);              /* PHONE: low cut ~ 500 Hz */
         }
+    }
+    {   /* (2.7.2) GLO > MASTER 2 > FADE: the wet gain's ramp when an effect is engaged / released. 512 (0, ~1.5 ms, as
+         * before, just anti-click) down to ~2 at 15 (~0.37 s): a slow fade in and out of the effect */
+        int32_t f = (int32_t)song.g[G_FXFADE];
+        pstep = 512 / (1 + (f < 0 ? 0 : f > 15 ? 15 : f) * 17);
+        if (pstep < 1)
+            pstep = 1;
     }
     for (i = 0; i < n; i++) {
         int32_t x = l[i], y = r[i], wl = x, wr = y, m = (x + y) >> 1;
@@ -423,9 +430,9 @@ static void punch_process(int32_t *l, int32_t *r, uint32_t n)
             break;
         }
         if ((uint32_t)punch.g < target)
-            punch.g = punch.g + 512 > 32767 ? 32767 : punch.g + 512;
+            punch.g = punch.g + pstep > 32767 ? 32767 : punch.g + pstep;
         else if ((uint32_t)punch.g > target)
-            punch.g = punch.g < 512 ? 0 : punch.g - 512;
+            punch.g = punch.g < pstep ? 0 : punch.g - pstep;
         l[i] = x + ((((wl - x) >> 3) * (punch.g >> 3)) >> 9);   /* (no 32-bit overflow) */
         r[i] = y + ((((wr - y) >> 3) * (punch.g >> 3)) >> 9);
         punch.w++;

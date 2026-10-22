@@ -603,6 +603,74 @@ static void t_mclk(void)
     mi_r = mi_w;
 }
 
+/* (2.7.2) a master at a steady 140 whose pulses come a few ms early or late (a computer, USB): BPM shows 140, not
+ * 139 / 140 / 141 by turns; a master at 139.5 shows one value; a tempo ramp and a jump are still followed */
+static void mclk_jrun(double *t, uint32_t *np, double bpm, double until, uint32_t *seen, uint32_t *changes)
+{
+    static uint32_t rng = 12345u;
+    double per = 60000.0 / bpm / 24.0;
+    int32_t last = song.g[G_BPM];
+    while (*t < until) {
+        for (;;) {                                   /* pulse n at n * per, +-2.5 ms (not adding up) */
+            double at;
+            rng = rng * 1103515245u + 12345u;
+            at = (double)*np * per + ((double)((rng >> 16) % 51u) - 25.0) / 10.0;
+            if (at > *t)
+                break;
+            mclk_push(0xF80Fu);
+            (*np)++;
+        }
+        fm1_ms = (uint32_t)*t;
+        run_block();
+        if (seen && song.g[G_BPM] >= 100 && song.g[G_BPM] < 200)
+            seen[song.g[G_BPM] - 100] = 1;
+        if (changes && song.g[G_BPM] != last)
+            (*changes)++;
+        last = song.g[G_BPM];
+        *t += (double)CTL * 1000.0 / FS;
+    }
+}
+static void t_mclk_jitter(void)
+{
+    double t = 0;
+    uint32_t np = 0, seen[100], k, n, ch = 0;
+    reset(90);
+    mi_r = mi_w;
+    song.g[G_SYNC] = 1;
+    mclk_jrun(&t, &np, 140.0, 2000.0, 0, 0);          /* settle (the first beats) */
+    memset(seen, 0, sizeof seen);
+    mclk_jrun(&t, &np, 140.0, 62000.0, seen, &ch);    /* a minute at 140 */
+    for (n = 0, k = 0; k < 100u; k++)
+        n += seen[k];
+    printf("seq2:   140 +-2.5 ms: %u value(s), %u change(s), BPM %d\n", n, ch, song.g[G_BPM]);
+    check(n == 1u && seen[40] && ch == 0u, "MIDI clock (2.7.2): a steady 140 with jittery pulses shows 140, steady");
+    {   /* the master at 139.5 (between two): one value for a minute */
+        double t0 = t;
+        np = (uint32_t)(t / (60000.0 / 139.5 / 24.0)) + 1u;
+        mclk_jrun(&t, &np, 139.5, t0 + 3000.0, 0, 0);
+        ch = 0;
+        mclk_jrun(&t, &np, 139.5, t + 60000.0, 0, &ch);
+        check(ch == 0u && (song.g[G_BPM] == 139 || song.g[G_BPM] == 140),
+              "MIDI clock (2.7.2): a master at 139.5 shows one value, steady");
+    }
+    {   /* a ramp 140 -> 146 over 16 beats, then a jump to 100: followed */
+        double bpm = 140.0;
+        np = (uint32_t)(t / (60000.0 / bpm / 24.0)) + 1u;
+        for (k = 0; k < 16u; k++, bpm += 6.0 / 16.0) {
+            np = (uint32_t)(t / (60000.0 / bpm / 24.0)) + 1u;
+            mclk_jrun(&t, &np, bpm, t + 60000.0 / bpm, 0, 0);
+        }
+        mclk_jrun(&t, &np, 146.0, t + 3000.0, 0, 0);
+        check(song.g[G_BPM] >= 145 && song.g[G_BPM] <= 146, "MIDI clock (2.7.2): a ramp to 146 is followed");
+        np = (uint32_t)(t / (60000.0 / 100.0 / 24.0)) + 1u;
+        mclk_jrun(&t, &np, 100.0, t + 1500.0, 0, 0);
+        check(song.g[G_BPM] == 100, "MIDI clock (2.7.2): a jump to 100 is taken within two beats");
+    }
+    song.g[G_SYNC] = 0;
+    mi_r = mi_w;
+    fm1_ms = (uint32_t)t + 1000u;                     /* (the master gone) */
+}
+
 /* the REC screen's MODE and START (SLOOP 2.3): an empty project records at the tempo set (TEMPO) or
  * takes it from the playing (FREE); COUNT: PLAY clicks one bar, then the loop and the recording start */
 static void t_recmode(void)
@@ -670,6 +738,24 @@ static void t_recmode(void)
 
 /* SLOOP 2.4 fixes: a MIDI START cuts a count-in short (the master counts); swing is off on the
  * triplet grids; a DIV change in the first beat after PLAY does not lose a step */
+/* (2.7.2) menu AUDIO > FILTER RESO: the track filter's SVF gains resonance (fx.c tflt_reso -> dsp.c tsvf_coef), and the
+ * setting rides in spare bits of the settings object (project.c midi_part), transparent at 0 */
+static void t_filt_reso(void)
+{
+    tsvf_t c0, c1;
+    int32_t z0[2] = {0, 0}, z1[2] = {0, 0}, i, p0 = 0, p1 = 0, x = 10000;
+    tsvf_coef(&c0, 60 << 8, 40);                      /* the clean filter, as the track filter always was (FILTER RESO 0) */
+    tsvf_coef(&c1, 60 << 8, 40 + 10 * 7);             /* FILTER RESO 10 (fx.c tflt_reso: 40 + 10 * 7 = 110) */
+    for (i = 0; i < 400; i++) {                       /* a step in: a resonant filter overshoots and rings, a clean one does not */
+        int32_t y0 = tsvf_lp(&c0, x, &z0[0], &z0[1]);
+        int32_t y1 = tsvf_lp(&c1, x, &z1[0], &z1[1]);
+        if (y0 > p0) p0 = y0;
+        if (y1 > p1) p1 = y1;
+    }
+    check(p1 > x + x / 4 && p0 < x + x / 10, "FILTER RESO (2.7.2): resonance makes the track filter overshoot a step; clean (40) barely does");
+    /* the setting's persistence (project.c midi_part) is checked in fm6_test (the full build has panel.c and project.c) */
+}
+
 static void t_fixes24(void)
 {
     uint32_t k, i, bpb = (uint32_t)((double)FS * 60.0 / 100.0 / CTL + 0.5), n0;
@@ -950,6 +1036,32 @@ static void t_midifix(void)
         song.g[G_ROUTE] = 0, song.g[G_CHOTH] = 0;
         check(ok, "2.6: MIDI Program Change: queued for the track its channel plays (ch 2: track 2, ch 10: drums); "
                   "OTHER = OFF / IN = CLOCK: none");
+    }
+    mf_prep();                                        /* (2.7.2) Bank Select (CC 0) before a Program Change: pc_bank */
+    pc_req[0] = pc_req[1] = pc_req[2] = pc_req[3] = 0;
+    pc_bank[0] = pc_bank[1] = pc_bank[2] = pc_bank[3] = 0;
+    {
+        int ok;
+        mf_cc(1, 0, 1);                               /* ch 2 (track 2): Bank Select = 1 */
+        mclk_push(0x0Cu | (0xC0u | 1u) << 8 | 10u << 16);   /* then Program Change 10 */
+        run_block();
+        ok = pc_req[1] == 11u && pc_bank[1] == 1u;
+        pc_req[1] = 0;                                 /* the bank stays latched on the channel */
+        mf_cc(1, 0, 8);                               /* Bank 8 (the user-preset bank) */
+        mclk_push(0x0Cu | (0xC0u | 1u) << 8 | 5u << 16);
+        run_block();
+        ok &= pc_req[1] == 6u && pc_bank[1] == 8u;
+        pc_req[1] = 0;
+        mclk_push(0x0Cu | (0xC0u | 1u) << 8 | 3u << 16);   /* a later PC keeps the latched bank */
+        run_block();
+        ok &= pc_req[1] == 4u && pc_bank[1] == 8u;
+        pc_req[1] = 0; pc_bank[1] = 0;
+        mf_cc(1, 0, 0);                               /* bank back to 0: the old behaviour */
+        mclk_push(0x0Cu | (0xC0u | 1u) << 8 | 7u << 16);
+        run_block();
+        ok &= pc_req[1] == 8u && pc_bank[1] == 0u;
+        pc_req[1] = 0; pc_bank[1] = 0;
+        check(ok, "2.7.2: MIDI Bank Select (CC 0) latches per channel and a Program Change carries it (pc_bank)");
     }
     mf_prep();                                        /* a channel changed with a note held */
     song.sel = 0;
@@ -1290,6 +1402,178 @@ static void t_overdub(void)
     ok &= voice_of(t, 60) >= 0;
     check(ok, "2.7 overdub as played: 32 steps held, a note pressed on step 17 of the next pass: the held note goes on");
     transport_req = 2; run_block();
+    song.rec = 0;
+}
+
+/* SLOOP 2.7.1 (a YouTube comment): several notes held while recording, on a POLY part. Each goes on until its own key is let
+ * go: "hit record, hold a note, play another one on top" used to end the first one with the second */
+typedef struct { uint8_t t; uint8_t n; uint8_t a, b, c; uint8_t cont; } want_t;   /* time, n, notes, CONT bits */
+static int steps_are(const track_t *t, const want_t *w, uint32_t nw)
+{
+    uint32_t i, ok = 1;
+    for (i = 0; i < nw; i++) {
+        const step_t *st = &t->step[i];
+        uint32_t good = st->time == w[i].t;
+        if (good && w[i].t == ST_NOTE)
+            good = st->n == w[i].n && st->note[0] == w[i].a && (w[i].n < 2u || st->note[1] == w[i].b) &&
+                   (w[i].n < 3u || st->note[2] == w[i].c) && ((st->flags & SF_CONT_ALL) / SF_CONT0) == w[i].cont;
+        if (!good) {
+            printf("seq2:   step %u: time %u n %u notes %u %u %u cont %x\n", i + 1, st->time, st->n, st->note[0], st->note[1],
+                   st->note[2], (st->flags & SF_CONT_ALL) / SF_CONT0);
+            ok = 0;
+        }
+    }
+    return (int)ok;
+}
+static void rec_go_to(track_t *t, uint32_t step, double frac)   /* the transport onto step (0-based), frac of it */
+{
+    double sb = (double)FS * 60.0 / 120.0 / 4.0 / CTL;
+    uint32_t into, slen, k;
+    while (trk_grid(t, &into, &slen) != step) run_block();
+    for (k = 0; k < (uint32_t)(sb * frac); k++) run_block();
+}
+static void rec_start16(track_t *t)
+{
+    reset(120);
+    t->p[P_VOICE] = V_POLY;
+    t->p[P_SLEN] = 16;
+    song.sel = 0;
+    song.rec = 1u;
+    transport_req = 1;
+    run_block();
+}
+static void t_hold2(void)
+{
+    track_t *t = &trk[0];
+    int ok;
+    enum { N = ST_NOTE, T = ST_TIE, R = ST_REST };
+    {   /* note 1 held, note 2 on top and let go first: note 1 goes on to its own end */
+        static const want_t W[16] = {{N, 1, 60, 0, 0, 0}, {T}, {T}, {T}, {N, 2, 60, 64, 0, 1}, {T}, {T}, {T},
+                                     {N, 1, 60, 0, 0, 1}, {T}, {T}, {T}, {R}, {R}, {R}, {R}};
+        int32_t a;
+        uint32_t into, slen;
+        rec_start16(t);
+        rec_go_to(t, 0, 0.2); input_on(t, 60, 100);
+        rec_go_to(t, 4, 0.3); input_on(t, 64, 100);
+        rec_go_to(t, 8, 0.3); input_off(t, 64);
+        rec_go_to(t, 12, 0.3); input_off(t, 60);
+        song.rec = 0;
+        ok = steps_are(t, W, 16);
+        while (trk_grid(t, &into, &slen) != 16u + 2u) run_block();
+        a = voice_of(t, 60);
+        rec_go_to(t, 16 + 6, 0.5);
+        ok &= a >= 0 && voice_of(t, 60) == a && voice_of(t, 64) >= 0;
+        rec_go_to(t, 16 + 10, 0.5);
+        ok &= voice_of(t, 60) == a && voice_of(t, 64) < 0;
+        rec_go_to(t, 16 + 13, 0.5);
+        ok &= voice_of(t, 60) < 0;
+        check(ok, "2.7.1 recording: hold a note, play another on top, let it go: the first goes on (one voice) to its own end");
+        transport_req = 2; run_block();
+    }
+    {   /* note 1 let go first: note 2 goes on alone */
+        static const want_t W[12] = {{N, 1, 60, 0, 0, 0}, {T}, {T}, {T}, {N, 2, 60, 64, 0, 1}, {T}, {N, 1, 64, 0, 0, 1}, {T},
+                                     {T}, {T}, {R}, {R}};
+        rec_start16(t);
+        rec_go_to(t, 0, 0.2); input_on(t, 60, 100);
+        rec_go_to(t, 4, 0.3); input_on(t, 64, 100);
+        rec_go_to(t, 6, 0.3); input_off(t, 60);
+        rec_go_to(t, 10, 0.3); input_off(t, 64);
+        song.rec = 0;
+        check(steps_are(t, W, 12), "2.7.1 recording: the first let go first: it ends there, the second goes on to its end");
+        transport_req = 2; run_block();
+    }
+    {   /* a chord built note by note, all let go together */
+        static const want_t W[10] = {{N, 1, 60, 0, 0, 0}, {T}, {N, 2, 60, 64, 0, 1}, {T}, {N, 3, 60, 64, 67, 3}, {T}, {T}, {T},
+                                     {R}, {R}};
+        rec_start16(t);
+        rec_go_to(t, 0, 0.2); input_on(t, 60, 100);
+        rec_go_to(t, 2, 0.3); input_on(t, 64, 100);
+        rec_go_to(t, 4, 0.3); input_on(t, 67, 100);
+        rec_go_to(t, 8, 0.2); input_off(t, 60); input_off(t, 64); input_off(t, 67);
+        song.rec = 0;
+        check(steps_are(t, W, 10), "2.7.1 recording: a chord built note by note: each note starts on its step, all held to the end");
+        transport_req = 2; run_block();
+    }
+    {   /* note 2 played late in a step (it goes into the next one, not tied yet) */
+        static const want_t W[12] = {{N, 1, 60, 0, 0, 0}, {T}, {T}, {T}, {T}, {N, 2, 60, 64, 0, 1}, {T}, {N, 1, 60, 0, 0, 1},
+                                     {T}, {T}, {R}, {R}};
+        rec_start16(t);
+        rec_go_to(t, 0, 0.2); input_on(t, 60, 100);
+        rec_go_to(t, 4, 0.85); input_on(t, 64, 100);
+        rec_go_to(t, 7, 0.3); input_off(t, 64);
+        rec_go_to(t, 10, 0.3); input_off(t, 60);
+        song.rec = 0;
+        check(steps_are(t, W, 12), "2.7.1 recording: the second note played late in a step (into the next): the first goes on");
+        transport_req = 2; run_block();
+    }
+    {   /* 2.7.2: LEGATO, a note played over the one held: recorded legato, played back legato (no new attack) */
+        static const want_t W[10] = {{N, 1, 48, 0, 0, 0}, {T}, {T}, {T}, {N, 1, 55, 0, 0, 0}, {T}, {T}, {T}, {R}, {R}};
+        uint32_t into, slen, st1;
+        rec_start16(t);
+        t->p[P_VOICE] = V_LEGATO;
+        t->p[P_ATK] = 30;                           /* (an attack of some length: a new one shows as stage 1) */
+        t->p[P_SUS] = 100;
+        t->p[P_GLIDE] = 0;
+        rec_go_to(t, 0, 0.1); input_on(t, 48, 100);
+        rec_go_to(t, 3, 0.9); input_on(t, 55, 100);  /* (into step 5: the first still held there) */
+        rec_go_to(t, 5, 0.3); input_off(t, 48);
+        rec_go_to(t, 8, 0.2); input_off(t, 55);
+        song.rec = 0;
+        ok = steps_are(t, W, 10) && (t->step[4].flags & SF_LEG) && !(t->step[0].flags & SF_LEG);
+        check(ok, "2.7.2 recording LEGATO: a note played over the held one is marked legato (SF_LEG), the first is not");
+        while (trk_grid(t, &into, &slen) != 16u + 3u) run_block();
+        rec_go_to(t, 16 + 3, 0.9);
+        st1 = t->v[0].stage;
+        while (trk_grid(t, &into, &slen) != 16u + 4u) run_block();
+        {   /* (a new attack: stage 1 and the envelope up to its peak; legato: it stays at the sustain level) */
+            int32_t e1 = t->v[0].env, emax = 0;
+            int b, att = 0;
+            for (b = 0; b < 6; b++) {
+                run_block();
+                att |= t->v[0].stage == 1u;
+                if (t->v[0].env > emax)
+                    emax = t->v[0].env;
+            }
+            ok = st1 == 2u && !att && emax <= e1 && t->v[0].gate && t->v[0].note == 55 && t->slide_glide == 0;
+        }
+        check(ok, "2.7.2 playback: the legato note takes over, the envelope goes on (no new attack, no glide of its own)");
+        rec_go_to(t, 16 + 9, 0.5);
+        check(!t->v[0].gate, "2.7.2 playback: the legato note ends where it was let go");
+        transport_req = 2; run_block();
+    }
+    {   /* 2.7.2: LEGATO, the second pressed early in a step the first is already held into (a TIE): legato too */
+        rec_start16(t);
+        t->p[P_VOICE] = V_LEGATO;
+        rec_go_to(t, 0, 0.1); input_on(t, 48, 100);
+        rec_go_to(t, 4, 0.2); input_on(t, 55, 100);
+        rec_go_to(t, 5, 0.3); input_off(t, 48);
+        rec_go_to(t, 8, 0.2); input_off(t, 55);
+        song.rec = 0;
+        check(t->step[3].time == ST_TIE && t->step[4].time == ST_NOTE && t->step[4].note[0] == 55 &&
+              (t->step[4].flags & SF_LEG), "2.7.2 recording LEGATO: over the held note early in a step it was tied into: legato");
+        transport_req = 2; run_block();
+    }
+    {   /* 2.7.2: MONO, the first let go before the second: not legato */
+        rec_start16(t);
+        t->p[P_VOICE] = V_MONO;
+        rec_go_to(t, 0, 0.1); input_on(t, 48, 100);
+        rec_go_to(t, 2, 0.3); input_off(t, 48);
+        rec_go_to(t, 4, 0.1); input_on(t, 55, 100);
+        rec_go_to(t, 6, 0.3); input_off(t, 55);
+        song.rec = 0;
+        check(t->step[4].time == ST_NOTE && t->step[4].note[0] == 55 && !(t->step[4].flags & SF_LEG),
+              "2.7.2 recording MONO: a note played after the first was let go is not legato");
+        transport_req = 2; run_block();
+    }
+    {   /* 2.7.2: POLY over a held note: as 2.7.1 (both go on), never SF_LEG */
+        rec_start16(t);
+        rec_go_to(t, 0, 0.1); input_on(t, 48, 100);
+        rec_go_to(t, 4, 0.1); input_on(t, 55, 100);
+        rec_go_to(t, 6, 0.3); input_off(t, 48); input_off(t, 55);
+        song.rec = 0;
+        check(!(t->step[4].flags & SF_LEG) && t->step[4].n == 2, "2.7.2 recording POLY: over a held note, both go on (no SF_LEG)");
+        transport_req = 2; run_block();
+    }
     song.rec = 0;
 }
 
@@ -1688,6 +1972,39 @@ static void t_midicc(void)
     check(song.g[G_DRLVL] == 0 && song.g[G_DRREV] == 127 && song.g[G_DRDLY] == 64 && TDRUM->p[P_PAN] == -64 && TDRUM->p[P_TFLT] == 63
           && TDRUM->p[P_ATK] == before[P_ATK] && TDRUM->p[P_DLY] == before[P_DLY],
           "2.5: the drum channel: 7 / 91 / 94 = DRUMS LVL / REV / DLY, 10 PAN, 74 FILTER; 73 ignored");
+    {   /* 2.7.1: CC 11 EXPRESSION, a gain over the LEVEL (the mix untouched); CC 121 full again */
+        int32_t o[CTL * 2], pk[3] = {0, 0, 0};
+        uint32_t ph, j, lv = song.g[G_DRLVL];
+        a->p[P_LEVEL] = 100, a->p[P_ATK] = 0, a->p[P_SUS] = 127, a->p[P_MUTE] = 0;
+        a->p[P_E0 + 4] = ENGINES[0]->edit[4].max, a->p[P_TFLT] = 0, a->p[P_REV] = a->p[P_DLY] = a->p[P_CHOR] = 0;   /* (CUT open)*/
+        mclk_push(0x09u | 0x90u << 8 | 60u << 16 | 100u << 24);   /* ch 1: a held C4 */
+        for (j = 0; j < 60u; j++) run_block();
+        for (ph = 0; ph < 3u; ph++) {
+            if (ph) { cc_push(0, 11, ph == 1u ? 64u : 0u); for (j = 0; j < 20u; j++) run_block(); }
+            for (j = 0; j < 40u; j++) {
+                uint32_t q;
+                mix_block(o, CTL);
+                for (q = 0; q < 2u * CTL; q++)
+                    pk[ph] = o[q] > pk[ph] ? o[q] : -o[q] > pk[ph] ? -o[q] : pk[ph];
+            }
+        }
+        if (!(pk[0] > 2000 && pk[1] * 100 > pk[0] * 19 && pk[1] * 100 < pk[0] * 33 && pk[2] * 100 < pk[0]))
+            printf("  CC 11 peaks: full %d, 64 %d, 0 %d\n", (int)pk[0], (int)pk[1], (int)pk[2]);
+        check(pk[0] > 2000 && pk[1] * 100 > pk[0] * 19 && pk[1] * 100 < pk[0] * 33 && pk[2] * 100 < pk[0] &&
+              a->p[P_LEVEL] == 100 && ex_off[0] == 127u,
+              "2.7.1: CC 11 on ch 1: track 1 at 64 about -12 dB, at 0 silent, its LEVEL untouched");
+        cc_push(drch, 11, 0); cc_push(1, 11, 100);
+        run_block(); run_block();
+        check(ex_off[TRK_DRUM] == 127u && song.g[G_DRLVL] == (int16_t)lv && ex_off[1] == 27u && expr_gain(25400, TRK_DRUM) == 0,
+              "2.7.1: CC 11 on the drum channel: the drums' expression (DRUMS LVL untouched); ch 2: track 2's");
+        cc_push(0, 121, 0); cc_push(drch, 121, 0); cc_push(1, 121, 0);
+        run_block(); run_block();
+        check(!ex_off[0] && !ex_off[1] && !ex_off[TRK_DRUM] && expr_gain(4096, 0) == 4096,
+              "2.7.1: CC 121 (reset all controllers): the expression full again");
+        mclk_push(0x09u | 0x80u << 8 | 60u << 16);
+        for (j = 0; j < 40u; j++) run_block();
+        a->p[P_LEVEL] = 127;                            /* (as the CCs above left it) */
+    }
     song.g[G_DRDLY] = 0;
     song.g[G_ROUTE] = 1;
     cc_push(0, 7, 55);
@@ -1817,11 +2134,14 @@ int main(void)
     t_micro();
     t_recquant();
     t_overdub();
+    t_hold2();
     t_plock();
     t_fill();
     t_chain();
     t_recmode();
     t_mclk();
+    t_mclk_jitter();
+    t_filt_reso();
     t_fixes24();
     t_longdiv();
     t_midiout();

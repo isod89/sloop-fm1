@@ -120,6 +120,8 @@ UI_SMALL static uint32_t keys_lit(void)
             if (on)
                 m |= 1u << key_of_white(i);
         }
+        if (is_drum(t))
+            m |= 1u << drum_black_key(pen_lane);       /* (2.7.1) the black key of the sound the steps are for */
         return m | fm1_in.notes;
     }
     case LY_SCALE:                                 /* the keys in the scale; the root blinks */
@@ -157,7 +159,7 @@ UI_SMALL static uint32_t keys_lit(void)
             if (on)
                 m |= 1u << key_of_white(i);
         }
-        return m | fm1_in.notes;
+        return m | fm1_in.notes | 1u << drum_black_key(drum_lane);   /* (2.7.1) its sound's black key */
     }
     m = fm1_in.notes;
     if (is_drum(t) || lights_notes)                /* the drum track: each hit lights its key; NOTES: the synths too */
@@ -318,53 +320,139 @@ UI_SMALL static void tracks_edit(uint32_t slot, int32_t steps)
         ml_knob(t, vp == &t->p[P_LEVEL] ? P_LEVEL : P_PAN);   /* MIDI LEARN: LEVEL, PAN (2.6) */
 }
 
+/* (2.7.2) NOTES: one undo per note edited (its pitch, length, force: EDIT + OCT- brings them back) */
+UI_SMALL static void note_mark(void)
+{
+    static uint32_t sess, at = 0xFFFFu;
+    uint32_t here = ui.cursor | (uint32_t)song.sel << 8;
+    if (here != at || !undo.valid || undo.undone || undo.sess != sess) {
+        sess = (undo_sess += 4u) | 3u;
+        at = here;
+    }
+    undo_mark(TSEL, sess);
+}
+UI_SMALL static int on_notes_page(void)
+{
+    return !ui.home && song.seq_mode && cur_page()->scope == SC_STEP && !is_drum(TSEL);
+}
+/* the note's sheet (OCT+ held): KNOB 1 the row, KNOB 2 its value (MOVE: a step a detent); OCT+ acts (SLIDE on / off,
+ * COPY: just after it, then MOVE moves the copy; DELETE), OCT- closes */
+UI_SMALL static void note_sheet_knob(uint32_t slot, int32_t steps)
+{
+    track_t *t = TSEL;
+    step_t *st = &t->step[ui.cursor];
+    uint32_t row = ui.sheet - 1u;
+    if (slot == 0u) {
+        ui.sheet = (uint8_t)(1 + clamp((int32_t)row + steps, 0, 5));
+        return;
+    }
+    if (slot != 1u)
+        return;
+    note_mark();
+    switch (row) {
+    case 0:
+        st->flags = (uint8_t)(steps > 0 ? st->flags | SF_SLIDE : st->flags & ~SF_SLIDE);
+        break;
+    case 1:
+        t->micro[ui.cursor] = (int8_t)clamp(t->micro[ui.cursor] + steps, MICRO_MIN, MICRO_MAX);
+        break;
+    case 2:
+        step_fill_set(t, ui.cursor, (uint32_t)clamp((int32_t)step_fill(t, ui.cursor) % 3 + (steps > 0 ? 1 : -1), 0, 2));
+        break;
+    case 3: {
+        int32_t n = steps;
+        while (n) {
+            int32_t to = note_shift(t, ui.cursor, n, 0), k = ui.note_k;
+            if (to < 0) {
+                ui_message(step_on(st) ? "NO ROOM" : "NO NOTE");
+                break;
+            }
+            cursor_set(to);
+            ui.note_k = (uint8_t)k;
+            n += n > 0 ? -1 : 1;
+        }
+        break;
+    }
+    default:
+        break;
+    }
+    sync_reload = 1;
+}
+UI_SMALL static void note_sheet_do(void)               /* OCT+ tapped in the sheet */
+{
+    track_t *t = TSEL;
+    uint32_t row = ui.sheet - 1u;
+    note_mark();
+    if (row == 0u) {
+        t->step[ui.cursor].flags ^= SF_SLIDE;
+    } else if (row == 4u) {
+        int32_t to = note_shift(t, ui.cursor, 1, 1), k = ui.note_k;
+        if (to < 0) {
+            ui_message(step_on(&t->step[ui.cursor]) ? "NO ROOM" : "NO NOTE");
+            return;
+        }
+        cursor_set(to);
+        ui.note_k = (uint8_t)k;
+        ui.sheet = 4;                                     /* (MOVE: KNOB 2 moves the copy) */
+        ui_message("COPIED");
+    } else if (row == 5u) {
+        note_del(t, ui.cursor, ui.note_k);
+        cursor_fix();
+        ui.sheet = 0;
+        ui_message("NOTE DELETED");
+    }
+    sync_reload = 1;
+}
+/* the NOTES page's knobs (SEQ > NOTES, synth tracks; the drum track has its grid) */
 UI_SMALL static void step_edit(uint32_t slot, int32_t steps)
 {
-    step_t *st = &TSEL->step[ui.cursor];
-    uint32_t i;
-    if (is_drum(TSEL))
-        return;                                           /* (the drum track: its grid) */
+    track_t *t = TSEL;
+    step_t *st = &t->step[ui.cursor];
+    uint32_t k = ui.note_k;
+    if (is_drum(t))
+        return;
+    if (ui.sheet) {
+        note_sheet_knob(slot, steps);
+        return;
+    }
     switch (slot) {
-    case 0:                                               /* STEP: the cursor */
-        cursor_set(ui.cursor + steps);
+    case 0:                                               /* NOTE: the notes, a chord's one by one, and the empty steps */
+        for (; steps > 0; steps--)
+            note_walk(1);
+        for (; steps < 0; steps++)
+            note_walk(-1);
         break;
-    case 1:                                               /* NOTE: transpose the step */
-        if (!st->n) {
+    case 1:                                               /* PITCH: the note's; an empty step gets your last note */
+        note_mark();
+        if (!step_on(st)) {
+            memset(st, 0, sizeof *st);
             st->note[0] = last_note;
             st->n = 1;
             st->time = ST_NOTE;
+            ui.note_k = 0;
             break;
         }
-        for (i = 0; i < st->n; i++)
-            st->note[i] = (uint8_t)clamp(st->note[i] + steps, 1, 127);
-        st->time = ST_NOTE;
-        st->flags &= (uint8_t)~SF_CONT_ALL;              /* (2.7: new pitches start here, not held over from before) */
-        last_note = st->note[0];
+        st->note[k] = (uint8_t)clamp(st->note[k] + steps, 1, 127);
+        st->flags &= (uint8_t)~SF_CONT(k);               /* (2.7: a new pitch starts here, not held over from before) */
+        last_note = st->note[k];
         break;
-    case 2:                                               /* TIME; on a note its LEN (2.6: ui.c note_set_len) */
+    case 2:                                               /* LEN: the note and the TIEs after it (2.6: ui.c note_set_len) */
         if (step_on(st)) {
-            static uint32_t len_sess, len_cur = 0xFFFFu;  /* the turns of LEN on one step: one undo */
-            uint32_t was = note_len(TSEL, ui.cursor), n;
-            if (len_cur != ui.cursor || !undo.valid || undo.undone || undo.sess != len_sess) {
-                len_sess = (undo_sess += 4u) | 3u;
-                len_cur = ui.cursor;
-            }
-            undo_mark(TSEL, len_sess);                    /* (EDIT + OCT- brings the steps back) */
+            uint32_t was = note_len(t, ui.cursor), n;
+            note_mark();
             fm1_irq_off();
-            n = note_set_len(TSEL, ui.cursor, (uint32_t)clamp((int32_t)was + steps, 1, NSTEP));
+            n = note_set_len(t, ui.cursor, (uint32_t)clamp((int32_t)was + steps, 1, NSTEP));
             fm1_irq_on();
             if (steps > 0 && n == was)
-                ui_message(ui.cursor + n < (uint32_t)clamp(TSEL->p[P_SLEN], 1, NSTEP) ? "NOTE AHEAD" : "END OF PATTERN");
-            break;
+                ui_message(ui.cursor + n < (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP) ? "NOTE AHEAD" : "END OF PATTERN");
         }
-        st->time = (uint8_t)clamp((int32_t)st->time + (steps > 0 ? 1 : -1), ST_NOTE, ST_REST);
         break;
-    default: {                                            /* FLAG: - / ACC / SLD / A+S */
-        uint32_t f = (st->flags & SF_ACCENT ? 1u : 0u) | (st->flags & SF_SLIDE ? 2u : 0u);
-        f = (uint32_t)clamp((int32_t)f + (steps > 0 ? 1 : -1), 0, 3);
-        st->flags = (uint8_t)((st->flags & ~(SF_ACCENT | SF_SLIDE)) | (f & 1u ? SF_ACCENT : 0u) | (f & 2u ? SF_SLIDE : 0u));
+    default:                                              /* FORCE: GHOST SOFT NORM HARD, ACC (the step's accent) */
+        if (step_on(st)) {
+            note_mark();
+            note_force_set(st, k, (uint32_t)clamp((int32_t)note_force(st, k) + (steps > 0 ? 1 : -1), 0, 4));
+        }
         break;
-    }
     }
 }
 
@@ -393,7 +481,7 @@ UI_SMALL static void project_new(void)
     drum_mute = 0;                                      /* (2.6: the live mutes) */
     for (i = 0; i < G_COUNT; i++)
         if (i != G_SLOT && i != G_DRCH && i != G_SYNC && i != G_MIDI && i != G_ROUTE && (i < G_CH1 || i > G_CHOTH) &&
-            i != G_BEND && i != G_FXCH && i != G_DRMAP && i != G_RMCH && i != G_CLKOUT)                                                                                   /* (the
+            i != G_BEND && i != G_FXCH && i != G_DRMAP && i != G_RMCH && i != G_CLKOUT && i != G_FXFADE)                                                                     /* (the
                                                                  * FM-1's settings: GLO > MIDI 2.6) */
             song.g[i] = GP[i].def;
     song.solo = 0;
@@ -586,7 +674,7 @@ UI_SMALL static void midi_entry(void)                              /* (top of ui
             undo_mark(t, (undo_sess += 4u) | 3u);
             st->n = 0;
             st->lvl = st->rat = 0;
-            st->flags &= (uint8_t)~SF_CONT_ALL;      /* (2.7: step entry: the step's own notes only) */
+            st->flags &= (uint8_t)~(SF_CONT_ALL | SF_LEG);   /* (2.7: step entry: the step's own notes only) */
             st->time = ST_NOTE;
         }
         if (t->p[P_VOICE]) {
@@ -623,7 +711,7 @@ UI_SMALL static void seq_entry(uint32_t pressed)
             undo_mark(t, (undo_sess += 4u) | 3u);
             st->n = 0;
             st->lvl = st->rat = 0;
-            st->flags &= (uint8_t)~SF_CONT_ALL;      /* (2.7: step entry: the step's own notes only) */
+            st->flags &= (uint8_t)~(SF_CONT_ALL | SF_LEG);   /* (2.7: step entry: the step's own notes only) */
             st->time = ST_NOTE;
         }
         if (t->p[P_CHORD] && !t->p[P_VOICE]) {            /* chord mode (2.4.1): the chord as it sounded (CHORD+,
@@ -646,8 +734,13 @@ UI_SMALL static void seq_entry(uint32_t pressed)
         }
         last_note = (uint8_t)note;
     }
-    if (ui.entry_open && !fm1_in.notes && !midi_held())
-        cursor_set(ui.cursor + 1);
+    if (ui.entry_open && !fm1_in.notes && !midi_held()) {
+        if (step_adv_off)
+            ui.entry_open = 0;                            /* (2.7.1) STEP ADVANCE OFF: the cursor stays, the next keys
+                                                           * write the step again (a chord tried again) */
+        else
+            cursor_set(ui.cursor + 1);
+    }
 }
 
 /* HOME: tap on release, hold 0.7 s fires once. t0 = press time | 1,
@@ -684,15 +777,20 @@ UI_SMALL static void layer_tap(uint32_t layer)
             ui.force = 1;
             break;
         }
-        if (!ui.home && cur_page()->scope == SC_TRK && is_drum(TSEL)) {
-            studio_open(SC_DRUM);
+        if (is_drum(TSEL) && (layer == LY_STEP || (!ui.home && cur_page()->scope == SC_TRK))) {
+            studio_open(SC_DRUM);                         /* (2.7.1: SEQ from any page, ARP's too: up to 2.7 there it
+                                                           * opened the synths' STEP page, not the drum grid) */
             break;
         }
-        if (layer == LY_ERASE && song.seq_mode && cur_page()->scope == SC_STEP && !is_drum(TSEL)) {
-            undo_mark(TSEL, (undo_sess += 4u) | 3u);      /* STEP page: EDIT clears the step */
-            step_clear(&TSEL->step[ui.cursor]);
-            cursor_set(ui.cursor + 1);
-            ui_message("STEP CLEARED");
+        if (layer == LY_ERASE && on_notes_page()) {     /* NOTES (2.7.2): EDIT deletes the note (a chord's others stay) */
+            undo_mark(TSEL, (undo_sess += 4u) | 3u);
+            if (!step_on(&TSEL->step[ui.cursor]))
+                ui_message("NO NOTE");
+            else {
+                note_del(TSEL, ui.cursor, ui.note_k);
+                cursor_fix();
+                ui_message("NOTE DELETED");
+            }
             break;
         }
         open_family(layer == LY_STEP ? FAM_SEQ : FAM_EDIT);
@@ -1027,6 +1125,8 @@ UI_SMALL static void ui_input(void)
             menu_input(pressed);
         return;
     }
+    if (!on_notes_page() && !on_drum_page())
+        ui.sheet = 0;                                   /* (2.7.2: the sheet is the NOTES page's and the grid's) */
     layered = layers_input(notes, &pressed, home);
     if (home_eat && !((fm1_in.buttons >> panel.btn[B_HOME]) & 1u)) {   /* (the HOME that unlocked: let go) */
         if (home == BT_TAP)
@@ -1083,6 +1183,22 @@ UI_SMALL static void ui_input(void)
         }
     }
     cursor_fix();                                       /* LEN may have changed (knob, editor, load) */
+    if (on_notes_page()) {                              /* (2.7.2) OCT+ held: the note's sheet; tapped: as before */
+        uint32_t ev, ob = 1u << panel.btn[B_OCTDN];
+        pressed = octp_filter(pressed, &ev);
+        if (ev == 2u && !ui.sheet)
+            ui.sheet = 1;
+        else if (ev == 1u && ui.sheet)
+            note_sheet_do();
+        else if (ev == 1u)
+            pressed |= 1u << panel.btn[B_OCTUP];
+        if (ui.sheet && (pressed & ob)) {
+            ui.sheet = 0;
+            pressed &= ~ob;
+        }
+        if (ev)
+            ui.force = 1;
+    }
     for (id = 0; id < 14u; id++) {
         if (!((pressed >> id) & 1u))
             continue;
@@ -1119,9 +1235,13 @@ UI_SMALL static void ui_input(void)
             break;
         }
     }
-    if (song.seq_mode && cur_page()->scope == SC_STEP)
+    if (song.seq_mode && cur_page()->scope == SC_STEP && !ui.sheet)
         seq_entry(notes);                                 /* (and the MIDI keyboard's: midi_entry) */
 
+    if (on_notes_page() && (s = panel_enc(EN_PRESET)) != 0) {   /* (2.7.2) NOTES: PRESETS zooms, 8 .. 64 steps */
+        ui.zoom = (uint8_t)(clamp((int32_t)(int8_t)ui.zoom + (s > 0 ? 1 : -1), -1, 2));
+        ui.force = 1;
+    }
     if ((s = panel_enc(EN_PRESET)) != 0 && (ui.home || cur_page()->graph == GR_BROWSE || cur_fam() == FAM_TRK)) {
         /* PRESETS browses the selected part's presets (all engines, then user presets) on HOME, the PRESETS
          * page and TRACKS only (the drum track: its kits); elsewhere a stray turn would throw away the sound

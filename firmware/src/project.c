@@ -39,8 +39,9 @@
 #define PROJ_NG 32u                            /* the globals of formats 4 and 5 (G_COUNT until 2.4). SLOOP 2.5's
                                                 * G_DRDLY rides in the byte after sel (0 in older projects: off),
                                                 * so the format and its size do not change */
-_Static_assert(G_DRDLY == PROJ_NG && G_TXSRC == PROJ_NG + 5u && G_COUNT == G_CLKOUT + 1u,
+_Static_assert(G_DRDLY == PROJ_NG && G_TXSRC == PROJ_NG + 5u,
                "the globals a project holds, then G_DRDLY (then 2.6's GLO > MIDI: settings of the FM-1)");
+_Static_assert(G_FXFADE == G_CLKOUT + 1u && G_COUNT == G_FXFADE + 1u, "G_FXFADE (2.7.2) is the last global, a setting of the FM-1");
 #define PROJ_NC6 ((uint32_t)P_ITYPE)           /* format 6: the parameters kept in 16 bits, P_LEVEL .. P_VLEAD (as 5), */
 #define PROJ_NX6 ((uint32_t)(P_E0 - P_ITYPE))  /* the 2.6 ones in a byte (0..127), then P_E0 .. P_E7 */
 _Static_assert(PROJ_NC6 == PROJ_NP_V5 - 8u && PROJ_NX6 == 10u, "format 6: format 5's parameters, then ten bytes");
@@ -637,6 +638,8 @@ UI_SMALL static void project_apply(const project_t *p)
     transport_req = 2;
     panic_req = (1u << NTRK) - 1u;
     drum_mute = 0;                                      /* (the live mutes: a performance's, not the project's) */
+    for (k = 0; k < NTRK; k++)
+        ex_off[k] = 0;                                  /* (2.7.1) MIDI EXPRESSION: full again, as after CC 121 */
     fm1_irq_off();                                      /* the audio ISR must not see half a project */
     proj_apply(p, 1);
     song.sel = (uint8_t)(p->sel < NTRK ? p->sel : 0u);
@@ -868,11 +871,14 @@ UI_SMALL static void midi_part_fill(uint8_t *b)
     for (k = 0; k < ML_N; k++)
         b[2u * k] = (uint8_t)ml_tab[k], b[2u * k + 1u] = (uint8_t)(ml_tab[k] >> 8);
     b[2u * ML_N] = midi_set[0], b[2u * ML_N + 1u] = midi_set[1], b[2u * ML_N + 2u] = midi_set[2];
-    b[2u * ML_N + 3u] = (uint8_t)(midi_set[3] | midi_set[4] << 7);
-    b[2u * ML_N + 4u] = midi_set[5];
+    b[2u * ML_N + 3u] = (uint8_t)(midi_set[3] | (drum_preview != 0u) << 5 | (step_adv_off != 0u) << 6 | midi_set[4] << 7);
+                                                    /* (2.7.1: bit 5 DRUM PREVIEW, bit 6 STEP ADVANCE OFF: bits 2.7 does not read) */
+    b[2u * ML_N + 4u] = (uint8_t)(midi_set[5] | (fxfade > 15u ? 15u : fxfade) << 4);   /* BEND (bits 0-3); 2.7.2: FX FADE bits 4-7 (0 = none: the byte reads as 2.6's BEND) */
     b[2u * ML_N + 5u] = midi_set[6];                /* (2.7) GLO > MIDI 3: FX CH (2.6 read this spare byte as nothing) */
-    b[2u * ML_N + 6u] = (uint8_t)(midi_set[7] | midi_set[9] << 1);   /* (2.7) GLO > MIDI 3: DR MAP, bit 1 CLK OUT (a spare
-                                                                      * byte to 2.6) */
+    b[2u * ML_N + 6u] = (uint8_t)(midi_set[7] | midi_set[9] << 1 |
+                                  (flt_reso > 10u ? 10u : flt_reso) << 2);   /* (2.7) GLO > MIDI 3: DR MAP, bit 1 CLK OUT
+                                                                      * (a spare byte to 2.6); 2.7.2: FILTER RESO in bits
+                                                                      * 2..5 (0 = none: the byte then reads as 2.7's) */
     b[2u * ML_N + 7u] = midi_set[8];                /* (2.7) GLO > MIDI 3: REMOTE (the last spare byte) */
 }
 UI_SMALL static int midi_part_default(const uint8_t *b)
@@ -901,16 +907,23 @@ UI_SMALL static void midi_part_read(const uint8_t *b, uint32_t n)
             midi_set[k] = (uint8_t)(b[2u * ML_N + k] <= 16u ? b[2u * ML_N + k] : k + 1u);
         midi_set[3] = (uint8_t)((b[2u * ML_N + 3u] & 31u) <= 16u ? b[2u * ML_N + 3u] & 31u : 10u);
         midi_set[4] = (uint8_t)(b[2u * ML_N + 3u] >> 7);
+        drum_preview = (uint8_t)((b[2u * ML_N + 3u] >> 5) & 1u);   /* (2.7.1) menu DRUM PREVIEW; older: OFF */
+        step_adv_off = (uint8_t)((b[2u * ML_N + 3u] >> 6) & 1u);   /* (2.7.1) menu STEP ADVANCE; older: ON */
         song.g[G_CH1] = midi_set[0], song.g[G_CH2] = midi_set[1], song.g[G_CH3] = midi_set[2];
         song.g[G_DRCH] = midi_set[3], song.g[G_CHOTH] = midi_set[4];
     }
     if (n >= MIDI_PART) {
-        midi_set[5] = (uint8_t)(b[2u * ML_N + 4u] >= 1u && b[2u * ML_N + 4u] <= 12u ? b[2u * ML_N + 4u] : 2u);
+        midi_set[5] = (uint8_t)((b[2u * ML_N + 4u] & 15u) >= 1u && (b[2u * ML_N + 4u] & 15u) <= 12u ? b[2u * ML_N + 4u] & 15u : 2u);
         song.g[G_BEND] = midi_set[5];
+        fxfade = (uint8_t)((b[2u * ML_N + 4u] >> 4) & 15u);         /* (2.7.2) FX FADE (bits 4-7); older: 0 */
+        song.g[G_FXFADE] = fxfade;
         midi_set[6] = (uint8_t)(b[2u * ML_N + 5u] <= 16u ? b[2u * ML_N + 5u] : 0u);   /* (2.7) FX CH */
         song.g[G_FXCH] = midi_set[6];
-        midi_set[7] = (uint8_t)(b[2u * ML_N + 6u] <= 3u ? b[2u * ML_N + 6u] & 1u : 0u);   /* (2.7) DR MAP */
-        midi_set[9] = (uint8_t)(b[2u * ML_N + 6u] <= 3u ? b[2u * ML_N + 6u] >> 1 : 0u);   /* (2.7) CLK OUT */
+        midi_set[7] = (uint8_t)(b[2u * ML_N + 6u] & 1u);             /* (2.7) DR MAP */
+        midi_set[9] = (uint8_t)((b[2u * ML_N + 6u] >> 1) & 1u);      /* (2.7) CLK OUT */
+        flt_reso = (uint8_t)((b[2u * ML_N + 6u] >> 2) & 15u);        /* (2.7.2) FILTER RESO (bits 2..5); older: 0 */
+        if (flt_reso > 10u)
+            flt_reso = 10u;
         song.g[G_DRMAP] = midi_set[7];
         song.g[G_CLKOUT] = midi_set[9];
         midi_set[8] = (uint8_t)(b[2u * ML_N + 7u] <= 16u ? b[2u * ML_N + 7u] : 0u);   /* (2.7) REMOTE */
@@ -1172,6 +1185,10 @@ UI_SMALL static void sections_flush(void)                        /* main loop */
                 midi_set[k] = (uint8_t)song.g[gid[k]];
                 settings_later = 1;
             }
+        if ((uint32_t)song.g[G_FXFADE] != fxfade) {   /* (2.7.2) GLO > MASTER 2 > FADE: a setting of the FM-1 */
+            fxfade = (uint8_t)song.g[G_FXFADE];
+            settings_later = 1;
+        }
     }
     if (settings_later) {                               /* the menu closed while playing */
         settings_later = 0;

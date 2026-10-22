@@ -77,6 +77,7 @@ static void test_descriptors(void)
     check(RATES == 0 ? "bcdDevice bumped for the audio input at 44.1 / 48 kHz (x.2x)" :
           RATES == 1 ? "bcdDevice of the audio input at 44.1 only (x.1x, as 2.4)" : "bcdDevice of 48 kHz only (x.3x)",
           (dv[12] & 0xF0u) == (RATES == 0 ? 0x20u : RATES == 1 ? 0x10u : 0x30u) && dv[13] == 3);
+    check("bcdDevice +0.08: the AC collection's order of 2.7.2 (the audio streaming interface first)", (dv[12] & 0x0Eu) == 0x08u);
     check(CDC_SHOWN ? "device class misc / IAD (EF 02 01)" : "device class 0 (per interface)",
           CDC_SHOWN ? dv[4] == 0xEF && dv[5] == 2 && dv[6] == 1 : dv[4] == 0);
     check("configuration: type 2, wTotalLength = the bytes sent", c[1] == 2 && total == n);
@@ -166,7 +167,8 @@ static void test_descriptors(void)
     }
     if (cur_if >= 0 && got_eps != cur_neps)
         eps_ok = 0;
-    coll_ok = ncoll == 2;
+    coll_ok = ncoll == 2 && if_sub[coll[0]] == 2 && if_sub[coll[1]] == 3;   /* (2.7.2: audio streaming first, for
+                                                       * macOS up to 15; usb.c, the AC header) */
     for (i = 0; i < ncoll && i < sizeof coll; i++)
         if (coll[i] >= 16 || if_class[coll[i]] != 1 || (if_sub[coll[i]] != 2 && if_sub[coll[i]] != 3))
             coll_ok = 0;

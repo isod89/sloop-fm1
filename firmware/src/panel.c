@@ -87,6 +87,8 @@ static uint8_t lights_min;                     /* GLO > SYSTEM > IN (G_ROUTE): 0
 #define MIDI_SET_DEF {1, 2, 3, 10, 0, 2, 0, 0, 0, 0}   /* CH1 CH2 CH3, drums, OTHER, (2.6) BEND, (2.7) FX CH, DR MAP, REMOTE,
                                                      * CLK OUT */
 static uint8_t midi_set[10] = MIDI_SET_DEF;
+static uint8_t fxfade;                          /* (2.7.2) FX layer SELECT (FX held): the punch-in FX fade, 0..15 (punch.c);
+                                                 * a setting of the FM-1, mirrored in song.g[G_FXFADE], kept in BEND's byte */
 static const uint16_t LIGHTS_NS[LIGHTS_N] = {0u, 500u, 1000u, 2000u};   /* the backlight pulse a frame (ns): a lit
                                                 * LED ~95 us, the glow (landmarks) 4 us (fm1_input.h) */
 static uint8_t usb_serial;                      /* menu USB SERIAL: 1 = the serial console presented (usb.c) */
@@ -95,6 +97,10 @@ static uint8_t cpu1_off;                        /* menu 2ND CORE: 1 = OFF, every
                                                  * 2.7: ON by default (bit 26 set = OFF); core 1 starts at power-on only when ON */
 static uint8_t vis_style;                       /* the visualiser's style, 0..11 (ui_vis.c) */
 static uint8_t knob_accel_off;                  /* menu KNOB ACCEL (2.7): 1 = OFF, one value a detent however fast (ui_input.c accel) */
+static uint8_t step_adv_off;                    /* menu SEQ > STEP ADVANCE (2.7.1): 1 = OFF, the STEP page's cursor stays where it
+                                                 * is when the keys are let go (KNOB 1 moves it); kept in the MIDI part */
+static uint8_t drum_preview;                    /* menu DRUM PREVIEW (2.7.1): 1 = ON, a drum sound picked with a knob is heard; OFF (the
+                                                 * default): silent, for live (ui_studio.c). Kept in the MIDI part (project.c) */
 UI_SMALL static uint32_t lights_word(void)
 {
     return (uint32_t)lights_lvl | (uint32_t)lights_keys << 4 | (uint32_t)(lights_notes != 0u) << 8 |

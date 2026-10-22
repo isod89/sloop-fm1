@@ -181,6 +181,22 @@ UI_SMALL static const param_desc_t *up_desc(uint32_t e, uint32_t i)
     return i >= P_E0 ? &ENGINES[e]->edit[i - P_E0] : &TP[i];
 }
 
+UI_SMALL static int up_arp_of(uint32_t k, int16_t *a)   /* (2.7.1) its arp, MODE … ORDER, as up_values: 1 = no preset */
+{
+    const up_rec_t *r;
+    uint32_t i, nc;
+    if (!up_used(k))
+        return 1;
+    r = up_rec(k);
+    nc = r->np - 8u;
+    for (i = 0; i < 8u; i++) {
+        uint32_t id = P_AMODE + i;
+        const param_desc_t *d = up_desc(r->engine, id);
+        a[i] = (int16_t)clamp(id < nc ? r->p[id] : d->def, d->min, d->max);
+    }
+    return 0;
+}
+
 UI_SMALL static void up_values(const up_rec_t *r, int16_t *v)   /* mapped and clamped for its engine */
 {
     int16_t def[P_COUNT];
@@ -278,19 +294,21 @@ UI_SMALL static int up_load_to(track_t *t, uint32_t k)       /* user preset k in
     const up_rec_t *r;
     int16_t v[P_COUNT];
     uint32_t i;
+    int keep_arp;
     if (!up_used(k) || is_drum(t))
         return 1;
+    keep_arp = t->p[P_AMODE] && !arp_is_sounds(t);     /* (2.7.1: not the arp the old sound brought) */
     r = up_rec(k);
     up_values(r, v);
     for (i = 0; i < P_COUNT; i++)                       /* (LEN etc. of a kept pattern changed too, and */
-        if (param_kept(i) || (t->p[P_AMODE] && i >= P_AMODE && i <= P_AORDER) ||   /* a preset pattern then counted as */
+        if (param_kept(i) || (keep_arp && i >= P_AMODE && i <= P_AORDER) ||   /* a preset pattern then counted as */
             (i == P_AHOLD && !t->p[P_AMODE] && t->p[P_AHOLD]))   /* (2.7: KBD HOLD stays on) */
             v[i] = t->p[i];                             /* edited; 2.7: the arp that runs goes on, ui.c apply_preset_to) */
     if (!v[P_AMODE] && !t->p[P_AMODE])
         v[P_AHOLD] = t->p[P_AHOLD];                     /* (2.7) KBD HOLD (HOLD with the arp OFF) is the track's, not the
                                                          * preset's: as it was (a 2.6 preset's HOLD meant nothing there) */
     sound_change(t);                                    /* (2.6: what sounds fades out with the old sound, no click) */
-    if (t->p[P_AMODE])
+    if (keep_arp)
         arp_keep_req |= (uint8_t)(1u << trk_index(t));  /* (2.7: its notes too) */
     panic_req |= (uint8_t)(1u << trk_index(t));
     fm1_irq_off();                                      /* the audio ISR must not see half a sound */

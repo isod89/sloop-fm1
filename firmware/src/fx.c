@@ -117,6 +117,8 @@ static void lim_block(lim_t *s, int32_t *l, int32_t *r, uint32_t n)
     s->w = w;
 }
 static volatile uint8_t fx_lowcut;     /* settings: 12 dB/oct ~110 Hz for the small speaker */
+static uint8_t flt_reso;               /* (2.7.2) menu AUDIO > FILTER RESO: 0..10, the track filter's resonance (fx.c
+                                        * tflt_reso); 0 = the clean filter as before. One setting for every track's filter */
 static int32_t lc_l1, lc_l2, lc_r1, lc_r2, dc_l, dc_r, dce_l, dce_r;
 
 /* DC blocker (~2 Hz), always on: a leaky integrator of the input (Q6 state) subtracted from it.
@@ -364,8 +366,12 @@ typedef struct {
 } djf_t;
 static djf_t djf, tflt[NTRK];
 
-/* the knob v -> this block's coefficients in *c; 0 = bypassed (nothing to do) */
-static int djf_block(djf_t *f, int32_t v, tsvf_t *c)
+/* (2.7.2) the track filter's SVF resonance (tsvf_coef's reso) for the FILTER RESO setting: 40 (clean, as the filter
+ * always was) at 0, up to 110 at 10 (a strong but still stable peak; tflt_run leaves 4x headroom for it). The master
+ * DJ filter (G_FILT) and the tape TONE keep the fixed 40. */
+static int32_t tflt_reso(void) { return 40 + (int32_t)(flt_reso > 10u ? 10u : flt_reso) * 7; }
+/* the knob v -> this block's coefficients in *c; 0 = bypassed (nothing to do). reso: tsvf_coef's resonance */
+static int djf_block(djf_t *f, int32_t v, tsvf_t *c, int32_t reso)
 {
     int32_t to;
     if (v < 0 && f->mode >= 0) {                        /* (switching side: from open) */
@@ -387,7 +393,7 @@ static int djf_block(djf_t *f, int32_t v, tsvf_t *c)
         f->mode = 0;                                    /* fully open again: off */
         return 0;
     }
-    tsvf_coef(c, f->cut, 40);
+    tsvf_coef(c, f->cut, reso);
     return 1;
 }
 /* n samples of channel ch through the filter (x within +-140000) */
@@ -680,7 +686,7 @@ static void mix_part_run(track_t *t, uint32_t n, mixacc_t *mx, int32_t *b)
         return;
     }
     {
-        int32_t lvl = LEVEL_Q12[t->p[P_LEVEL] ? clamp(t->p[P_LEVEL] + t->p[P_ED_FX], 1, 127) : 0], pan = t->p[P_PAN];   /* (+ the sound's trim: 1/2 dB steps, as LEVEL's) */
+        int32_t lvl = expr_gain(LEVEL_Q12[t->p[P_LEVEL] ? clamp(t->p[P_LEVEL] + t->p[P_ED_FX], 1, 127) : 0], (uint32_t)(t - trk)), pan = t->p[P_PAN];   /* (+ the sound's trim: 1/2 dB steps, as LEVEL's) */
         int32_t gl = 4096 - (pan > 0 ? pan * 64 : 0), gr = 4096 + (pan < 0 ? pan * 64 : 0);
         int32_t c = t->p[P_CHOR] * 258, d = send_thr(t->p[P_DLY] * 258, thr_dly), r = send_thr(t->p[P_REV] * 258, thr_rev);
         int32_t pk = t->peak;
@@ -697,7 +703,7 @@ static void mix_part_run(track_t *t, uint32_t n, mixacc_t *mx, int32_t *b)
         {
             tsvf_t fc;                                  /* the track's FILTER (P_TFLT), after the SLICER */
             djf_t *f = &tflt[(uint32_t)(t - trk) % NTRK];
-            if (djf_block(f, t->p[P_TFLT], &fc))
+            if (djf_block(f, t->p[P_TFLT], &fc, tflt_reso()))
                 tflt_run(f, &fc, b, n, 0);
         }
         int32_t lvl0, dl, gl0, dgl, gr0, dgr;          /* (2.7) LEVEL (and a new sound's trim) and PAN glide (drums.c
@@ -791,7 +797,7 @@ static void dust_process(int32_t *l, int32_t *r, uint32_t n)
 static void djf_process(int32_t *l, int32_t *r, uint32_t n)
 {
     tsvf_t c;
-    if (!djf_block(&djf, song.g[G_FILT], &c))
+    if (!djf_block(&djf, song.g[G_FILT], &c, 40))
         return;
     djf_run(&djf, &c, l, n, 0);
     djf_run(&djf, &c, r, n, 1);
@@ -833,7 +839,7 @@ static void mix_drums(uint32_t n, mixacc_t *mx)
     int flt;
     drums.a0 = TDRUM->att;                              /* the drum track's mute / solo fade */
     drums.a1 = 32767 - gain_next(TDRUM);
-    flt = n <= CTL && djf_block(f, TDRUM->p[P_TFLT], &fc);   /* the drum track's FILTER */
+    flt = n <= CTL && djf_block(f, TDRUM->p[P_TFLT], &fc, tflt_reso());   /* the drum track's FILTER */
     if (flt || (n <= CTL && (TDRUM->p[P_ITYPE] | TDRUM->ins_run))) {   /* .. or its INSERT: left, right, the sends */
         int32_t *dl = drum_buf[0], *dr = drum_buf[1], *dv = drum_buf[2], *dd = drum_buf[3];
         for (i = 0; i < n; i++)
@@ -1148,7 +1154,7 @@ static void texture_mix(int32_t *l, int32_t *r, uint32_t n)
         tx.lpm[1] += ((((tr[i] * sc) >> 8) - tx.lpm[1]) >> 2) * (k0 >> 2) >> 11;
         tl[i] = tx.lpm[0], tr[i] = tx.lpm[1];
     }
-    if (djf_block(&tx.f, clamp(song.g[G_TXTONE], -64, 63), &fc)) {
+    if (djf_block(&tx.f, clamp(song.g[G_TXTONE], -64, 63), &fc, 40)) {
         djf_run(&tx.f, &fc, tl, n, 0);
         djf_run(&tx.f, &fc, tr, n, 1);
     }

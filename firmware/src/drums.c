@@ -356,7 +356,7 @@ static void drum_on(uint32_t note, uint32_t vel)
 static inline void drums_mix(int32_t *ml, int32_t *mr, int32_t *rev, int32_t *dly, int32_t *mono, uint32_t n)
 {
     uint32_t k, i;
-    int32_t lvl = song.g[G_DRLVL] * 200, send = send_thr(song.g[G_DRREV] * 258, thr_rev),
+    int32_t lvl = expr_gain(song.g[G_DRLVL] * 200, TRK_DRUM), send = send_thr(song.g[G_DRREV] * 258, thr_rev),
             dsend = send_thr(song.g[G_DRDLY] * 258, thr_dly), pk = drums.peak;   /* (2.6: the THROWs) */
     int32_t pan = trk[TRK_DRUM].p[P_PAN], gl = 4096 - (pan > 0 ? pan * 64 : 0), gr = 4096 + (pan < 0 ? pan * 64 : 0);
     if (!drums.gon)                                 /* (2.7) LEVEL and PAN glide, block by block (mix_glide) */

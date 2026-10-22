@@ -2964,6 +2964,7 @@ function makeMockDevice(opt = {}) {
     E("DR MAP", ["GM", "1-16"], 0),                  /* GLO > MIDI 3 (2.7): MIDI notes -> drum sounds */
     E("REMOTE", ["OFF", ...Array.from({ length: 16 }, (_, i) => String(i + 1))], 0),   /* GLO > MIDI 3 (2.7): the buttons */
     E("CLOCK", ["OFF", "OUT"], 0),                   /* GLO > MIDI 3 (2.7): MIDI clock, START / STOP out on USB */
+    D("FADE", F.INT, 0, 15, 0),                      /* GLO > MASTER 2 (2.7.2): the punch-in FX fade (punch.c) */
   ];
   /* the drum track's P_E0: its kit (drums.c DRUM_KIT_NAMES; 5 = 808, the power-on kit) */
   const KIT = E("KIT", ["ACOUSTIC", "DEEP", "TIGHT", "BRIGHT", "DUST", "808", "909", "606", "80S", "VINTAGE", "TRAP", "DRILL", "BOOMBAP", "LO-FI", "PHONK", "HOUSE", "D.HOUSE", "TECHNO", "MINIMAL", "ELECTRO", "DISCO", "GARAGE", "JUNGLE", "DUBSTEP", "DEMBOW", "AMAPIANO", "AFRO", "LATIN", "TRIBAL", "SYNTHWV", "CHIP", "ARCADE", "GLITCH", "INDUSTR", "HYPER", "AMBIENT", "JAZZ", "USR1", "USR2", "USR3", "USR4", "USR3+4", "SYN1", "SYN2", "SYN3", "SYN4"], 0);
@@ -5903,7 +5904,7 @@ const stepEdit = new Map(); /* index -> time of the last edit */
 
 /* parameter ids (firmware/src/core.h); used only when P_COUNT / G_COUNT match */
 /* pcount 71 / pe0 63: 2.6's INSERT, filter TYPE, ENV SYNC, LFO 2 (P_ITYPE 53 .. P_LPOL 62, after Felucca 1.4 / 1.5) */
-const EXPECT = { pcount: [61, 71], gcount: [32, 33, 45, 46, 47, 48, 49], pe0: [53, 63] };   /* gcount 33: 2.5's drum DLY (G_DRDLY); 45: 2.6's GLO > MIDI, TEXTURE, BEND; 46: 2.7's FX CH; 47: DR MAP; 48: REMOTE; 49: CLK OUT */
+const EXPECT = { pcount: [61, 71], gcount: [32, 33, 45, 46, 47, 48, 49, 50], pe0: [53, 63] };   /* gcount 33: 2.5's drum DLY (G_DRDLY); 45: 2.6's GLO > MIDI, TEXTURE, BEND; 46: 2.7's FX CH; 47: DR MAP; 48: REMOTE; 49: CLK OUT; 50: 2.7.2's FX FADE */
 const P = { LEVEL: 0, SLEN: 29, CHORD: 49 };
 const LAYOUT = (pe0) => {
   const v251 = pe0 >= 63;                         /* (2.6: the pages the device has for the new parameters) */

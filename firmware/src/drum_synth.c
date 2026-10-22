@@ -163,9 +163,18 @@ static void ds_on(dsv_t *s, const dsnd_t *snd, uint32_t crush, uint32_t note, ui
     s->fk = 8192 - (int32_t)(d->flt >> 3) * 245;        /* damping 2.0 .. ~0.15 (Q12), as tsvf_coef */
     /* softer hits are darker: about an octave from the hardest to a ghost note */
     s->cut = ((int32_t)d->fcut << 8) + ((int32_t)vel - 110) * 40;
+    s->ahp = d->hpf ? ds_onepole(d->hpf) : 0;
+    if (!d->wave && tune16) {                           /* (2.7.2) a tone-less sound (closed hat, shaker, clap): TUNE
+                                                         * shifts its brightness too, so it reacts like resampling a
+                                                         * sample kit (~1.168 CUTOFF_HZ steps a semitone). The tonal
+                                                         * sounds and the metal cymbals already track TUNE via base16. */
+        int32_t co8 = tune16 * 1197 / 64;               /* the TUNE as a CUTOFF_HZ index offset, Q8 */
+        s->cut += co8;
+        if (d->hpf)
+            s->ahp = ds_onepole((uint32_t)clamp((int32_t)d->hpf + co8 / 256, 1, 127));
+    }
     if (s->fmode & 3u)
         ds_filter(s);
-    s->ahp = d->hpf ? ds_onepole(d->hpf) : 0;
     s->rnd = (int32_t)(0x9E3779B9u ^ (note * 2654435761u) ^ rng());
     s->lfsr = 0x4001u;
     {   /* CHIP clock: 8x that note; saturated (the top notes would wrap 32 bits: a dull noise) */

@@ -1,14 +1,31 @@
 <p align="center"><img src="assets/logo/sloop-logo.png" alt="SLOOP" width="480"></p>
 
-# SLOOP 2.7
+# SLOOP 2.8
 
 **A live groovebox firmware for the M-VAVE FM-1 — for any style.** Four tracks — three synths and a drum machine with 16 sounds on the white keys — twelve synthesis engines (six-operator FM with DX7 patches, and now physical models and noise), 153 sounds, 37 drum kits (808, 909, trap, phonk, house, techno, UK garage, jungle, amapiano, reggaeton, synthwave, chiptune, ambient, jazz…), your own samples, ghost notes and ratchets, parameter locks, micro timing and fills, note repeat, one-key chords, 27 punch-in effects, a vinyl / sidechain / DJ-filter master, and a teenage-engineering-style screen that always shows what your hands can do next. No factory patterns, nothing to load: everything you hear, you play.
 
 SLOOP is free and open source (GPL-3.0), based on [Felucca](https://github.com/hugelton/Felucca) by Leo Kuroshita / Hügelton Instruments.
 
-> **Status:** 2.7, running on the FM-1. Still a beta: install at your own risk, and please report what you find (GitHub issues).
+> **Status:** 2.8, running on the FM-1. Still a beta: install at your own risk, and please report what you find (GitHub issues).
 
 > **Looking for one control?** [GUIDE.md](GUIDE.md) is the complete guide: every button, key combination, layer, page and editor page, with a [one-page cheat sheet](GUIDE.md#26-cheat-sheet).
+
+### New in 2.8
+
+3,000 of you now follow SLOOP — thank you. 2.8 is a deeper way to write and shape your music, and most of it comes from your comments and reports.
+
+- **A NOTES editor: a piano roll for the synth tracks.** SEQ → **NOTES**: write and edit notes step by step. KNOB 1 picks the notes (a chord's notes one at a time), KNOB 2 the pitch, KNOB 3 the length, KNOB 4 the force; PRESETS zooms, EDIT deletes. Hold **OCT+** on a step for its sheet: SLIDE, NUDGE, FILL, MOVE, COPY, DELETE. Thanks to everyone who asked for it.
+- **The same per-step sheet on the DRUMS grid.** Hold **OCT+** on a drum step for RATCHET, NUDGE, FILL, MOVE, COPY, DELETE — the groove, shaped step by step, without leaving the grid.
+- **The playing section on screen.** The TRACKS screen now shows which section — **A to D** — is playing, in its own colour, so you always know where you are in the song.
+- **Filter resonance.** The per-track filter gains a **RESO** control, 0 (clean, as before) to 10 (AUDIO → **FILTER RESO**): from a gentle tilt to a singing, squelchy sweep.
+- **The FX filter on the drum track too.** The FX → **FILTER** page now works on drums: sweep and shape the whole kit, live, like any synth track.
+- **Drum TUNE on the noise sounds.** **TUNE** now shapes the brightness of the tone-less sounds (closed hats, shakers, claps) on the synthesised kits, not only the pitched ones.
+- **A smoother punch-in.** A settable fade-in and out for the 27 punch-in effects, from instant to about a third of a second: hold **FX**, then **SELECT**. The old extra MASTER 2 page is gone.
+- **MIDI Bank Select (CC 0).** Reach every preset past the 128 Program Change range — the rest of the factory sounds, then your own user presets by slot — from a controller or a DAW.
+
+**Fixed.** **USB RESCUE** (hold **OCT-** at power-on) now opens reliably — the key matrix is powered before the early scan. The browser installer finds the FM-1's update loader **by its handshake** instead of its port name, so a loader that Windows renames to a generic MIDI port is still found, and the old MIDI ports are closed properly. The external **MIDI clock** reads steadier (the tempo is the average of the last beats). The SONG sections take the current theme's colours. The in-browser **return-to-stock** option was removed because it is not reliable on every system — use M-VAVE's own updater **M-UPGRADE** to go back to the official firmware.
+
+Projects, autosaves and backups from 2.7 load as they are, and a project saved in 2.8 opens in 2.7 too (no format change). The USB-RESCUE fix is in the firmware, so it only helps once 2.8 is installed.
 
 ### New in 2.7
 

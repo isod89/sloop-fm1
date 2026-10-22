@@ -234,9 +234,34 @@ static void punch_new_fx(void)
     printf("black keys: KILL LOW / MID / HIGH, REWIND, OCT UP, FLANGER, AUTO-PAN, FREEZE, LOOP 8T, MONO, FADE OUT do what they say PASS\n");
 }
 
+/* (2.7.2) GLO > MASTER 2 > FADE: the wet gain ramps in / out faster or slower. The blocks to reach full wet when an
+ * effect is engaged: 0 is ~2 (the old anti-click fade), 15 is much slower (punch.c pstep) */
+static uint32_t fade_blocks(int32_t fxfade)
+{
+    int32_t l[CTL], r[CTL];
+    uint32_t b, i;
+    beat_setup();
+    song.playing = 1;
+    song.g[G_FXFADE] = fxfade;
+    punch.req = PX_LPF;                               /* engage a filter: target full */
+    for (b = 0; b < 3000u; b++) {
+        for (i = 0; i < CTL; i++) l[i] = r[i] = 8000;
+        punch_process(l, r, CTL);
+        if (punch.g >= 32767) break;
+    }
+    punch.req = -1;
+    song.g[G_FXFADE] = 0;
+    return b;
+}
+
 int main(int argc, char **argv)
 {
     setvbuf(stdout, 0, _IONBF, 0);
+    {
+        uint32_t f0 = fade_blocks(0), f15 = fade_blocks(15);
+        printf("punch: FX FADE: blocks to full wet, fade 0 = %u, fade 15 = %u\n", f0, f15);
+        assert(f0 <= 3u && f15 > 40u * f0 && f15 < 3000u);   /* (2.7.2) a higher FADE ramps in much slower */
+    }
     uint32_t fx, i, b, on = FS / CTL, off = on + FS / 2u / CTL;   /* held from 1 s to 1.5 s */
     FILE *f = argc > 1 ? fopen(argv[1], "wb") : 0;
     for (fx = 0; fx < PUNCH_NFX; fx++) {

@@ -80,17 +80,8 @@
   <p class="small" data-t="beta"></p>
   <p class="small"><span data-t="brick"></span>
     <a href="https://github.com/kurogedelic/FM-1-transporter" target="_blank" rel="noopener">FM-1-transporter</a></p>
-  <details>
-    <summary data-t="stockTitle"></summary>
-    <p class="small" data-t="stockHelp"></p>
-    <p class="small"><a href="https://www.m-vave.com/download" target="_blank" rel="noopener">www.m-vave.com/download</a></p>
-    <p class="small" data-t="stockBackup"></p>
-    <p><a class="ed" href="../editor/" data-t="stockEditor"></a></p>
-    <p class="small"><label><input id="stock-saved" type="checkbox"> <span data-t="stockSaved"></span></label></p>
-    <p class="small"><label><span data-t="stockFile"></span><br><input id="stock-file" type="file" accept=".fwsc"></label></p>
-    <p><button id="stock-go" disabled data-t="stockGo"></button></p>
-    <p class="small" data-t="back"></p>
-  </details>
+  <p class="small" data-t="back"></p>
+  <p class="small"><a href="https://www.m-vave.com/download" target="_blank" rel="noopener">www.m-vave.com/download</a></p>
   <p class="small">SLOOP is based on Felucca by Leo Kuroshita (@kurogedelic), <a href="https://hugelton.com" target="_blank" rel="noopener">Hügelton Instruments</a>.
     Hold OCT− alone while switching on for USB rescue.<br>
     Font: Terminus (Dimitar Toshkov Zhekov, SIL OFL 1.1). Samples: Versilian Studios VSCO-2 Community Edition and VCSL (CC0 1.0), and the Hügelton Sample Pack (© Hügelton Instruments, not CC0).<br>
@@ -135,7 +126,7 @@ const TEXT = {
     stockValid: "公式 V15 を確認しました", stockBad: "公式 V15 ではありません: ",
     stockConfirm: "FM-1 に公式 V15 をインストールします。SLOOP の曲は公式ファームウェアでは開けません。バックアップは保存しましたか？",
     stockFinish: "FM-1 は SLOOP の書き込みモードです。先に「インストール」で SLOOP の書き込みを終えてから、公式 V15 に戻してください。",
-    back: "M-VAVE のアップデーター M-UPGRADE（Downloads → PC Software）でも戻せます。FM-1 が見つからない場合は、MIDI を使う他のアプリとブラウザのタブを閉じてください。",
+    back: "公式ファームウェアに戻すには、M-VAVE 公式のアップデーター M-UPGRADE（Downloads → PC Software → M-UPGRADE）と公式ファームウェアを使ってください。FM-1 が見つからない場合は、MIDI を使う他のアプリとブラウザのタブを閉じてください。",
   },
   en: {
     intro: "Connect the FM-1 by USB. (Works in Chrome or Edge.)",
@@ -171,7 +162,7 @@ const TEXT = {
     stockValid: "Official V15 verified", stockBad: "Not the official V15: ",
     stockConfirm: "Install the official V15 on the FM-1? The official firmware cannot open SLOOP's music. Did you save a backup?",
     stockFinish: "The FM-1 is in SLOOP's update mode. Press Install to finish the SLOOP update first, then return to the official V15.",
-    back: "M-VAVE's own updater, M-UPGRADE (Downloads → PC Software), works too. If it does not find the FM-1, close every other app and browser tab that uses MIDI.",
+    back: "To return to the official firmware, use M-VAVE's own updater, M-UPGRADE (Downloads → PC Software → M-UPGRADE), with the official firmware from M-VAVE. If it does not find the FM-1, close every other app and browser tab that uses MIDI.",
   },
 };
 let lang = (navigator.language || "en").toLowerCase().startsWith("ja") ? "ja" : "en";
@@ -207,12 +198,10 @@ const log = (t) => { $("log").textContent += t + "\n"; };
 let image = null;
 const meta = /*META*/;
 
-let writing = false, stock = null;
+let writing = false;
 const lockAll = (on) => {
   writing = on;
   $("go").disabled = on || !image;
-  $("stock-go").disabled = on || !stock || !$("stock-saved").checked;
-  $("stock-file").disabled = on;
 };
 window.addEventListener("beforeunload", (e) => { if (writing) { e.preventDefault(); e.returnValue = t("leave"); } });
 
@@ -265,7 +254,7 @@ $("go").addEventListener("click", async () => {
   catch (e) { sayK("denied"); lockAll(false); return; }
   try {
     const up = new Updater(midi, log);
-    const ota = await up.find((id) => /^ota-/i.test(id.model));
+    const ota = await up.find((id) => /^ota-/i.test(id.model), true);
     if (ota) {
       ota.link.close();
       sayK((await up.resume(image, step)) ? "done" : "stopped");
@@ -276,37 +265,8 @@ $("go").addEventListener("click", async () => {
   lockAll(false);
 });
 
-/* back to the official V15 (after Felucca 1.0): only the exact official file, a backup first (the editor),
-   through the same update path as M-UPGRADE; a device left in the official updater's mode is finished */
-$("stock-saved").addEventListener("change", () => lockAll(writing));
-$("stock-file").addEventListener("change", async () => {
-  const f = $("stock-file").files[0];
-  stock = null;
-  lockAll(writing);
-  if (!f) return;
-  try { stock = await validateStockPackage(new Uint8Array(await f.arrayBuffer())); sayK("stockValid"); }
-  catch (e) { sayK("stockBad", e.message); }
-  lockAll(writing);
-});
-$("stock-go").addEventListener("click", async () => {
-  if (writing || !stock || !$("stock-saved").checked || !confirm(t("stockConfirm"))) return;
-  lockAll(true);
-  let midi;
-  try { midi = await navigator.requestMIDIAccess({ sysex: true }); }
-  catch (e) { sayK("denied"); lockAll(false); return; }
-  try {
-    const up = new Updater(midi, log);
-    const ota = await up.find((id) => /^ota-/i.test(id.model));
-    if (ota) {
-      ota.link.close();
-      if (OUR_LOADER(ota.id)) sayK("stockFinish");    /* SLOOP's loader: finish SLOOP first (Install) */
-      else sayK((await up.resume(stock.image, step, { product: stock.product })) ? "done" : "stopped");
-    } else {
-      await up.install(stock.image, stock.product, step);
-    }
-  } catch (e) { failed(e); }
-  lockAll(false);
-});
+/* Returning to the official firmware is done with M-VAVE's own updater (M-UPGRADE): the in-browser
+   revert was removed because it is not reliable on every system. The note under "stockTitle" points there. */
 </script>
 </body>
 </html>

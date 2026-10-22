@@ -38,9 +38,17 @@ static void recovery_step(void)
     }
 }
 
+/* (2.7.2) the key matrix reads only while PA2, the backlight (active low), is driven low: the ROM and the bootloaders
+ * leave it undriven, and lcd_init (fm1_lcd_hw_init) comes after this scan, so OCT- was never seen and SLOOP USB RESCUE
+ * never opened (measured on an FM-1 and reported in a YouTube comment; the fix there was the same). The backlight comes
+ * on ~50 ms earlier */
+#ifndef RECOVERY_KEYS_ON
+#define RECOVERY_KEYS_ON() fm1_lcd_backlight_on()   /* (2.7.2) the PA register access lives in hal/ (fm1_lcd_hw.h) */
+#endif
 static int recovery_key(void)
 {
     uint32_t start = fm1_ticks();
+    RECOVERY_KEYS_ON();
     fm1_input_init();
     do {
         fm1_wdt_feed();

@@ -6,7 +6,8 @@
  *   EDIT  erase that sound / note (seq.c)  knobs: SHIFT  LENGTH x2 / half  TRANSPOSE   OCT- undo  OCT+ redo
  *   ARP   note repeat (seq.c roll)         knobs: RATE
  *   SEQ   steps 1..16 of the page          knobs: SOUND / NOTE  DIV  SWING  LENGTH;  a step key held:
- *         (black keys 1..4: pages)                SOUND / NOTE  LEVEL  RATCHET  NUDGE, PRESETS the value of a
+ *         (black keys 1..4 or OCT- / OCT+: pages; SOUND / NOTE  LEVEL  RATCHET  NUDGE, PRESETS the value of a
+ *         2.7.1, the drum track: the black keys pick the sound, ui_studio.c drum_black_pick, OCT the pages)
  *                                                 parameter lock, ALGORITHM its parameter (the sound parameter
  *                                                 last touched first); OCT+ cycles the step's fill condition
  *                                                 (normal, fill only, no fill), OCT- clears its nudge, locks and
@@ -174,7 +175,7 @@ UI_SMALL static void pen_lane_move(int32_t s)
 {
     uint8_t l = (uint8_t)clamp(pen_lane + s, 0, DRUM_LANES - 1);
     if (l != pen_lane)
-        audition_lane(l);
+        drum_hear(l);                                   /* (2.7.1: menu DRUM PREVIEW ON only) */
     pen_lane = l;
 }
 /* KNOB 1..4 with step keys held: their sound / note (drums: the sound's lane; synth: every note), level,
@@ -340,7 +341,13 @@ UI_SMALL static void layer_key(uint32_t layer, uint32_t k, uint32_t down)
     }
     switch (layer) {
     case LY_STEP:
-        if (w < 0) {                                    /* the first four black keys: pages 1..4 */
+        if (w < 0 && is_drum(TSEL)) {                   /* (2.7.1) the drum track: a black key picks the sound, unheard */
+            int32_t b = drum_black_of(k);
+            if (b >= 0)
+                drum_black_pick((uint32_t)b);
+            return;
+        }
+        if (w < 0) {                                    /* the first four black keys: pages 1..4 (OCT- / OCT+ too) */
             static const int8_t PG[12] = {-1, 0, -1, 1, -1, 2, -1, -1, 3, -1, -1, -1};
             if (k < 12u && PG[k] >= 0 && (uint32_t)PG[k] * 16u < trk_len(TSEL))
                 ui.step_page = (uint8_t)PG[k];
@@ -560,6 +567,11 @@ UI_SMALL static void layer_knobs(uint32_t layer)
             break;
         }
     }
+    if (layer == LY_FX && (s = panel_enc(EN_SELECT)) != 0) {   /* (2.7.2) SELECT: the punch-in FX fade (GLO > ... ), not the
+                                                               * tempo while FX is held; shown top right (layer_screen_draw) */
+        song.g[G_FXFADE] = (int16_t)clamp(song.g[G_FXFADE] + s, 0, 15);
+        ui.layer_used = 1;
+    }
 }
 
 /* --------------------------------------------------------- drawing --- */
@@ -648,10 +660,12 @@ UI_SMALL static void punch_tiles_draw(const tile_t *tl, uint32_t *cache)
     }
 }
 
+static char hdr_r[12] = "";                              /* (2.7.2) a value shown top right of a layer's header (FX: the fade) */
 UI_SMALL static void layer_title(const char *name, const char *sub, uint16_t col, uint32_t *cache)
 {
     uint32_t locked = ly_lock != LY_PLAY;
-    uint32_t sig = studio_hash(studio_hash(col, name), sub) + (ui.msg_t ? studio_hash(3u, ui.msg) : 0u) + locked * 7919u;
+    uint32_t sig = studio_hash(studio_hash(col, name), sub) + (ui.msg_t ? studio_hash(3u, ui.msg) : 0u) + locked * 7919u +
+                   (locked ? 0u : studio_hash(104729u, hdr_r));
     if (!ui.force && sig == *cache)
         return;
     *cache = sig;
@@ -662,6 +676,8 @@ UI_SMALL static void layer_title(const char *name, const char *sub, uint16_t col
         int32_t w = (int32_t)text_w(&FONT_S, "LOCK") + 8;
         cv_rect(236 - w, 4, w, 15, C_WHITE);
         cv_text(240 - w, 4, &FONT_S, "LOCK", C_BLACK);
+    } else if (hdr_r[0]) {                                /* (2.7.2) a right-aligned readout (FX: the fade), like a knob's */
+        cv_text(236 - text_w(&FONT_S, hdr_r), 4, &FONT_S, hdr_r, TE_G3);
     }
     cv_rect(0, 38, 240, 1, TE_G1);
     cv_blit(0, 0);
@@ -693,6 +709,7 @@ UI_SMALL static void layer_screen_draw(void)
     }
     for (i = 0; i < 4u; i++)
         v[i][0] = 0;
+    hdr_r[0] = 0;                                        /* (2.7.2) no header readout unless a layer sets one (FX: the fade) */
     memset(tl, 0, sizeof tl);
     for (i = 0; i < 16u; i++) {
         tl[i].bg = TE_G1;
@@ -718,6 +735,8 @@ UI_SMALL static void layer_screen_draw(void)
             tl[i].top = on || black ? 0 : TE_DIM[i / 4u];
         }
         lab[0] = "filter", lab[1] = "dust", lab[2] = "duck", lab[3] = "trk flt";
+        str_cpy(hdr_r, "fade ", sizeof hdr_r);          /* (2.7.2) SELECT sets the fade; shown top right */
+        fmt_int(hdr_r + 5, song.g[G_FXFADE]);
         {
             const char *u;
             param_format(&GP[G_FILT], song.g[G_FILT], v[0], &u);
@@ -831,6 +850,10 @@ UI_SMALL static void layer_screen_draw(void)
             p[2] = (char)('0' + (len + 15u) / 16u);
             str_cpy(sub, "page ", sizeof sub);
             str_cpy(sub + 5, p, 4);
+            if (is_drum(t))
+                str_cpy(sub + 8, "  oct: page", sizeof sub - 8u);   /* (2.7.1: the black keys are the sounds) */
+        } else if (is_drum(t)) {
+            str_cpy(sub, "black keys: sound", sizeof sub);
         }
         lab[0] = is_drum(t) ? "sound" : "note";
         if (is_drum(t))

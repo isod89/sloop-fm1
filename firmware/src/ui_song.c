@@ -21,7 +21,7 @@ UI_SMALL static void song_screen_draw(void)
     song_sane();
     uint32_t i, start = song_cursor > 3u ? song_cursor - 3u : 0u;
     static uint32_t previous;
-    static const uint16_t SC[4] = {RGB(40, 124, 255), RGB(30, 204, 112), RGB(255, 198, 24), RGB(255, 98, 26)};
+    const uint16_t *SC = TE_COL;                    /* the tracks' colours (2.7.2: your theme's, when it is on) */
     uint32_t sig = song_cursor + 17u * arrangement_enabled + 37u * song.playing +
                    71u * arrangement_clock.index + 127u * arrangement_clock.bar +
                    257u * arrangement.count + 509u * song.g[G_BPM];

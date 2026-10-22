@@ -40,7 +40,9 @@ static int ota_session(void)
     return -13;  /* failed update must leave rescue available for another try */
 }
 static void fm1_input_init(void) { fm1_in.buttons = 0; }
-static void fm1_input_scan(void) { scans++; ticks += 24000u; fm1_in.buttons = input_buttons; }
+static unsigned keys_on, scans_before_on;
+#define RECOVERY_KEYS_ON() (keys_on++, scans_before_on += scans)   /* (2.7.2: PA2 driven low before the scan) */
+static void fm1_input_scan(void) { scans++; ticks += 24000u; fm1_in.buttons = keys_on ? input_buttons : 0u; }
 static uint32_t fl_jedec_ram(void) { jedec_reads++; return jedec; }
 static void lcd_init(void) { lcd_calls++; }
 static void lcd_fill(int x, int y, int w, int h, int c) { (void)x;(void)y;(void)w;(void)h;(void)c; }
@@ -67,6 +69,7 @@ int main(void)
     assert(bootguard_manual(1) && !bootguard_manual(0) && !bootguard_manual(2) && !bootguard_manual(3));
 
     input_buttons = 1; assert(recovery_key());
+    assert(keys_on == 1 && scans_before_on == 0);   /* (2.7.2) the matrix powered (PA2 low) before the first scan */
     input_buttons = 3; assert(!recovery_key());
     input_buttons = 0; assert(!recovery_key());
     assert(scans >= 150);

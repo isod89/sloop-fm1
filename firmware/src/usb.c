@@ -170,15 +170,16 @@ static void midi_out_event(uint32_t pkt)            /* from the audio ISR */
 
 /* ------------------------------------------------------- descriptors --- */
 /* interfaces: 0 audio control, 1 MIDI streaming, 2 audio streaming (FELUCCA_UAC), then CDC's two.
- * bcdDevice: 3.00 MIDI, +0.01 CDC, +0.10 the audio input, +0.20 more with 48 kHz (2.5) (hosts cache descriptors
- * per version) */
+ * bcdDevice: 3.00 MIDI, +0.01 CDC, +0.10 the audio input, +0.20 more with 48 kHz (2.5), +0.08 the audio
+ * streaming interface first in the AC collection (2.7.2, UAC_BCD_AS) (hosts cache descriptors per version) */
+#define UAC_BCD_AS (0x08 * FELUCCA_UAC)
 #define CDC_IF (2 + FELUCCA_UAC)
 #define UAC_AS_IF 2u
 #define CFG_LEN (101 + 74 * FELUCCA_CDC + 74 * FELUCCA_UAC + 3 * FELUCCA_UAC_48K)
 #define USB_NIF (2 + FELUCCA_UAC + 2 * FELUCCA_CDC)
 #if FELUCCA_CDC
 static const uint8_t DEV_DESC[18] = {18, 1, 0x00, 0x02, 0xEF, 0x02, 0x01, 64, 0x09, 0x12, 0x01, 0x00,
-                                     0x01 + 0x10 * (FELUCCA_UAC + FELUCCA_UAC_48K), 0x03, 1, 2, 0, 1};   /* misc/IAD */
+                                     0x01 + 0x10 * (FELUCCA_UAC + FELUCCA_UAC_48K) + UAC_BCD_AS, 0x03, 1, 2, 0, 1};   /* misc/IAD */
 static const uint8_t CFG_DESC[] = {
     9, 2, CFG_LEN & 0xFF, CFG_LEN >> 8, USB_NIF, 1, 0, 0x80, 50,
     8, 0x0B, 0, 2 + FELUCCA_UAC, 1, 1, 0, 0,            /* IAD: audio + MIDI (IF 0-1, 0-2) */
@@ -187,14 +188,20 @@ static const uint8_t CFG_DESC[] = {
 #define FELUCCA_USB_PID 0x0001   /* the update loader is 0x0002 */
 #endif
 static const uint8_t DEV_DESC[18] = {18, 1, 0x10, 0x01, 0, 0, 0, 64, 0x09, 0x12, FELUCCA_USB_PID & 0xFF,
-                                     FELUCCA_USB_PID >> 8, 0x00 + 0x10 * (FELUCCA_UAC + FELUCCA_UAC_48K), 0x03,
+                                     FELUCCA_USB_PID >> 8, 0x00 + 0x10 * (FELUCCA_UAC + FELUCCA_UAC_48K) + UAC_BCD_AS, 0x03,
                                      1, 2, 0, 1};
 static const uint8_t CFG_DESC[] = {
     9, 2, CFG_LEN & 0xFF, CFG_LEN >> 8, USB_NIF, 1, 0, 0x80, 50,
 #endif
     9, 4, 0, 0, 0, 1, 1, 0, 0,
 #if FELUCCA_UAC
-    10, 0x24, 1, 0x00, 0x01, 31, 0, 2, 1, UAC_AS_IF,    /* AC header 1.00: MIDI + audio streaming */
+    /* AC header 1.00, its collection: the audio streaming interface first, then the MIDI one (2.7.2, after
+     * Felucca 1.5.1, #67). macOS up to 15 (the kernel's AppleUSBAudio, parseConfigurationDescriptor) drops the
+     * MIDI streaming interface from the collection while it walks it with bInCollection's count: MIDI listed
+     * first, the walk runs past the shortened list and gives up before the audio streaming interface, and no
+     * audio input appears (MIDI still works). Listed last, MIDI is dropped at the end. The class spec gives the
+     * order no meaning (Windows, Linux, macOS 26 take each listed interface on its own) */
+    10, 0x24, 1, 0x00, 0x01, 31, 0, 2, UAC_AS_IF, 1,
     12, 0x24, 2, 1, 0x03, 0x06, 0, 2, 0x03, 0x00, 0, 0, /* input terminal 1: line, 2 ch (L R) */
     9, 0x24, 3, 2, 0x01, 0x01, 0, 1, 0,                 /* output terminal 2: USB streaming, from 1 */
 #else
@@ -246,7 +253,7 @@ typedef char cfg_len_ok[sizeof CFG_DESC == CFG_LEN ? 1 : -1];
  * are loaded first), so the host sees one device from the start */
 static uint8_t usb_cdc_on;
 static const uint8_t DEV_DESC_PLAIN[18] = {18, 1, 0x10, 0x01, 0, 0, 0, 64, 0x09, 0x12, 0x01, 0x00,
-                                           0x00 + 0x10 * (FELUCCA_UAC + FELUCCA_UAC_48K), 0x03, 1, 2, 0, 1};
+                                           0x00 + 0x10 * (FELUCCA_UAC + FELUCCA_UAC_48K) + UAC_BCD_AS, 0x03, 1, 2, 0, 1};
 #define CFG_PLAIN_LEN (CFG_LEN - 74)                    /* without the audio IAD (8) and the CDC block (66) */
 static uint8_t cfg_plain[CFG_PLAIN_LEN];
 static const uint8_t *cfg_plain_get(void)
@@ -278,8 +285,9 @@ static const uint8_t STR2[] = {16, 3, 'F', 0, 'e', 0, 'l', 0, 'u', 0, 'c', 0, 'c
 /* SLOOP 2.7 beta: menu AUDIO > USB RATE, for the hosts that record the stream badly (reports: Android phones,
  * distorted, while a computer records clean). main.c sets usb_rate_mode before usb_start; a change takes effect
  * at the next start, as USB SERIAL does (the host reads the descriptors when the FM-1 appears).
- *   0 AUTO  44.1 and 48 kHz, the host picks: the descriptors of 2.5 / 2.6, byte for byte;
- *   1 44.1  44.1 kHz only: the descriptors of SLOOP 2.4 (a FELUCCA_UAC_48K=0 build) byte for byte: the format
+ *   0 AUTO  44.1 and 48 kHz, the host picks: the descriptors of 2.5 / 2.6 (2.7.2: with the AC collection's new
+ *           order, bcdDevice x.28);
+ *   1 44.1  44.1 kHz only: the descriptors of a FELUCCA_UAC_48K=0 build (SLOOP 2.4's) byte for byte: the format
  *           of one rate, packets of 46 frames at most, bcdDevice x.1x; the resampler never runs, the samples
  *           go out as rendered;
  *   2 48    48 kHz only (bcdDevice x.3x, a version of its own: hosts cache descriptors per version).

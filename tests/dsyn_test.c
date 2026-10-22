@@ -288,6 +288,22 @@ int main(void)
                 check(z1 == z0 && t1 == t0, "SOUND page: the snare's TUNE and DECAY leave the kick as it is");
             }
         }
+        {   /* 2.7.2: a tone-less noise sound (the 808 closed hat, note 42) now answers TUNE too, by its brightness
+             * (more / fewer zero crossings), the way resampling a sampled kit would. Before 2.7.2 it did nothing. */
+            uint32_t kk, kit = 0;
+            double z0, zu, zd;
+            for (kk = 0; kk < DRUM_KITS; kk++) if (!strcmp(DRUM_KIT_NAMES[kk], "808")) kit = kk;
+            TDRUM->p[P_E0] = (int16_t)kit;
+            hit_win = 2205u;                            /* 0.1 s: the hat's burst */
+            memset(drum_tune, 0, sizeof drum_tune); memset(drum_dec, 0, sizeof drum_dec);
+            hit_render(42, &z0, 0);
+            drum_tune[lane_of_note(42)] = 7; hit_render(42, &zu, 0);
+            drum_tune[lane_of_note(42)] = -8; hit_render(42, &zd, 0);
+            drum_tune[lane_of_note(42)] = 0;
+            hit_win = 22050u;
+            printf("  808 closed hat: crossings %.0f / TUNE +7 %.0f / -8 %.0f\n", z0, zu, zd);
+            check(zu > z0 * 1.03 && zd < z0 * 0.97, "SOUND page (2.7.2): TUNE shifts a noise sound's brightness (the 808 hat)");
+        }
         TDRUM->p[P_E0] = DRUM_DEFAULT_KIT;
     }
     printf(fails ? "dsyn: FAILED\n" : "dsyn: all checks ok\n");

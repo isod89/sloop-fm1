@@ -247,50 +247,108 @@ UI_SMALL static void graph_steps(const track_t *t, uint16_t c)
     }
 }
 /* STEP page: the cursor's 16-step bank as a little piano roll */
+/* (2.7.2) SEQ > NOTES: the pattern as a piano roll (cv_oy 0, the whole strip). Each note a bar as long as its
+ * step and TIEs, its FORCE as its fill (GHOST dark, SOFT hollow, NORM / HARD full, ACC a white cap), a SLIDE's line to
+ * the next; the note under edit outlined in white, its name over it; the C rows named on the left, the beats ruled;
+ * the playhead a line. The rows follow the note under edit when the pattern spans more than 18 semitones */
 UI_SMALL static void graph_roll(const track_t *t, uint16_t c)
 {
-    uint32_t i, j, len = (uint32_t)t->p[P_SLEN], base = ui.bank * 16u;
-    int32_t lo = 127, hi = 0, prev_y = -1;
+    uint32_t len = trk_len(t), nv = NV_ZOOM[clamp(1 + (int8_t)ui.zoom, 0, 3)], v0, i, j;
+    int32_t lo = 127, hi = 0, x0 = 22, w = 240 - 22 - 2, top = 14, bot = H_GRAPH - 4, rh, sel_note = last_note, cx;
+    const step_t *cs = &t->step[ui.cursor];
+    char b[12];
+    if (nv > len)
+        nv = len;
+    v0 = ui.cursor / nv * nv;
     for (i = 0; i < len; i++)
         for (j = 0; j < t->step[i].n; j++) {
-            if (t->step[i].note[j] < lo)
-                lo = t->step[i].note[j];
-            if (t->step[i].note[j] > hi)
-                hi = t->step[i].note[j];
+            if (t->step[i].note[j] < lo) lo = t->step[i].note[j];
+            if (t->step[i].note[j] > hi) hi = t->step[i].note[j];
         }
-    if (lo > hi) {
-        lo = 48;
-        hi = 72;
+    if (step_on(cs))
+        sel_note = cs->note[ui.note_k % cs->n];
+    if (lo > hi)
+        lo = hi = sel_note;
+    if (hi - lo < 11) {                                 /* (an octave at least: rows of a sane height) */
+        lo = clamp((lo + hi) / 2 - 6, 0, 115);
+        hi = lo + 11;
     }
-    if (hi - lo < 12)
-        hi = lo + 12;
-    for (i = 0; i < 16u; i++) {
-        uint32_t si = base + i;
-        const step_t *st = &t->step[si];
-        int32_t x = (int32_t)i * 15, yb = 86;
-        if (si >= len)
-            break;
-        if (si == ui.cursor)
-            cv_rect(x + 5, 92, 3, 3, C_WHITE);
-        if (song.playing && si == t->seq_idx)
-            cv_rect(x + 1, 97, 12, 1, C_WHITE);
-        if (st->time == ST_TIE && prev_y >= 0) {
-            cv_rect(x, prev_y, 14, 1, C_GRAY);
-            continue;
+    if (hi - lo > 17) {                                 /* (a wide pattern: 18 rows around the note under edit) */
+        lo = clamp(sel_note - 8, lo, hi - 17);
+        hi = lo + 17;
+    }
+    lo = clamp(lo - 1, 0, 127), hi = clamp(hi + 1, 0, 127);
+    rh = (bot - top) / (hi - lo + 1);
+    fmt_int(b, (int32_t)v0 + 1);
+    str_cpy(b + str_len(b), "-", 2);
+    fmt_int(b + str_len(b), (int32_t)(v0 + nv > len ? len : v0 + nv));
+    cv_text(2, 0, &FONT_S, b, C_GRAY);
+    str_cpy(b, "ZOOM ", 12);
+    fmt_int(b + 5, (int32_t)nv);
+    cv_text(238 - text_w(&FONT_S, b), 0, &FONT_S, b, C_DIM);
+    for (i = (uint32_t)lo; i <= (uint32_t)hi; i++) {    /* rows: the black keys' bands, the C's ruled and named */
+        int32_t y = bot - ((int32_t)i - lo + 1) * rh;
+        uint32_t pc = i % 12u;
+        if ((0x54Au >> pc) & 1u)
+            cv_rect(x0, y, w, rh, TE_G1);
+        if (!pc) {
+            note_name(b, i);
+            cv_text(0, y + rh / 2 - 6, &FONT_S, b, C_DIM);
+            cv_rect(x0, y + rh - 1, w, 1, C_GRAY);
         }
-        if (!step_on(st)) {
-            cv_rect(x + 6, yb, 2, 1, C_DIM);
-            prev_y = -1;
+    }
+    for (i = 0; i <= nv; i++)                           /* the beats (4 steps), a tick on each step */
+        if (i % 4u == 0u)
+            cv_rect(x0 + (int32_t)i * w / (int32_t)nv, top, 1, bot - top, i % 16u ? C_DIM : C_GRAY);
+        else if (nv <= 32u)
+            cv_rect(x0 + (int32_t)i * w / (int32_t)nv, bot + 1, 1, 2, C_DIM);
+    for (i = 0; i < len; i++) {                         /* the notes (one starting before the view: its part in it) */
+        const step_t *st = &t->step[i];
+        uint32_t n = note_len(t, i), f;
+        int32_t xa, xb, y;
+        if (!step_on(st) || i + n <= v0 || i >= v0 + nv)
             continue;
-        }
+        xa = x0 + ((int32_t)i - (int32_t)v0) * w / (int32_t)nv + 1;
+        xb = x0 + ((int32_t)(i + n) - (int32_t)v0) * w / (int32_t)nv - 1;
+        xa = xa < x0 ? x0 : xa;
+        xb = xb > x0 + w ? x0 + w : xb;
         for (j = 0; j < st->n; j++) {
-            int32_t y = 80 - (st->note[j] - lo) * 74 / (hi - lo);
-            cv_rect(x + 2, y, 10, 1, (st->flags & SF_ACCENT) ? C_WHITE : c);
-            if (j == 0)
-                prev_y = y;
+            if (st->note[j] < lo || st->note[j] > hi)
+                continue;
+            y = bot - ((int32_t)st->note[j] - lo + 1) * rh + 1;
+            f = note_force(st, j);
+            cv_rect(xa, y, xb - xa, rh - 1, f ? c : TE_DIM[song.sel & 3u]);
+            if (f == 1u && rh > 4)                      /* SOFT: hollow */
+                cv_rect(xa + 1, y + 1, xb - xa - 2, rh - 3, C_BLACK);
+            if (f == 4u)                                /* ACC: a white cap */
+                cv_rect(xa, y, xb - xa, 2, C_WHITE);
+            if ((st->flags & SF_SLIDE) && j == 0u)
+                cv_rect(xb, y + rh / 2 - 1, 4, 2, c);
+            if (i == ui.cursor && j == ui.note_k % st->n) {   /* the note under edit */
+                cv_rect(xa - 2, y - 2, xb - xa + 4, 1, C_WHITE), cv_rect(xa - 2, y + rh - 1, xb - xa + 4, 1, C_WHITE);
+                cv_rect(xa - 2, y - 2, 1, rh + 2, C_WHITE), cv_rect(xb + 1, y - 2, 1, rh + 2, C_WHITE);
+                note_name(b, st->note[j]);
+                cv_text(xa, y - 15 < top ? y + rh + 1 : y - 15, &FONT_S, b, C_WHITE);
+            }
         }
-        if (st->flags & SF_SLIDE)
-            cv_line(x + 11, prev_y, x + 17, prev_y + 2, c);
+    }
+    cx = x0 + ((int32_t)ui.cursor - (int32_t)v0) * w / (int32_t)nv;
+    if (!step_on(cs) && sel_note >= lo && sel_note <= hi) {   /* an empty step: a frame where a note would go */
+        int32_t y = bot - (sel_note - lo + 1) * rh + 1, xw = w / (int32_t)nv - 2;
+        cv_rect(cx + 1, y - 1, xw, 1, C_WHITE), cv_rect(cx + 1, y + rh - 1, xw, 1, C_WHITE);
+        cv_rect(cx + 1, y - 1, 1, rh, C_WHITE), cv_rect(cx + xw, y - 1, 1, rh, C_WHITE);
+    }
+    if (song.playing && t->seq_idx >= v0 && t->seq_idx < v0 + nv) {   /* the playhead */
+        int32_t x = x0 + ((int32_t)t->seq_idx - (int32_t)v0) * w / (int32_t)nv;
+        cv_rect(x, top, 1, bot - top, C_HI);
+        cv_rect(x - 2, top, 5, 2, C_HI);
+    }
+    if (ui.sheet) {                                     /* OCT+ held: the note's sheet */
+        char nu[8];
+        const char *val[6] = {cs->flags & SF_SLIDE ? "ON" : "OFF", nu, FILL_N[step_fill(t, ui.cursor) % 3u], "", "", ""};
+        fmt_int(nu, t->micro[ui.cursor]);
+        if (t->micro[ui.cursor] > 0) { nu[0] = '+'; fmt_int(nu + 1, t->micro[ui.cursor]); }
+        sheet_draw(112, 6, SHEET_N, val, ui.sheet - 1u, TE_DIM[song.sel & 3u]);
     }
 }
 UI_SMALL static void graph_scale(const track_t *t, uint16_t c)
@@ -390,8 +448,9 @@ UI_SMALL static uint32_t graph_signature(void)
             h ^= (uint32_t)project_used(i) << (20u + i);
     if (pg->graph == GR_STEPS || pg->graph == GR_ROLL) {
         uint32_t ph = song.playing ? t->seq_idx : 0xFFFFu;
-        if (pg->graph == GR_ROLL && ph / 16u != ui.bank)
-            ph = 0xFFFFu;                            /* the roll shows the cursor's bank only */
+        if (pg->graph == GR_ROLL)                    /* (2.7.2 NOTES: the note under edit, the zoom, the sheet) */
+            h ^= ui.note_k * 104729u + ui.zoom * 7u + ui.sheet * 977u + (uint32_t)t->micro[ui.cursor] * 31337u +
+                 step_fill(t, ui.cursor) * 3u + last_note * 65537u;
         h ^= steps_hash(t) + ph * 31u + ui.cursor * 7919u;
     }
     return h;
@@ -711,6 +770,7 @@ UI_SMALL static void draw_graph(void)
             graph_steps(t, c);
             break;
         case GR_ROLL:
+            cv_oy = 0;
             graph_roll(t, c);
             break;
         case GR_SCALE:
@@ -743,9 +803,9 @@ UI_SMALL static void draw_graph(void)
         }
     }
     top = !ui.home && !drum_note && (pg->graph == GR_BROWSE || pg->graph == GR_SLOTS || pg->graph == GR_USER ||
-                                     big_page(pg));   /* these draw from the top */
+                                     pg->graph == GR_ROLL || big_page(pg));   /* these draw from the top */
     cv_oy = 0;
-    if (ui.hot_t && settings.zoom && !(top && big_page(pg) && !drum_note)) {   /* (the big values show it already) */                 /* focus (menu ZOOM): the touched value, large and white */
+    if (ui.hot_t && settings.zoom && !(top && (big_page(pg) || pg->graph == GR_ROLL) && !drum_note)) {   /* (the big values show it already) */                 /* focus (menu ZOOM): the touched value, large and white */
         int32_t x;
         top = 1;
         cv_rect(0, 0, 150, 50, C_BLACK);
@@ -913,39 +973,33 @@ UI_SMALL static void draw_columns(void)
         draw_column(3, "SAVE", "--", "", C_HI, -1, ICON_AUTO);
         return;
     }
-    if (cur_page()->scope == SC_STEP) {
-        static const char *const TIME_N[3] = {"NOTE", "TIE", "REST"};
+    if (cur_page()->scope == SC_STEP) {                 /* (2.7.2) NOTES: NOTE PITCH LEN FORCE of the note under edit */
         const step_t *st = &TSEL->step[ui.cursor];
-        char u[8];
-        if (st->n) {
-            note_name(val, st->note[0]);
-            u[0] = 0;
-            if (st->n > 1) {
-                str_cpy(u, "+", 8);
-                fmt_int(u + 1, st->n - 1);
+        char sn[8], sl[8], u[8], ln[8];
+        int on = step_on(st);
+        uint32_t k = on ? ui.note_k % st->n : 0u;
+        fmt_int(sn, (int32_t)ui.cursor + 1);
+        str_cpy(sl, "/", 8);
+        fmt_int(sl + 1, TSEL->p[P_SLEN]);
+        draw_column(0, "NOTE", sn, sl, VAL(0u), -1, ICON_AUTO);
+        u[0] = 0;
+        if (on) {
+            note_name(val, st->note[k]);
+            if (st->n > 1u) {                             /* a chord: which of its notes */
+                fmt_int(u, (int32_t)k + 1);
+                str_cpy(u + str_len(u), "/", 2);
+                fmt_int(u + str_len(u), st->n);
             }
         } else {
             str_cpy(val, "--", 12);
-            u[0] = 0;
         }
-        {
-            static const char *const FLAG_N[4] = {"-", "ACC", "SLD", "A+S"};
-            char sn[8], sl[8];
-            fmt_int(sn, (int32_t)ui.cursor + 1);
-            str_cpy(sl, "/", 8);
-            fmt_int(sl + 1, TSEL->p[P_SLEN]);
-            draw_column(0, "STEP", sn, sl, VAL(0u), -1, ICON_AUTO);
-            draw_column(1, "NOTE", val, u, step_on(st) ? VAL(1u) : C_DIM, -1, ICON_AUTO);
-            if (step_on(st)) {                          /* a note: its LEN (2.6), steps with the TIEs after it */
-                char ln[8];
-                fmt_int(ln, (int32_t)note_len(TSEL, ui.cursor));
-                draw_column(2, "LEN", ln, "STEP", VAL(2u), -1, ICON_AUTO);
-            } else {
-                draw_column(2, "TIME", TIME_N[st->time % 3u], "", VAL(2u), -1, ICON_AUTO);
-            }
-            draw_column(3, "FLAG", FLAG_N[(st->flags & SF_ACCENT ? 1u : 0u) | (st->flags & SF_SLIDE ? 2u : 0u)], "",
-                        VAL(3u), -1, ICON_AUTO);
-        }
+        draw_column(1, "PITCH", val, u, on ? VAL(1u) : C_DIM, -1, ICON_AUTO);
+        if (on)
+            fmt_int(ln, (int32_t)note_len(TSEL, ui.cursor));
+        else
+            str_cpy(ln, "--", 8);
+        draw_column(2, "LEN", ln, on ? "STEP" : "", on ? VAL(2u) : C_DIM, -1, ICON_AUTO);
+        draw_column(3, "FORCE", on ? FORCE_N[note_force(st, k)] : "--", "", on ? VAL(3u) : C_DIM, -1, ICON_AUTO);
         return;
     }
     for (c = 0; c < 4u; c++) {

@@ -1,6 +1,6 @@
 <p align="center"><img src="assets/logo/sloop-logo.png" alt="SLOOP" width="420"></p>
 
-# SLOOP 2.7 — The Complete Guide
+# SLOOP 2.8 — The Complete Guide
 
 Everything SLOOP does, every button, every combination, every page, in one place. This guide is written to be read from the top the first time, then used as a reference: the [cheat sheet](#26-cheat-sheet) at the end has every combination on one page.
 
@@ -32,6 +32,8 @@ The 11 black keys are F#3, G#3, A#3, C#4, D#4, F#4, G#4, A#4, C#5, D#5, F#5. The
 
 ## Contents
 
+- [What's new in 2.8](#whats-new-in-28)
+
 1. [Install and update](#1-install-and-update)
 2. [The panel](#2-the-panel)
 3. [The big ideas: tracks, colours, tap and hold](#3-the-big-ideas-tracks-colours-tap-and-hold)
@@ -58,6 +60,26 @@ The 11 black keys are F#3, G#3, A#3, C#4, D#4, F#4, G#4, A#4, C#5, D#5, F#5. The
 24. [The web editor](#24-the-web-editor)
 25. [Backup, rescue, going back, troubleshooting](#25-backup-rescue-going-back-troubleshooting)
 26. [Cheat sheet](#26-cheat-sheet)
+
+---
+
+## What's new in 2.8
+
+3,000 of you now follow SLOOP — thank you. 2.8 is a deeper way to write and shape your music, and most of it comes from your comments and reports. Each item points to its full write-up below.
+
+- **A NOTES editor: a piano roll for the synth tracks.** Tap **SEQ** on a synth track for the pattern as a piano roll, and write and edit notes step by step: KNOB 1 the notes (a chord's one by one), KNOB 2 the pitch, KNOB 3 the length, KNOB 4 the force; PRESETS zooms, EDIT deletes. Hold **OCT+** on a step for its **sheet** — SLIDE, NUDGE, FILL, MOVE, COPY, DELETE. See [The step sequencer](#10-the-step-sequencer-steps-nudge-locks-fills).
+- **The same per-step sheet on the DRUMS grid.** Hold **OCT+** on a drum step for RATCHET, NUDGE, FILL, MOVE, COPY, DELETE — the groove, shaped step by step. See [The step sequencer](#10-the-step-sequencer-steps-nudge-locks-fills).
+- **The playing section on the main screen.** The TRACKS screen shows which section — **A to D** — is playing, in its own colour. See [The screens](#15-the-screens).
+- **Filter resonance.** The per-track filter gains a **resonance**, 0 (clean, as before) to 10: HOME menu → AUDIO → **FILTER RESO**. See [Per track](#per-track).
+- **The FX filter on the drum track too.** FX → FILTER now works on drums: sweep and shape the whole kit, live. See [Per track](#per-track).
+- **Drum TUNE on the noise sounds.** On the DRUMS Sound page, **TUNE** now also shapes the brightness of the tone-less sounds (closed hats, shakers, claps). See [The drum track](#drum-sound).
+- **A smoother punch-in.** A settable fade-in and out for the 27 punch-in effects: hold **FX**, then **SELECT**, 0 (instant) to 15 (~0.37 s). See [Punch-in effects](#punch-in-effects).
+- **Steadier external MIDI clock.** The incoming tempo is read from the average of the last beats, so a steady 140 no longer wavers 139 / 140 / 141; a real tempo change is taken at once. See [MIDI out, clock in](#midi-out-clock-in-glo--system).
+- **MIDI Bank Select (CC 0).** Reach every preset past the 128 Program Change range — the rest of the factory sounds, then your own user presets by slot. See [MIDI CCs](#midi-ccs-25).
+- **USB RESCUE, fixed.** Holding **OCT−** at power-on now reliably opens USB rescue mode. See [Rescue and special modes](#rescue-and-special-modes).
+- **Going back to stock changed.** The in-browser return-to-stock was removed (it was not reliable on every system); use M-VAVE's own updater **M-UPGRADE**. See [Going back](#going-back-to-the-official-firmware).
+
+Everything from 2.7 is unchanged and still here. Projects, autosaves and backups from 2.7 load as they are, and a project saved in 2.8 opens in 2.7 too.
 
 ---
 
@@ -154,9 +176,9 @@ The layers are **FX** (punch-in effects), **EDIT** (erase), **ARP** (note repeat
 | **LFO** | LFO pages (LFO, LFO DEST) | — |
 | **FX** | FX pages (FX, FILTER, SLICER, DLY, REV/CHO) | punch-in layer |
 | **SEL** | SEL pages (SEL, SEL 2) | key / chord layer |
-| **EDIT** | EDIT pages (EDIT 1, EDIT 2, VOICE, VOICE 2) · on TRACKS with the drum track: the **DRUMS** screen · on DRUMS: grid ↔ kit · on the STEP page: clear the step | erase layer |
+| **EDIT** | EDIT pages (EDIT 1, EDIT 2, VOICE, VOICE 2) · on TRACKS with the drum track: the **DRUMS** screen · on DRUMS: grid ↔ kit · on the NOTES page: delete the note | erase layer |
 | **ARP** | ARP pages (ARP, ARP 2) | note-repeat layer |
-| **SEQ** | SEQ pages (STEP, PATTERN, SONG) · on TRACKS with the drum track: the **DRUMS** screen · on DRUMS: grid ↔ kit | step layer |
+| **SEQ** | SEQ pages (STEP, PATTERN, SONG) · with the drum track: the **DRUMS** screen (2.7.1: from any page; it opened STEP from ARP's) · on DRUMS: grid ↔ kit | step layer |
 | **GLO** | GLO pages (GLOBAL, MASTER, SYSTEM, DRUMS) | mix layer |
 | **OCT− / OCT+** | synth track: octave down / up (−3 … +3) · both together: octave 0 | drum track: **ghost** (OCT−) / **hard** (OCT+) hits while held |
 | **ALGORITHM** | select track 1–4, on every screen (inside a layer it waits; not during a free take, on the SONG screen or in the menu) | — |
@@ -198,7 +220,7 @@ The layers are **FX** (punch-in effects), **EDIT** (erase), **ARP** (note repeat
 
 ### Velocity and levels
 
-The FM-1's keys have no velocity: on the drum track every hit has one of four **levels** — **GHOST**, **SOFT**, **NORM** (as played), **HARD** — chosen with OCT− / OCT+ as you play, or later in the step sequencer. On synth tracks a step can carry an **accent** (STEP page, FLAG).
+The FM-1's keys have no velocity: on the drum track every hit has one of four **levels** — **GHOST**, **SOFT**, **NORM** (as played), **HARD** — chosen with OCT− / OCT+ as you play, or later in the step sequencer. On synth tracks a note has a **FORCE** too, and a step an **accent** (NOTES page, KNOB 4).
 
 ---
 
@@ -240,12 +262,13 @@ Open it with **EDIT** or **SEQ** tapped on the TRACKS screen while the drum trac
 
 | Control | Does |
 | --- | --- |
-| KNOB 1 **sound** | picks the sound (lane) — you hear it |
-| KNOB 2 **step** | moves to a step — you hear what it holds |
+| KNOB 1 **sound** | picks the sound (lane); (2.7.1) heard only with MENU → SEQ → **DRUM PREVIEW ON** (OFF by default, quiet for live) |
+| KNOB 2 **step** | moves to a step (DRUM PREVIEW ON: you hear what it holds) |
 | KNOB 3 **hit** | right: a hit of that sound on that step (NORM) · left: clear it |
 | KNOB 4 **level** | the hit's level up / down (GHOST, SOFT, NORM, HARD) |
-| **white keys** | the 16 steps of the sound KNOB 1 picks: press to set the step (you hear it), again to clear it; the keys light that sound's steps |
-| **first four black keys** | the page of steps: 1–16, 17–32, 33–48, 49–64 |
+| **white keys** | the 16 steps of the sound picked: press to set the step, again to clear it (2.7.1: silent, the pattern plays it); the keys light that sound's steps |
+| **black keys** (2.7.1) | pick the sound, silently: F#3 KICK / KICK 2 · G#3 SNARE / SNARE 2 · A#3 RIM · C#4 CLAP · D#4 HAT / PEDAL · F#4 OPEN HAT · G#4 LOW TOM / HI TOM · A#4 CRASH · C#5 RIDE · D#5 SHAKER / CONGA · F#5 COWBELL (the same key again: the other sound of its pair); the black key of the sound picked is lit |
+| **OCT− / OCT+** (2.7.1) | the page of steps: 1–16, 17–32, 33–48, 49–64 (round; up to the track's length). Up to 2.7: the first four black keys |
 | **PRESETS** | the kit |
 | **SAVE** | the SONG screen |
 | **HOME** | back to TRACKS |
@@ -262,7 +285,7 @@ Open it with **EDIT** or **SEQ** tapped on the TRACKS screen while the drum trac
 | --- | --- | --- | --- |
 | **sound** (you hear it) | **tune**: −8 … +7 semitones | **decay**: −4 (very short) … 0 (as the kit has it) … +3 (long) | **level** of the drum track |
 
-On the synthesised kits (808, 909… and your SYN1–4) DECAY shortens or lengthens the sound itself; on the sampled kits (ACOUSTIC … DUST, USR) it can only shorten it (a fade), +3 plays the sample as it is. The settings are kept with the project and with each section A–D, so a section can have its own tuning; changing the kit keeps them, NEW sets them back to 0. A project from an older SLOOP opens with every sound as its kit has it.
+On the synthesised kits (808, 909… and your SYN1–4) DECAY shortens or lengthens the sound itself; on the sampled kits (ACOUSTIC … DUST, USR) it can only shorten it (a fade), +3 plays the sample as it is. **(2.8)** On the synthesised kits, TUNE also shapes the **brightness** of the tone-less sounds (closed hats, shakers, claps), which have no pitch to shift: lower it for a darker, duller hat, raise it for a crisper one. The settings are kept with the project and with each section A–D, so a section can have its own tuning; changing the kit keeps them, NEW sets them back to 0. A project from an older SLOOP opens with every sound as its kit has it.
 
 While the song plays in song mode, the grid's hit and level knobs wait (*STOP THE SONG FIRST*).
 
@@ -270,7 +293,7 @@ While the song plays in song mode, the grid's hit and level knobs wait (*STOP TH
 
 ## 8. Recording
 
-SLOOP records live and layers every pass on top of the last (overdub). Notes go to the nearest step **as you heard it**: the ~12 ms between a key and its sound are taken back, so what you play on the beat lands on the beat. Chords are kept on the synth tracks whose VOICE is POLY (up to 4 notes a step; a MONO, LEGATO or UNISON sound, as most basses and leads, plays and records one note at a time); held notes become ties. The TRACKS page draws one mark a step; the STEP page shows a chord's other notes (*+1*, *+2*…).
+SLOOP records live and layers every pass on top of the last (overdub). Notes go to the nearest step **as you heard it**: the ~12 ms between a key and its sound are taken back, so what you play on the beat lands on the beat. Chords are kept on the synth tracks whose VOICE is POLY (up to 4 notes a step; a MONO, LEGATO or UNISON sound, as most basses and leads, plays and records one note at a time); held notes become ties. (2.7.1) On a POLY track each held note goes on until its own key is let go, even while other notes start and end over it: hold a note, play others on top, and it keeps sounding in the pattern (up to 4 at once). (2.7.2) On a MONO, LEGATO or UNISON track, a note played while the one before is still held is recorded **legato** and plays back as you played it: with LEGATO the sound goes on into the new note without a new attack (it glides only with GLIDE or a SLIDE), where before the sequencer ended the note and started the next one again. It works from the FM-1's keys and from a MIDI controller alike. Let go of the second note while the first is still held: the pattern does not go back to the first one (the live sound does). The TRACKS page draws one mark a step; the NOTES page shows a chord's notes one by one (*2/3*…).
 
 **Over held notes (2.7).** On a POLY track, a note you record while held notes of the pattern ring (a pad tied over the bar) no longer cuts them: they go on under it, and your note ends where you let it go. Up to 4 notes sound at once on a track (a fifth makes the oldest held one end there). Entering steps by hand (SEQ + key) still replaces what plays, so a long note can be cut on purpose. On SLOOP 2.6 such a pattern plays the held notes again where a note was laid over them.
 
@@ -386,12 +409,13 @@ The 16 white keys are the 16 steps of the current page; the lit ones play.
 | **SEQ + empty step** | sets it at once — drums: with the sound shown (KNOB 1, or the last pad you hit); synths: with the note or chord you played last (on the keys, or a MIDI keyboard: 2.6) |
 | **SEQ + set step (tap)** | clears it (with its nudge, locks and fill condition) |
 | **SEQ + several step keys held** | edit them together |
-| **SEQ + first four black keys** or **SEQ + OCT− / OCT+** (no step held) | the page: steps 1–16, 17–32, 33–48, 49–64 (up to the track's length) |
-| **SEQ + KNOB 1** (no step held) | the **sound** (drums, you hear it) / **note** to set |
+| **SEQ + first four black keys** or **SEQ + OCT− / OCT+** (no step held) | the page: steps 1–16, 17–32, 33–48, 49–64 (up to the track's length). (2.7.1) The drum track: OCT− / OCT+ only, the black keys pick the sound |
+| **SEQ + a black key** (drum track, 2.7.1) | the **sound** the steps are for, silently, as on the DRUMS grid (F#3 KICK / KICK 2 … F#5 COWBELL; the same key again: its pair). With **SEQ + HOME** (locked) both hands are free: black keys the sound, white keys its steps |
+| **SEQ + KNOB 1** (no step held) | the **sound** (drums; heard with DRUM PREVIEW ON, 2.7.1) / **note** to set |
 | **SEQ + KNOB 2** | **DIV**: 1/4, 1/8, 1/16, 1/32, 8T, 16T, 1/2, 1BAR, 2BAR |
 | **SEQ + KNOB 3** | **SWING** of the track |
 | **SEQ + KNOB 4** | **LENGTH**: 1–64 steps |
-| **SEQ + step + KNOB 1** | drums: which **sound** of the step LEVEL and RATCHET edit (you hear it) · synths: the step's **note** (every note of a chord moves together) |
+| **SEQ + step + KNOB 1** | drums: which **sound** of the step LEVEL and RATCHET edit (heard with DRUM PREVIEW ON) · synths: the step's **note** (every note of a chord moves together) |
 | **SEQ + step + KNOB 2** | drums: **LEVEL**: ghost, soft, norm, hard · synths (2.6): **VEL**, the step's velocity 1–127 (every note of the step; an accent is taken off, as it would play at 127) |
 | **SEQ + step + KNOB 3** | **RATCHET**: x1–x4 |
 | **SEQ + step + KNOB 4** | **NUDGE**: −32 … +31 (in 1/64 of a step) |
@@ -452,18 +476,23 @@ There are three ways to enter steps:
 
 1. **Live** — REC and play (see [Recording](#8-recording)).
 2. **The SEQ layer** — hold SEQ, the white keys are steps (all tracks; see [SEQ — steps](#seq--steps)).
-3. **The STEP page** (synth tracks) — tap **SEQ**: the step under the cursor is written from the keys, acid style:
+3. **The NOTES page** (synth tracks, 2.7.2; the STEP page before) — tap **SEQ**: the pattern as a **piano roll**, each note a bar as long as it lasts, the one you edit outlined in white with its name over it, the beats ruled, the C rows named on the left and the playhead a line. A note's **FORCE** shows as its fill: GHOST dark, SOFT hollow, NORM and HARD full, ACC a white cap; a SLIDE a dash to the next note.
 
-| STEP page | Does |
+| NOTES page | Does |
 | --- | --- |
-| **keys** | the keys pressed together become the cursor's step (POLY: up to 4 notes; MONO, LEG and UNI: the last one); in chord mode a key writes its whole chord, CHORD+ changes included; let go of all keys and the cursor moves on · **a MIDI keyboard** too (2.6): the notes it plays together on the selected track (the track its channel plays, GLO → MIDI) become the step, as they sound; on another track's channel, stopped, the screen says *MIDI PLAYS TRACK n* (and when you record: see REC) |
-| KNOB 1 **STEP** | moves the cursor |
-| KNOB 2 **NOTE** | transposes the step (an empty step gets your last note) |
-| KNOB 3 **TIME** / **LEN** | on an empty step, a TIE or a REST: **NOTE**, **TIE** (holds the previous note on) or **REST** · on a note (2.6): **LEN**, how many steps the note lasts: longer turns the steps after it into TIEs (it stops at the next step that has notes, and at the pattern's end: *NOTE AHEAD*, *END OF PATTERN*), shorter turns its last TIEs back into RESTs |
-| KNOB 4 **FLAG** | **–**, **ACC** (accent), **SLD** (slide to the next note), **A+S** (both) |
-| **EDIT (tap)** | clears the cursor's step and moves on |
+| **keys** | the keys pressed together become the step under edit (POLY: up to 4 notes; MONO, LEG and UNI: the last one); in chord mode a key writes its whole chord, CHORD+ changes included; let go of all keys and it moves on to the next step (2.7.1: MENU → SEQ → **STEP ADVANCE OFF**: it stays, and the next keys write the same step again, for a chord tried twice) · **a MIDI keyboard** too (2.6): the notes it plays together on the selected track (the track its channel plays, GLO → MIDI) become the step, as they sound; on another track's channel, stopped, the screen says *MIDI PLAYS TRACK n* (and when you record: see REC) |
+| KNOB 1 **NOTE** | goes from note to note: a chord's notes one by one, then the next step (the empty ones too, to put a note there); the TIEs of a note are its length, not stops |
+| KNOB 2 **PITCH** | that note's pitch (a chord's others stay); an empty step gets your last note |
+| KNOB 3 **LEN** | how many steps the note lasts: longer turns the steps after it into TIEs (it stops at the next step that has notes, and at the pattern's end: *NOTE AHEAD*, *END OF PATTERN*), shorter turns its last TIEs back into RESTs |
+| KNOB 4 **FORCE** | **GHOST**, **SOFT**, **NORM**, **HARD**, then **ACC** (the accent: the step's, for its whole chord) |
+| **PRESETS** | the zoom: 8, 16 (as it opens), 32 or 64 steps on the screen (the page with the note under edit) |
+| **EDIT (tap)** | deletes the note under edit (a chord keeps its others; its last note takes the step and its TIEs) |
+| **OCT−** / **OCT+** (tap) | the keys' octave, as everywhere |
+| **OCT+ held** (0.4 s) | the note's **sheet**: KNOB 1 picks a row, KNOB 2 sets it, OCT+ does it, OCT− closes it — **SLIDE** (ON / OFF; OCT+ too), **NUDGE** (the step's micro timing, −32 … +31), **FILL** (NORMAL, FILL only, NO FILL), **MOVE** (KNOB 2: a step each detent, with its TIEs, nudge, fill and locks; not over another note: *NO ROOM*), **COPY** (OCT+: a copy just after it, picked, and MOVE next to place it), **DELETE** (OCT+) |
 
-Not while recording or armed (the keys record live then). On the drum track, the STEP page shows *DRUM TRACK*: use the DRUMS grid or the SEQ layer.
+EDIT + OCT− / OCT+ undo and redo the edits, as before. Not while recording or armed (the keys record live then). On the drum track, the NOTES page shows *DRUM TRACK*: use the DRUMS grid or the SEQ layer.
+
+**The DRUMS grid has the same sheet** (2.7.2): on the grid, **OCT+ held** opens it for the hit of KNOB 1's sound on KNOB 2's step: **RATCHET** (x1 … x4), **NUDGE** and **FILL** (the step's: every sound in it), **MOVE** (KNOB 2), **COPY** (OCT+: to the next step), **DELETE** (OCT+); OCT− closes it. OCT+ tapped still turns the page of steps.
 
 The **PATTERN** page (tap SEQ again) holds the track's **LEN**, **DIV**, **SWG** (swing) and **GATE** (how long each note lasts).
 
@@ -642,7 +671,7 @@ The song's settings can only be edited while it is stopped (*STOP FIRST*). An em
 
 | Screen | How to get there | What it shows · what the knobs do |
 | --- | --- | --- |
-| **TRACKS** | tap **HOME** | the performance view: tempo, swing, transport, bar.beat; each track with its sound, steps, playhead, mute / solo / rec badges and level. Dials: KNOB 1 **swing** (global) · KNOB 2 **level** (selected track; on a muted track: unmutes it) · KNOB 3 **steps** (its length) · KNOB 4 **pan** |
+| **TRACKS** | tap **HOME** | the performance view: tempo, swing, transport, bar.beat; each track with its sound, steps, playhead, mute / solo / rec badges and level. **(2.8)** a coloured **A–D** badge by the title shows which section is playing. Dials: KNOB 1 **swing** (global) · KNOB 2 **level** (selected track; on a muted track: unmutes it) · KNOB 3 **steps** (its length) · KNOB 4 **pan** |
 | **Visualiser** | tap **HOME** on TRACKS | twelve full-screen visualisers; see [The visualiser](#19-the-visualiser) |
 | **Layer** | hold a layer button | 16 tiles (the white keys) and the four dials, in the layer's colour |
 | **DRUMS** (grid / kit) | tap **EDIT** or **SEQ** on TRACKS with the drum track | see [The DRUMS screen](#the-drums-screen) |
@@ -670,7 +699,7 @@ Tap a button to open its first page (or the last one you used); **tap it again**
 | | **LFO 2** (2.6) | SYNC: OFF, 4BAR, 2BAR, 1BAR, 1/2, 1/4, 1/8, 8T, 1/16, 16T, 1/32 | TRIG: NOTE / FREE | POL: BI / UNI | — |
 | | **LFO DEST** | PIT: vibrato | FLT: filter wobble | SHP: shape | AMP: tremolo |
 | **FX** | **FX** (sends) | DST drive | CHO chorus send | DLY delay send | REV reverb send |
-| | **FILTER** | FILT: one-knob filter of the track — left LP, right HP, centre OFF | — | — | — |
+| | **FILTER** | FILT: one-knob filter of the track — left LP, right HP, centre OFF (the drum track too; 2.7.2: its page no longer greyed) | — | — | — |
 | | **SLICER** | SLCR: OFF, GATE, STUT (stutter) | PAT: pattern 1–16 | RATE: 1/8, 1/16, 1/32, 8T, 16T, 32T | DEPTH |
 | | **INSERT** (2.6) | INSRT: OFF, SOFT, HARD, FOLD, FUZZ, CRUSH, PHASR, FLANG, CHOR | A | B | C (what A B C are depends on the type: see [Per track](#per-track)) |
 | | **INSERT 2** (2.6) | MIX: dry / wet | — | — | — |
@@ -711,7 +740,7 @@ Notes:
 - <a id="arp-modes"></a>**ARP modes** (2.7, after Felucca 1.4 / 1.5.1). With C, E and G held: **UP** C E G · **DN** G E C · **UPDN** C E G E · **DNUP** G E C E · **RND** at random · **ORD** in the order you pressed them · **REPEAT** the last note you pressed, again and again (OCT ignored) · **UP+8** C E G C' (the first note again an octave above the top) · **CONV** C G E (from the outside in) · **DIVG** E G C (from the inside out) · **PINKY** C G E G (the top note between the others) · **THUMB** C E C G (the bottom note between the others) · **WALK** one step up or down at random, from the bottom · **CHORD** the held notes together (the first four), on every step, an octave higher each step through OCT. OCT spreads the list over 1–4 octaves; ARP 2 ORD PLAY keeps the order you played for the other modes. Until 2.6, ORD played as UP unless ARP 2 ORD was PLAY: now it always follows the order you pressed.
 - <a id="kbd-hold"></a>**KBD HOLD** (2.7): ARP 2 → **HOLD ON** with ARP → **MODE OFF** holds the notes you play, without an arpeggio: let go and they go on sounding (a pad, a drone, a chord to play over with one hand). The next note you play with no key down **replaces** them (a new chord); notes played while keys are still down **join** them. The keys' MIDI note-offs wait too, so gear played from the FM-1 holds with it. **HOLD OFF** (or ARP on, another project, NEW) ends them; loading another sound ends the held notes too, but HOLD stays ON. Projects saved before 2.7 open with HOLD OFF when their arp is OFF (it did nothing then), so nothing hangs by surprise. It works for MIDI notes too. Recorded as you hear it: a held note ends where it is replaced. Up to 2.6, HOLD did nothing with the arp OFF.
 - **ARP SWG** (2.7): the arp's swing also works with the sequencer stopped (the odd steps late), as it does while playing; until 2.6 it only worked while playing.
-- **ARP and sounds** (2.7): while the arpeggiator runs (MODE not OFF), loading another sound (a preset or a user preset) keeps the arp: its settings (both ARP pages) and the notes it holds or latches go on with the new sound. With the arp OFF, a preset that has an arp of its own (8BIT ARP…) brings it, as before.
+- **ARP and sounds** (2.7): while the arpeggiator runs (MODE not OFF), loading another sound (a preset or a user preset) keeps the arp: its settings (both ARP pages) and the notes it holds or latches go on with the new sound. With the arp OFF, a preset that has an arp of its own (8BIT ARP…) brings it, as before. (2.7.1) An arp that came with the sound (8BIT ARP, a user preset saved with its arp) and that you did not change goes with it: the next sound brings its own (most often OFF). Change one of its settings and it is yours: it goes on with the next sounds.
 - **ENV SYNC** (ENV DEST → ESYNC ON, 2.6): ATK, DEC and REL become note values of the tempo, from 0 through 1/64T … 1/4, 1/2 … to 4BAR, with triplets and dotted values; at 120 BPM an ATK of 1/4 lasts half a second, at 60 a whole one. They follow the tempo as it changes. OFF: times in milliseconds, as before.
 - **LFO 2** (2.6): **SYNC** locks the LFO's cycle to a note value of the tempo (RATE is then ignored; OFF: RATE, as before) · **TRIG** NOTE restarts the LFO at PHS on each new phrase (as before), FREE lets it run on · **POL** BI swings above and below the value, UNI only above it (a tremolo that only lowers the level, a wobble that only opens).
 - **FILTER** (EDIT, ANALOG only, 2.6): the ANALOG engine's filter as a **low-pass** (as before), **band-pass** or **high-pass**; CUT, RES and KTR are the same values as on EDIT 2.
@@ -749,7 +778,7 @@ Each engine's eight parameters are on **EDIT 1** (KNOB 1–4) and **EDIT 2** (KN
 | **DIGITAL** | 4-operator FM | ALG algorithm 1–8 · R2 · R3 · R4 (operator ratios) | IDX FM amount · MDEC modulator decay · FB feedback · — |
 | **PHASE** | phase distortion (CZ style) | WAVE · WAVE2 (a second wave, or –) · DCW (the distortion amount) · ENV (its envelope) | DTN detune · LINE: MIX / RING · SUB sub-oscillator · — |
 | **LOFI** | 8-bit chip | CHIP: 4BIT, 4B/2, 8BIT, 1BIT, STEP · WAVE: PLS, TRI, SAW, NOIS, WRAM · DUTY (pulse width / wave table) · CRSH crush (DCY on STEP) | SWP pitch sweep · VIB vibrato · ARP: OFF, OCT, MAJ, MIN (chip arpeggio) · TONE |
-| **SAMPLE** | sampler | SET: PIANO, BASS, VIBES, HORNS, STRGS, FLUTE, SCRCH, PERC, **USR1–USR4** · TUNE ±24 · BITS (bit reduction) · LOOP: OFF / ON | CUT (tone) · — · DRV drive · — |
+| **SAMPLE** | sampler | SET: PIANO, BASS, VIBES, HORNS, STRGS, FLUTE, SCRCH (2.7.2: one scratch over the whole keyboard), PERC, **USR1–USR4** · TUNE ±24 · BITS (bit reduction) · LOOP: OFF / ON | CUT (tone) · — · DRV drive · — |
 | **VOICE** | formant voice (choirs, talkbox) | VOWL vowel · VOWL2 second vowel · TALK (time from one to the other) · SHIFT formant shift ±12 | BUZZ · BRTH breath · Q · RAND |
 | **TRIO** | three oscillators | WAVE (16 combinations) · INT2 · INT3 (intervals of oscillators 2 and 3, ±24) · DTN | MODE: LP, BP, HP, NOT (filter type) · CUT · RES · PW pulse width |
 | **WHEEL** | tonewheel organ | REG (16 drawbar registrations: FLUTE, MELLO, HOLLW, SMOOT, 3BAR, BLUES, GOSPL, ROCK…) · SUB · BODY · TOP (drawbar groups ±8) | PERC: OFF, 2ND, 3RD, 2SOFT, 3SOFT, 2SLOW, 3SLOW · CLICK · DRV · ROTR: OFF, SLOW, FAST (rotary speaker) |
@@ -759,6 +788,19 @@ Each engine's eight parameters are on **EDIT 1** (KNOB 1–4) and **EDIT 2** (KN
 | **NOISE** | noise, from analogue to digital: colours, crackle, shift registers, metallic tones | MODE: ANLG, DUST, LFSR, META · COLR white → pink → brown · FREQ · RES | TRK key tracking · DENS impulses (LFSR, META: LEN, the register) · DRFT drift · CRSH crush (LFSR, META: CLK, the clock above the key) |
 
 The **SAMPLE** sets are free recordings (CC0: Versilian Studios VSCO-2 CE and VCSL, Sonic Pi), coloured like a record through an old sampler. **GRAND PNO** is a Steinway recorded note by note; long notes fade as on the real one.
+
+### Polyphony
+
+The three synth tracks **share one pool of 8 voices**; the drum track has its own 6. Played on its own, each engine's maximum polyphony is:
+
+| Voices | Engines |
+| --- | --- |
+| **8** | ANALOG, DIGITAL, PHASE, LOFI, SAMPLE, TRIO, WHEEL, NOISE |
+| **6** | FM6 |
+| **4** | VOICE |
+| **3** | GRAIN, PHYS (SYMP model: **2**) |
+
+In **MONO** or **LEGATO** a track plays one note at a time; **UNISON** stacks detuned voices within the same cap. When more than one synth track sounds at once, the 8-voice pool is split between them: a part that needs a voice takes the oldest sounding one.
 
 ### FM6 and DX7 patches
 
@@ -787,7 +829,7 @@ On FX + KNOB 1–3, or GLO → MASTER:
 
 ### Punch-in effects
 
-**FX + white key**: the effect runs on the whole mix while the key is held and lets go cleanly when you release it. Loops and the gate are locked to the tempo and start on the grid. **Over MIDI (2.7):** set GLO → MIDI 3 → **FX CH**, and that channel's notes F3 … G5 play the same 27 effects (see [the MIDI settings](#all-the-midi-settings-glo--midi-midi-2-26-and-midi-3-27)).
+**FX + white key**: the effect runs on the whole mix while the key is held and lets go cleanly when you release it. Loops and the gate are locked to the tempo and start on the grid. **Fade (2.8):** hold **FX**, then **SELECT** (shown top right) sets a fade-in and out for the punch-ins, 0 (off — instant, just an anti-click) to 15 (about 0.37 s): the effects ease in and out instead of snapping on and off. **Over MIDI (2.7):** set GLO → MIDI 3 → **FX CH**, and that channel's notes F3 … G5 play the same 27 effects (see [the MIDI settings](#all-the-midi-settings-glo--midi-midi-2-26-and-midi-3-27)).
 
 | Key | Effect | Key | Effect |
 | --- | --- | --- | --- |
@@ -828,7 +870,7 @@ The texture is saved with the project, and each song section (A–D) has its own
 
 ### Per track
 
-- **FILTER** (FX → FILTER, or **FX + KNOB 4** for the selected track): one knob, left a low-pass, right a high-pass, centre off. It stays when you change the sound, can be locked on a step, and is saved with the project.
+- **FILTER** (FX → FILTER, or **FX + KNOB 4** for the selected track): one knob, left a low-pass, right a high-pass, centre off. It stays when you change the sound, can be locked on a step, and is saved with the project. Its **resonance** is set once for every track in HOME menu → AUDIO → **FILTER RESO** (0 clean … 10, 2.7.2). **(2.8) The drum track has it too:** FX → FILTER sweeps and shapes the whole kit, live.
 - **Sends** (FX page): DST drive, CHO chorus, DLY delay, REV reverb. The delay and the reverb / chorus settings are global (DLY and REV/CHO pages). The delay's TIME includes dotted 1/8 and 1/16.
 - **SLICER** (FX → SLICER): a tempo gate (GATE) or stutter (STUT), 16 patterns, 1/8 to 32T, with a depth.
 - **INSERT** (FX → INSERT and INSERT 2, 2.6, after Felucca 1.5): one effect on the track alone, right after its drive; the drum track has one too, on the whole kit and its sends. MIX sets dry / wet. A, B and C change with the type:
@@ -875,13 +917,14 @@ The visualiser sees the mix **as if MASTER were all the way up**: with MASTER tu
 
 ## 20. The HOME menu and the lights
 
-**Hold HOME** (0.7 s) to open the menu; hold it again to close it. The menu is in four sections:
+**Hold HOME** (0.7 s) to open the menu; hold it again to close it. The menu is in five sections (2.7.1: SEQ):
 
 | Section | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
 | --- | --- | --- | --- | --- |
 | **SCREEN** | **COLOR**: the screen palette (GREEN, AMBER, CYAN, RED, MONO, then [your theme](#your-theme) once you sent one) | **ZOOM**: ON shows the value you touch large and white | **KNOB ACCEL** (2.7): ON (the default) a fast turn sweeps wider; OFF one value a detent | — |
 | **LIGHTS** | **LIGHTS**: OFF, LOW, MID, HIGH | **KEYS**: OFF, C KEYS, WHITE KEYS, ALL KEYS | **NOTES**: OFF / ON | — |
-| **AUDIO** | **SPEAKER LOWCUT**: ON cuts the lows the small speaker cannot play (~110 Hz) | **USB AUDIO**: MASTER / FULL | **USB RATE** (2.7): AUTO / 44.1 KHZ / 48 KHZ (takes effect at the next start) | — |
+| **AUDIO** | **SPEAKER LOWCUT**: ON cuts the lows the small speaker cannot play (~110 Hz) | **USB AUDIO**: MASTER / FULL | **USB RATE** (2.7): AUTO / 44.1 KHZ / 48 KHZ (takes effect at the next start) | **FILTER RESO** (2.7.2): the resonance of the per-track filter, 0 (clean, as before) … 10 |
+| **SEQ** (2.7.1) | **STEP ADVANCE**: ON (the default) the NOTES page moves on when you let go of the keys; OFF it stays, so a chord you missed is played again on the same step (KNOB 1 moves the cursor) | **DRUM PREVIEW**: OFF (the default) a drum sound picked with a knob (DRUMS screen, SEQ layer) is not heard, quiet for live; ON you hear it, as up to 2.7 | — | — |
 | **SYSTEM** | **2ND CORE** (2.7): **ON** (the default) / OFF. ON, the sound is computed on both of the FM-1's cores: about twice the room before the CPU runs out (many voices, INSERT effects on several tracks), the same sound. ON takes effect at the next power-on; ABOUT then says *2 CORES* (*1 CORE*: the second core did not answer and SLOOP runs on one, as before). OFF: one core, as in 2.6 | **HARDWARE CALIBRATION** (the knob selects it, OCT+ opens it) | **MIDI LEARN CLEAR** (2.6): how many CCs are learned; OCT+ forgets them all | **ABOUT**, the version (the knob selects it, OCT+ opens it) |
 
 **The knobs (2.7).** A slow turn is fine tuning, one value a detent. Turn faster and the value sweeps wider, progressively (x2 up to x16 on the widest values); turning back to correct is always one value a detent, and lists of names never jump. MENU → SCREEN → KNOB ACCEL OFF keeps one value a detent everywhere. **LEVEL and PAN glide** over about 3 ms instead of stepping at each detent, on every track and the drums: no zipper on a held note. Both after JIANT FM by juanjiant-bit.
@@ -966,6 +1009,8 @@ The knobs of a MIDI controller set the sound (the standard CC map of Felucca 1.1
 | 5 | GLIDE |
 | 7 | LEVEL (on the drum channel: GLO → DRUMS → LVL) |
 | 10 | PAN |
+| 11 | (2.7.1) **EXPRESSION**: a volume pedal over the track's LEVEL (on the drum channel: over DRUMS LVL), 127 full, 0 silent, as on a GM synth. It does not change LEVEL (your mix and what you save stay as they are). Full again at power-on, when a project or section is loaded, and with CC 121 |
+| 121 | (2.7.1) RESET ALL CONTROLLERS: the expression full again |
 | 71 | the engine's resonance (RES or Q: ANALOG, TRIO, VOICE, NOISE; the others ignore it) |
 | 72 · 73 · 75 | release · attack · decay |
 | 74 | (2.7) the engine's own cutoff or brightness, dark to bright: ANALOG / SAMPLE CUT, TRIO CUT, PHASE DCW, LOFI / GRAIN TONE, FM6 MLVL, PHYS BRIT, NOISE FREQ. DIGITAL, VOICE, WHEEL and the drum track: the track's FILTER (64 off, lower a low-pass, higher a high-pass), as before |
@@ -973,7 +1018,7 @@ The knobs of a MIDI controller set the sound (the standard CC map of Felucca 1.1
 
 **Sustain and pitch bend (2.6).** The **sustain pedal** (CC 64, on the track its channel plays): while it is down, a note you let go keeps sounding until the pedal comes up (the arp keeps it, a recording holds it as you hear it; a note played again meanwhile ends with its key). **Pitch bend** bends the track its channel plays, smoothly, by up to **BEND** semitones (GLO → MIDI 2: 1–12, default 2); the drum track ignores it. Other CCs (mod wheel…) are ignored, unless you map them with MIDI LEARN.
 
-**Program Change (2.6, after Felucca 1.5.1 and @renebohne's PR #179).** A Program Change on a track's channel loads its sound: on a synth track, number *n* is the *n*-th sound of the PRESETS list (0 the first: 808 BOOM; the 153 factory sounds by kind, then your user presets in order), on the drum channel kit *n*. A number past the end is ignored. The screen says *T2 PROG 5*. IN = CLOCK ignores it; IN = CH n sends it to the selected track.
+**Program Change (2.6, after Felucca 1.5.1 and @renebohne's PR #179).** A Program Change on a track's channel loads its sound: on a synth track, number *n* is the *n*-th sound of the PRESETS list (0 the first: 808 BOOM; the 153 factory sounds by kind, then your user presets in order), on the drum channel kit *n*. A number past the end is ignored. The screen says *T2 PROG 5*. IN = CLOCK ignores it; IN = CH n sends it to the selected track. **(2.7.2) Bank Select (CC 0)** reaches the sounds past the first 128: send **CC 0** on the track's channel and it is latched for the next Program Change — bank 0 the first 128 of the PRESETS list, bank 1 the next 128, and so on (the rest of the factory sounds, then your user presets by slot). Send CC 0, then the Program Change.
 
 ### MIDI LEARN (2.6)
 
@@ -997,7 +1042,7 @@ On USB the FM-1 is also an audio input named **Felucca**: 44.1 or 48 kHz (the co
 - **MASTER** (default): the recording follows the MASTER knob, as the headphones do. Keep MASTER well up while you record.
 - **FULL**: a fixed level, as with MASTER all the way up (kept from clipping by the limiter); MASTER then only sets the headphones. Best for a computer input with no level control of its own.
 
-The first time, the computer sees the FM-1 as a slightly different device (MIDI + audio) and sets it up again. On macOS 13–15, keep **USB SERIAL** OFF (the default) or the audio input may not show (2.6; from 2.7 the FM-1's build has no serial console and no USB SERIAL: the flash is full, and it was a developer's tool).
+The first time, the computer sees the FM-1 as a slightly different device (MIDI + audio) and sets it up again. On macOS 13–15, keep **USB SERIAL** OFF (the default) or the audio input may not show (2.6; from 2.7 the FM-1's build has no serial console and no USB SERIAL: the flash is full, and it was a developer's tool). (2.7.2) On macOS 15 and older, SLOOP up to 2.7.1 showed MIDI but no audio input: Apple's audio driver there stopped reading SLOOP's USB description before the audio part (after Felucca 1.5.1, the audio is now listed first). The FM-1 also reports a new USB version, so the Mac sets it up fresh.
 
 <a id="usb-rate"></a>**HOME menu → AUDIO → USB RATE** (2.7), KNOB 3: the rates the FM-1 offers. It takes effect at the next start: turn the FM-1 off and on (the menu shows *RESTART* until then).
 
@@ -1213,7 +1258,9 @@ A 2.4 backup restores into 2.4 (or later) only. **Save a backup before every upd
 
 ### Going back to the official firmware
 
-On the installer page, open **Return to the official firmware (V15)**: save a backup with the editor first, download FM-1 V15 from m-vave.com, select its `FM-1.fwsc` (only that exact file is accepted) and install it. M-VAVE's own updater (M-UPGRADE) works too; close every other app that uses MIDI first. To come back, install SLOOP again and restore your backup.
+**(2.8)** The in-browser return-to-stock was removed, because it was not reliable on every system. To go back to the official firmware, use **M-VAVE's own updater, M-UPGRADE** (m-vave.com → Downloads → PC Software → M-UPGRADE) with the official **FM-1 V15** firmware (PC Firmware → FM-1 V15); close every other app that uses MIDI first. Save a backup with the editor before you go. To come back, install SLOOP again and restore your backup.
+
+If the official firmware comes up with odd settings or a scrambled display, it is reading the settings SLOOP left in the FM-1's memory — nothing is damaged. A factory reset in M-VAVE's own firmware, or M-UPGRADE's full restore, clears it; and installing SLOOP again brings your work back exactly as it was.
 
 ### Troubleshooting
 
@@ -1315,7 +1362,7 @@ On the installer page, open **Return to the official firmware (V15)**: save a ba
 | a track's effect (INSERT) | FX → INSERT, INSERT 2 |
 | tempo-synced envelope / LFO | ENV DEST → ESYNC · LFO → LFO 2 → SYNC |
 | ANALOG band-pass / high-pass | EDIT → FILTER → TYPE |
-| a note's length in steps | SEQ → STEP page, KNOB 3 on the note (LEN) |
+| a note's length in steps | SEQ → NOTES page, KNOB 3 on the note (LEN) |
 | drum mutes | EDIT + a black key, then the sounds' keys |
 | lights, colours, USB audio level | hold HOME (menu) |
 | the version | hold HOME → SYSTEM → ABOUT |

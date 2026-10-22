@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* SLOOP menu (HOME held), in sections as the pages are (2.4): SCREEN (COLOR, ZOOM, KNOB ACCEL (2.7)), LIGHTS (LIGHTS, KEYS, NOTES),
- * AUDIO (LOWCUT, USB AUDIO, USB SERIAL (FELUCCA_CDC builds only), USB RATE (2.7 beta)), SYSTEM (2ND CORE (dualcore), HARDWARE CALIBRATION, LEARN CLEAR (2.6), ABOUT).
+ * AUDIO (LOWCUT, USB AUDIO, USB SERIAL (FELUCCA_CDC builds only), USB RATE (2.7 beta)), SEQ (2.7.1: STEP ADVANCE, DRUM PREVIEW), SYSTEM (2ND CORE (dualcore), HARDWARE CALIBRATION, LEARN CLEAR (2.6), ABOUT).
  * SELECT goes to the section before / after (stopping at the ends), KNOB 1..4 set the section's settings in order (the knob's colour marks
  * its row), PRESETS moves the cursor; OCT+ steps the cursor's setting round or opens it (CALIBRATION, ABOUT),
  * OCT- closes (from ABOUT: back to the section). */
@@ -11,15 +11,15 @@ enum { MI_COLOR, MI_ZOOM, MI_ACCEL, MI_LIGHTS, MI_KEYS, MI_NOTES, MI_LOWCUT, MI_
 #if FELUCCA_CDC
        MI_SERIAL,
 #endif
-       MI_RATE, MI_CPU1, MI_PANEL, MI_LCLEAR, MI_ABOUT, MI_COUNT };
+       MI_RATE, MI_FRESO, MI_ADV, MI_DPREV, MI_CPU1, MI_PANEL, MI_LCLEAR, MI_ABOUT, MI_COUNT };
 static const char *const MI_NAME[MI_COUNT] = {"COLOR", "ZOOM", "KNOB ACCEL", "LIGHTS", "KEYS", "NOTES", "SPEAKER LOWCUT", "USB AUDIO",
 #if FELUCCA_CDC
                                               "USB SERIAL",
 #endif
-                                              "USB RATE", "2ND CORE", "HARDWARE CALIBRATION", "MIDI LEARN CLEAR", "ABOUT"};
-enum { MS_SCREEN, MS_LIGHTS, MS_AUDIO, MS_SYSTEM, MS_COUNT };
-static const char *const MS_NAME[MS_COUNT] = {"SCREEN", "LIGHTS", "AUDIO", "SYSTEM"};   /* (AUDIO: and USB) */
-static const uint8_t MS_FIRST[MS_COUNT + 1] = {MI_COLOR, MI_LIGHTS, MI_LOWCUT, MI_CPU1, MI_COUNT};   /* rows of each */
+                                              "USB RATE", "FILTER RESO", "STEP ADVANCE", "DRUM PREVIEW", "2ND CORE", "HARDWARE CALIBRATION", "MIDI LEARN CLEAR", "ABOUT"};
+enum { MS_SCREEN, MS_LIGHTS, MS_AUDIO, MS_SEQ, MS_SYSTEM, MS_COUNT };   /* (2.7.1: SEQ) */
+static const char *const MS_NAME[MS_COUNT] = {"SCREEN", "LIGHTS", "AUDIO", "SEQ", "SYSTEM"};   /* (AUDIO: and USB) */
+static const uint8_t MS_FIRST[MS_COUNT + 1] = {MI_COLOR, MI_LIGHTS, MI_LOWCUT, MI_ADV, MI_CPU1, MI_COUNT};   /* rows of each */
 
 UI_SMALL static int mi_cpu1_have(void)                      /* the second core is running (cpu1.c; the host tests have no cpu1.c) */
 {
@@ -60,6 +60,8 @@ UI_SMALL static const char *mi_value(uint32_t i, uint16_t *c)
         return PALETTES[settings.palette % NPALETTES].name;
     case MI_ZOOM: return settings.zoom ? "ON" : "OFF";
     case MI_ACCEL: return knob_accel_off ? "OFF" : "ON";   /* (2.7) the knobs speed up with a fast turn */
+    case MI_ADV: return step_adv_off ? "OFF" : "ON";      /* (2.7.1) the STEP page's cursor moves on when the keys are let go */
+    case MI_DPREV: return drum_preview ? "ON" : "OFF";     /* (2.7.1) a drum sound picked with a knob is heard */
     case MI_LIGHTS: return LIGHTS_NAME[lights_lvl % LIGHTS_N];
     case MI_KEYS:
         *c = lights_lvl ? C_HI : C_DIM;               /* (needs LIGHTS) */
@@ -73,6 +75,15 @@ UI_SMALL static const char *mi_value(uint32_t i, uint16_t *c)
     case MI_RATE: {                                   /* (2.7 beta) the rates the USB audio input offers (usb.c) */
         static const char *const R[3] = {"AUTO", "44.1 KHZ", "48 KHZ"};
         return R[usb_rate % 3u];
+    }
+    case MI_FRESO: {                                  /* (2.7.2) the track filter's resonance, 0 (clean) .. 10 (fx.c) */
+        static char b[4];
+        if (!flt_reso) {
+            *c = C_DIM;
+            return "OFF";
+        }
+        fmt_int(b, flt_reso > 10u ? 10 : flt_reso);
+        return b;
     }
     case MI_CPU1:                                     /* the render on both cores (fx.c); live, the sound is the same */
         *c = mi_cpu1_have() ? C_HI : C_DIM;
@@ -100,7 +111,7 @@ UI_SMALL static void draw_menu(void)
     uint32_t sig = ui.menu * 7u + ui.menu_sel * 131u + settings.palette * 1009u + settings.lowcut * 7919u +
                    settings.zoom * 104729u + lights_lvl * 1299709u + lights_keys * 15485863u + ml_count() * 2654435u +
                    lights_notes * 32452843u + usb_full * 49979687u + usb_serial * 86028121u + usb_rate * 15486719u + theme_shown() * 32452867u + theme.crc + cpu1_off * 122949829u +
-                   knob_accel_off * 179424673u;
+                   knob_accel_off * 179424673u + drum_preview * 236887691u + step_adv_off * 373587883u + flt_reso * 512927357u;
     if (!ui.force && sig == ui.menu_sig)
         return;
     ui.menu_sig = sig;
@@ -156,7 +167,7 @@ UI_SMALL static void draw_menu(void)
                 if (i == sec)
                     cv_rect(x - 2, 3, w + 4, 18, C_LINE);
                 cv_text(x, 4, &FONT_S, MS_NAME[i], i == sec ? C_WHITE : C_DIM);
-                x += w + 10;
+                x += w + 6;                         /* (2.7.1: five sections: 6, the last ends at 236) */
             }
             for (i = MS_FIRST[sec]; i < MS_FIRST[sec + 1u]; i++) {
                 uint32_t r = i - MS_FIRST[sec];
@@ -237,6 +248,12 @@ UI_SMALL static void mi_set(uint32_t i, int32_t s)
     case MI_ACCEL:                                     /* (2.7) right ON, left OFF; OCT+ toggles (ui_input.c accel) */
         knob_accel_off = (uint8_t)(s > 0 ? 0u : s < 0 ? 1u : !knob_accel_off);
         break;
+    case MI_ADV:                                       /* (2.7.1) right ON, left OFF; OCT+ toggles (ui_input.c seq_entry) */
+        step_adv_off = (uint8_t)(s > 0 ? 0u : s < 0 ? 1u : !step_adv_off);
+        break;
+    case MI_DPREV:                                     /* (2.7.1) right ON, left OFF; OCT+ toggles (ui_studio.c drum_hear) */
+        drum_preview = (uint8_t)(s > 0 ? 1u : s < 0 ? 0u : !drum_preview);
+        break;
     case MI_ZOOM:
     case MI_LOWCUT: {                                  /* right ON, left OFF; OCT+ toggles */
         uint32_t *v = i == MI_LOWCUT ? &settings.lowcut : &settings.zoom;
@@ -260,6 +277,14 @@ UI_SMALL static void mi_set(uint32_t i, int32_t s)
             usb_rate--;
         else if (!s)
             usb_rate = (uint8_t)((usb_rate + 1u) % 3u);
+        break;
+    case MI_FRESO:                                     /* (2.7.2) 0 (OFF/clean) .. 10, stops at the ends; OCT+ steps round */
+        if (s > 0 && flt_reso < 10u)
+            flt_reso++;
+        else if (s < 0 && flt_reso > 0u)
+            flt_reso--;
+        else if (!s)
+            flt_reso = (uint8_t)((flt_reso >= 10u ? 0u : flt_reso + 1u));
         break;
     case MI_CPU1:                                      /* right ON, left OFF; at once (the next block renders so) */
         cpu1_off = (uint8_t)(s > 0 ? 0u : s < 0 ? 1u : !cpu1_off);

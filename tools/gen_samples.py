@@ -128,9 +128,16 @@ def name_note(name):
     return (int(m.group(2)), NOTE[m.group(1)]) if m else None
 
 
+# SLOOP 2.7.2: sets that keep their first sound only, over the whole keyboard (SCRCH: the scratch, 3 KB; the backspin
+# and the rewind, 20 KB, made room for the NOTES editor). The set and its number stay: projects and presets unchanged
+ONE_SOUND = {"SCRCH"}
+
+
 def cc0_entries(setname, kind):
     """-> [(file name, int16 samples at TR, loop or None, root)]"""
     files = sorted((CC0 / setname).glob("*.wav"))
+    if setname in ONE_SOUND:
+        files = files[:1]
     out, conv = [], 1
     if kind != "kit" and not all(re.search(r"_m\d+\.wav$", p.name) for p in files):
         # octave convention of this set (C4 = 60 or C3 = 60): YIN votes, the names give the notes
