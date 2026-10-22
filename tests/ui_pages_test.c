@@ -1508,6 +1508,19 @@ int main(int argc, char **argv)
         ppm("chords-6-vis-long-name");
         trk_note_off(&trk[0], 73); trk_note_off(&trk[0], 76); trk_note_off(&trk[0], 80); trk_note_off(&trk[0], 84);
         trk_note_on(&trk[0], 52, 100); frames(4); ppm("chords-7-vis-one-note"); trk_note_off(&trk[0], 52);
+        {   /* the FM-1's keys: the lowest (F) and the C an octave and a half up light apart, where they are */
+            uint32_t lw = 0, hi = 0, xx;
+            trk[0].p[P_SCALE] = 0; trk[0].p[P_TRANS] = 0; song.octave = 0;
+            fm1_in.notes |= 1u << 0; frames(4); chd_label(lab, sizeof lab);
+            check(!strcmp(lab, "F3"), "chords: the FM-1's lowest key is F3 (TRN 0, no octave)");
+            for (xx = 0; xx < 240u; xx++) lw += screen[230u * 240u + xx] == swap16(TE_COL[0]);
+            ppm("chords-8-vis-key-0");
+            fm1_in.notes &= ~(1u << 0); fm1_in.notes |= 1u << 19; frames(4); chd_label(lab, sizeof lab);
+            for (xx = 0; xx < 240u; xx++) hi += screen[230u * 240u + xx] == swap16(TE_COL[0]) && xx > 120u;
+            ppm("chords-9-vis-key-19");
+            check(!strcmp(lab, "C5") && lw > 0u && hi > 0u, "chords: key 19 (C5) lights on the right half, not over the first octave");
+            fm1_in.notes &= ~(1u << 19); frames(4);
+        }
         song.sel = TRK_DRUM; frames(4);
         check(chd.trk == 0u, "chords: the drum track selected: still the synth track before");
         tap(B_HOME); frames(2);

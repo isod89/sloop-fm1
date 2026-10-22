@@ -607,7 +607,6 @@ static const uint8_t FONT_XL_ADV[64] = {[0 ... 63] = 32}, FONT_XL_BW[64] = {[0 .
 static const felucca_font_t FONT_XL = {64, 8, 32, 95, 2, FONT_XL_ADV, FONT_XL_BW, FONT_S_OFF, FONT_S_DATA, 1};
 static void vis_chords(void)
 {
-    static const uint8_t WHITE[7] = {0, 2, 4, 5, 7, 9, 11}, BLACK_AFTER[5] = {0, 1, 3, 4, 5}, BLACK[5] = {1, 3, 6, 8, 10};
     uint32_t tr = chd.trk < NPART ? chd.trk : song.sel < NPART ? song.sel : 0u, i, j, oct, lo, nw;
     const track_t *t = &trk[tr];
     uint16_t col = chd.live ? TE_COL[tr] : TE_MID[tr], txt = chd.live ? C_WHITE : TE_G3;
@@ -671,29 +670,44 @@ static void vis_chords(void)
         note_name(b + str_len(b), chd.note[i]);
     }
     cv_text(120 - text_w(&FONT_S, b) / 2, 150, &FONT_S, b, TE_G4);
-    /* the keyboard: from the C below the lowest note, two to four octaves */
-    lo = chd.n ? chd.note[0] / 12u * 12u : 48u;
-    oct = chd.n ? (chd.note[chd.n - 1u] - lo) / 12u + 1u : 2u;
-    oct = oct < 2u ? 2u : oct > 4u ? 4u : oct;
-    nw = 7u * oct;
+    /* the keyboard: the FM-1's own 27 keys (F to G) where the octave buttons and TRN put them, so a key lights
+     * where it is pressed; notes off it (the sequencer, MIDI) move it by octaves until they fit */
+    lo = (uint32_t)clamp(53 + 12 * song.octave + t->p[P_TRANS], 0, 101);
+    if (chd.n) {
+        while (chd.note[0] < lo && lo >= 12u)
+            lo -= 12u;
+        while (chd.note[chd.n - 1u] > lo + 26u && chd.note[0] >= lo + 12u && lo + 12u <= 101u)
+            lo += 12u;
+    }
+    for (nw = 0, i = lo; i <= lo + 26u; i++)
+        nw += (0xAB5u >> (i % 12u)) & 1u;
     kw = 232 / (int32_t)nw;
     x0 = (240 - kw * (int32_t)nw) / 2;
-    for (i = 0; i < nw; i++) {
-        uint32_t note = lo + i / 7u * 12u + WHITE[i % 7u], lit = 0;
+    for (oct = 0, i = lo; i <= lo + 26u; i++) {          /* the white keys (oct: how many so far) */
+        uint32_t lit = 0;
+        if (!((0xAB5u >> (i % 12u)) & 1u))
+            continue;
         for (j = 0; j < chd.n; j++)
-            lit |= chd.note[j] == note;
-        cv_rect(x0 + (int32_t)i * kw, 178, kw - 1, 56, lit ? col : te_gray(RGB(150, 150, 158)));
-        if (lit && note % 12u == (chd.ok ? chd.root : 99u))
-            cv_rect(x0 + (int32_t)i * kw + kw / 2 - 2, 224, 4, 4, C_WHITE);   /* the root */
+            lit |= chd.note[j] == i;
+        cv_rect(x0 + (int32_t)oct * kw, 178, kw - 1, 56, lit ? col : te_gray(RGB(150, 150, 158)));
+        if (lit && chd.ok && i % 12u == chd.root)
+            cv_rect(x0 + (int32_t)oct * kw + kw / 2 - 2, 224, 4, 4, C_WHITE);   /* the root */
+        oct++;
     }
-    for (i = 0; i < oct * 5u; i++) {
-        uint32_t note = lo + i / 5u * 12u + BLACK[i % 5u], lit = 0;
-        int32_t bw = kw * 6 / 10, bx = x0 + (int32_t)(i / 5u * 7u + BLACK_AFTER[i % 5u] + 1u) * kw - bw / 2 - 1;
+    for (oct = 0, i = lo; i <= lo + 26u; i++) {          /* the black keys, over the gap after the white before */
+        uint32_t lit = 0;
+        int32_t bw = kw * 6 / 10, bx = x0 + (int32_t)oct * kw - bw / 2 - 1;
+        if ((0xAB5u >> (i % 12u)) & 1u) {
+            oct++;
+            continue;
+        }
+        if (!oct)
+            continue;                                    /* (a black key before the first white: not drawn) */
         for (j = 0; j < chd.n; j++)
-            lit |= chd.note[j] == note;
+            lit |= chd.note[j] == i;
         cv_rect(bx - 1, 178, bw + 2, 35, C_BLACK);
         cv_rect(bx, 178, bw, 34, lit ? col : te_gray(RGB(30, 30, 34)));
-        if (lit && note % 12u == (chd.ok ? chd.root : 99u))
+        if (lit && chd.ok && i % 12u == chd.root)
             cv_rect(bx + bw / 2 - 2, 204, 4, 4, C_WHITE);
     }
 }
