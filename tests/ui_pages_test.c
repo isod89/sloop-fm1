@@ -1521,6 +1521,20 @@ int main(int argc, char **argv)
             check(!strcmp(lab, "C5") && lw > 0u && hi > 0u, "chords: key 19 (C5) lights on the right half, not over the first octave");
             fm1_in.notes &= ~(1u << 19); frames(4);
         }
+        {   /* a MONO / LEGATO sound: a chord played one key after another is named as a chord */
+            trk[0].p[P_VOICE] = V_MONO; trk[0].p[P_TRANS] = 0; song.octave = 0;
+            fm1_in.notes |= 1u << 7; frames(3);                 /* C4 */
+            fm1_in.notes |= 1u << 11; frames(3);                /* E4 */
+            fm1_in.notes |= 1u << 14; frames(3);                /* G4 */
+            chd_label(lab, sizeof lab);
+            check(!strcmp(lab, "C"), "chords: MONO, keys pressed one after another: C (not only the last key)");
+            fm1_in.notes &= ~((1u << 7) | (1u << 11) | (1u << 14)); frames(4);
+            trk[0].p[P_VOICE] = V_POLY;
+            fm1_in.notes |= 1u << 9; frames(5); fm1_in.notes |= 1u << 12; frames(5); fm1_in.notes |= 1u << 16; frames(5);
+            chd_label(lab, sizeof lab);
+            check(!strcmp(lab, "D MIN"), "chords: POLY, keys pressed one after another: D MIN");
+            fm1_in.notes &= ~((1u << 9) | (1u << 12) | (1u << 16)); frames(4);
+        }
         song.sel = TRK_DRUM; frames(4);
         check(chd.trk == 0u, "chords: the drum track selected: still the synth track before");
         tap(B_HOME); frames(2);

@@ -9,7 +9,7 @@
  * write m and maj: CM7 would read as either. Called from pads_tick (ui_studio.c), once a frame. */
 
 #define CHD_HOLD 120u                         /* frames (~2 s) the TRACKS row keeps a chord after the last note */
-#define CHD_MAXN 12u                          /* notes kept (NVOICE voices + the ones started this frame) */
+#define CHD_MAXN 16u                          /* notes kept (voices, keys held, the ones started this frame) */
 
 typedef struct {
     uint16_t mask;                              /* the pitch classes above the root, bit 0 = the root */
@@ -184,6 +184,11 @@ UI_SMALL static void chd_tick(uint32_t (*hits)[4])
     for (i = 0; i < NVOICE; i++)
         if (t->v[i].active && t->v[i].gate && t->v[i].stage != 4u)
             chd_add(cur, &k, t->v[i].note);
+    for (i = 0; i < t->nmono && i < 8u; i++)            /* MONO, LEGATO, UNISON: every key held, not only the one */
+        chd_add(cur, &k, t->mono_stack[i]);             /* that sounds (a chord played one key after another) */
+    if (t->p[P_AMODE])
+        for (i = 0; i < t->nheld && i < 16u; i++)       /* the arp: the chord it holds, not its one note now */
+            chd_add(cur, &k, t->held[i]);
     for (i = 0; i < 128u; i++)
         if ((hits[tr][i >> 5] >> (i & 31u)) & 1u) {
             chd_add(cur, &k, i);

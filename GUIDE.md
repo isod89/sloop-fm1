@@ -928,7 +928,7 @@ How the chord is named:
 - One note shows the note and its octave (**E3**); notes that make no chord show their names (**C D**).
 - Letting go of the keys one by one keeps the chord's name; adding a note renames it.
 - It follows the selected synth track. With the drum track selected, it keeps following the synth track selected before.
-- A MONO, LEGATO or UNISON track plays one note at a time, so it shows that note. With the arp on, it shows the notes as the arp plays them.
+- It names the keys you hold, however you press them: all at once or one after another. A MONO, LEGATO or UNISON sound plays one of them, but the chord of all the keys held is shown. With the arp on, it shows the chord the arp is playing through.
 
 ---
 
