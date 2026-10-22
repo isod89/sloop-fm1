@@ -1422,11 +1422,11 @@ int main(int argc, char **argv)
             check(op < 64u && pk > 2000u && lit > 1500u, "visualiser: MASTER at 0: no sound, the picture as at full volume");
             song.master_q12 = m0; frames(4);
         }
-        check(vis_style == 0u, "visualiser: SELECT goes round (13 -> 1)");
+        check(vis_style == 0u, "visualiser: SELECT goes round (14 -> 1)");
         encs[panel.enc[EN_SELECT]] = -1; frames(2);
-        check(vis_style == 12u && (lights_word() >> 17 & 15u) == 12u, "visualiser: SELECT left: CHORDS (13), kept in the settings word");
+        check(vis_style == 13u && (lights_word() >> 17 & 15u) == 13u, "visualiser: SELECT left: PROGRESSION (14), kept in the settings word");
         lights_from_word(lights_word());
-        check(vis_style == 12u, "visualiser: the style read back");
+        check(vis_style == 13u, "visualiser: the style read back");
         { int16_t bpm = song.g[G_BPM], lv = trk[0].p[P_LEVEL];
           encs[panel.enc[EN_K2]] = 5; frame();
           check(trk[0].p[P_LEVEL] == lv && song.g[G_BPM] == bpm, "visualiser: KNOB 2 (the hidden TRACKS screen) edits nothing, SELECT is not the tempo"); }
@@ -1534,6 +1534,45 @@ int main(int argc, char **argv)
             chd_label(lab, sizeof lab);
             check(!strcmp(lab, "D MIN"), "chords: POLY, keys pressed one after another: D MIN");
             fm1_in.notes &= ~((1u << 9) | (1u << 12) | (1u << 16)); frames(4);
+        }
+        {   /* the progression (PROGRESSION, 14): C F G A MIN in C MAJ, each held; then three ideas after A MIN */
+            static const uint8_t PR[4][3] = {{60, 64, 67}, {65, 69, 72}, {67, 71, 74}, {69, 72, 76}};
+            static const char *const WANT[4] = {"C", "F", "G", "A MIN"};
+            chd_ent_t nx[3];
+            char l[24];
+            uint32_t q, r, okp = 1, nn;
+            trk[0].p[P_VOICE] = V_POLY, trk[0].p[P_ROOT] = 0, trk[0].p[P_SCALE] = 1;
+            chh.len = 0;
+            for (q = 0; q < 4u; q++) {
+                for (r = 0; r < 3u; r++) trk_note_on(&trk[0], PR[q][r], 100);
+                frames(5);
+                if (q == 1u) {                              /* (a passing shape, shorter than CHD_STABLE: not kept) */
+                    trk_note_off(&trk[0], PR[q][2]); trk_note_on(&trk[0], 70, 100); frames(2); trk_note_off(&trk[0], 70);
+                    trk_note_on(&trk[0], PR[q][2], 100); frames(3);
+                }
+                frames(12);
+                for (r = 0; r < 3u; r++) trk_note_off(&trk[0], PR[q][r]);
+                frames(3);
+            }
+            for (q = 0; q < chh.len && q < 4u; q++) {
+                chd_label_of(l, sizeof l, chh.e[q].root, chh.e[q].q, chh.e[q].bass);
+                okp &= !strcmp(l, WANT[q]);
+            }
+            check(okp && chh.len == 4u, "progression: C F G A MIN kept in order, a passing shape not");
+            nn = chd_suggest(&trk[0], nx);
+            okp = nn == 3u;
+            for (q = 0; q < nn; q++) {
+                static const char *const NW[3] = {"F", "D MIN", "G"};
+                chd_label_of(l, sizeof l, nx[q].root, nx[q].q, nx[q].bass);
+                okp &= !strcmp(l, NW[q]);
+            }
+            check(okp, "progression: after A MIN (VI) in C MAJ the ideas are F (IV), D MIN (II), G (V)");
+            vis_style = 13; ui.force = 1; frames(4);       /* (the visualiser is open: CHORDS above) */
+            ppm("chords-10-progression");
+            trk_note_on(&trk[0], 69, 100); trk_note_on(&trk[0], 72, 100); trk_note_on(&trk[0], 76, 100); frames(14);
+            check(chh.len == 4u, "progression: the same chord again is not kept twice");
+            trk_note_off(&trk[0], 69); trk_note_off(&trk[0], 72); trk_note_off(&trk[0], 76); frames(3);
+            vis_style = 12; ui.force = 1; frames(2);
         }
         song.sel = TRK_DRUM; frames(4);
         check(chd.trk == 0u, "chords: the drum track selected: still the synth track before");

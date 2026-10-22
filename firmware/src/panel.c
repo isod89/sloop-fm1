@@ -95,7 +95,7 @@ static uint8_t usb_serial;                      /* menu USB SERIAL: 1 = the seri
 static uint8_t usb_rate;                        /* menu USB RATE (2.7 beta): 0 AUTO, 1 44.1, 2 48 kHz (usb.c usb_rate_mode, at the next start) */
 static uint8_t cpu1_off;                        /* menu 2ND CORE: 1 = OFF, every render unit on core 0 (cpu1.h cpu1_units);
                                                  * 2.7: ON by default (bit 26 set = OFF); core 1 starts at power-on only when ON */
-#define VIS_STYLES 13u                         /* the visualiser's styles (ui_vis.c; 13 CHORDS) */
+#define VIS_STYLES 14u                         /* the visualiser's styles (ui_vis.c; 13 CHORDS, 14 PROGRESSION) */
 static uint8_t vis_style;                       /* the visualiser's style, 0..VIS_STYLES - 1 (ui_vis.c) */
 static uint8_t knob_accel_off;                  /* menu KNOB ACCEL (2.7): 1 = OFF, one value a detent however fast (ui_input.c accel) */
 static uint8_t step_adv_off;                    /* menu SEQ > STEP ADVANCE (2.7.1): 1 = OFF, the STEP page's cursor stays where it

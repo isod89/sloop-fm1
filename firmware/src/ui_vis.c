@@ -5,13 +5,14 @@
  *   1 OSCILLOSCOPE  2 SPECTRUM  3 SPECTROGRAM  4 LISSAJOUS  5 VU METERS  6 CIRCLE
  *   7 TAPE  8 LCD  9 BOUNCE  10 ORBIT  11 WIRES  12 SLOOP (the logo: the sail's bands are the tracks)
  *   13 CHORDS (the chord a synth track plays, its notes and a keyboard; chord.c)
+ *   14 PROGRESSION (the last six chords played, and three ideas for the next one in the key; chord.c)
  * It reads what the audio already leaves for the UI: the scope buffers (audio.c, the mix at 22 kHz, left and
  * right, as if MASTER were all the way up: the picture does not follow the volume knob, even at 0), the tracks' peaks (fx.c / drums.c, as the TRACKS meters read them), the notes that started
  * (voice.c vis_hit) and the transport clock. Everything is drawn in the main loop, every other frame, in two
  * bands of 120 rows (the canvas holds 124): no cost to the audio. */
 #define VIS_N VIS_STYLES                           /* (panel.c: kept with the settings) */
 static const char *const VIS_NAME[VIS_N] = {"OSCILLOSCOPE", "SPECTRUM", "SPECTROGRAM", "LISSAJOUS", "VU METERS",
-                                            "CIRCLE", "TAPE", "LCD", "BOUNCE", "ORBIT", "WIRES", "SLOOP", "CHORDS"};
+                                            "CIRCLE", "TAPE", "LCD", "BOUNCE", "ORBIT", "WIRES", "SLOOP", "CHORDS", "PROGRESSION"};
 /* vis_on, vis_shown_last, vis_name_t: ui_draw.c; vis_style: panel.c (kept with the settings) */
 #define VIS_FFT 512u
 #define VIS_SG_W 48u                                /* spectrogram: 48 columns of 5 px, 72 rows of 3 px */
@@ -712,6 +713,81 @@ static void vis_chords(void)
     }
 }
 
+/* 14 PROGRESSION: the followed track's last six chords (chord.c chh), each with its degree in the key,
+ * the newest lit while it is the one shown; under them three chords that commonly come next in the track's key
+ * (its seven-note scale: the scale's own triads, chord.c chd_suggest) */
+UI_SMALL static void vis_fit(char *b, int32_t w)               /* a chord's name into w px: no space, then cut */
+{
+    uint32_t i, j;
+    if (text_w(&FONT_S, b) > w) {
+        for (i = j = 0; b[i]; i++)
+            if (b[i] != ' ')
+                b[j++] = b[i];
+        b[j] = 0;
+    }
+    while (b[0] && text_w(&FONT_S, b) > w)
+        b[str_len(b) - 1u] = 0;
+}
+UI_SMALL static void vis_tile(int32_t x, int32_t y, int32_t w, const chd_ent_t *e, const track_t *t, uint16_t bg,
+                              uint16_t fg, uint16_t sub, uint16_t edge)
+{
+    char b[24];
+    int32_t d = chd_deg_of(t, e->root);
+    cv_rect(x, y, w, 42, edge);
+    cv_rect(x + 1, y + 1, w - 2, 40, bg);
+    chd_label_of(b, sizeof b, e->root, e->q, e->bass);
+    vis_fit(b, w - 6);
+    cv_text(x + (w - text_w(&FONT_S, b)) / 2, y + 4, &FONT_S, b, fg);
+    if (d >= 0)
+        cv_text(x + (w - text_w(&FONT_S, CHD_ROMAN[d])) / 2, y + 22, &FONT_S, CHD_ROMAN[d], sub);
+}
+static void vis_prog(void)
+{
+    uint32_t tr = chd.trk < NPART ? chd.trk : song.sel < NPART ? song.sel : 0u, i, n;
+    const track_t *t = &trk[tr];
+    uint16_t col = TE_COL[tr], dim = TE_DIM[tr];
+    chd_ent_t nx[3];
+    char b[32];
+    {   /* the track followed, and its key */
+        char c[2] = {(char)('1' + tr), 0};
+        cv_rect(8, 24, 16, 16, col);
+        cv_text(12, 24, &FONT_S, c, C_BLACK);
+        trk_short_name(tr, b);
+        cv_text(32, 24, &FONT_S, b, TE_G4);
+        if (t->p[P_SCALE]) {
+            str_cpy(b, N_NOTE[clamp(t->p[P_ROOT], 0, 11)], sizeof b);
+            str_cpy(b + str_len(b), " ", sizeof b - str_len(b));
+            str_cpy(b + str_len(b), N_SCALE[clamp(t->p[P_SCALE], 0, (int32_t)NSCALES - 1)], sizeof b - str_len(b));
+            cv_text(232 - text_w(&FONT_S, b), 24, &FONT_S, b, TE_G3);
+        }
+    }
+    for (i = 0; i < CHD_HIST; i++) {                    /* the last six, oldest first, three a row */
+        int32_t x = 6 + (int32_t)(i % 3u) * 78, y = 48 + (int32_t)(i / 3u) * 46;
+        if (i < chh.len) {
+            const chd_ent_t *e = &chh.e[i];
+            int now = i + 1u == chh.len && chd.ok && chd.root == e->root && chd.bass == e->bass && chd.q == e->q;
+            vis_tile(x, y, 74, e, t, now ? col : TE_G1, now ? C_BLACK : C_WHITE, now ? C_BLACK : col, now ? col : TE_G1);
+        } else {
+            cv_rect(x, y, 74, 42, TE_G1);
+            cv_rect(x + 1, y + 1, 72, 40, C_BLACK);
+        }
+    }
+    if (!chh.len)
+        cv_text(120 - text_w(&FONT_S, "PLAY SOME CHORDS") / 2, 60, &FONT_S, "PLAY SOME CHORDS", TE_G3);
+    n = chd_suggest(t, nx);
+    cv_text(8, 146, &FONT_S, "NEXT", TE_G3);
+    if (n) {
+        for (i = 0; i < n; i++)
+            vis_tile(6 + (int32_t)i * 78, 166, 74, &nx[i], t, C_BLACK, C_WHITE, col, dim);
+    } else {
+        const char *m = chd_deg_of(t, 0u) < 0 && (!t->p[P_SCALE] ||
+                        chd_bits(SCALE_MASK[clamp(t->p[P_SCALE], 0, (int32_t)NSCALES - 1)]) != 7u)
+                        ? "SET A KEY: SEL + KEY, KNOB 2"
+                        : chd.ok && chd.n >= 2u ? "THIS CHORD IS OUTSIDE THE KEY" : "PLAY A CHORD FOR IDEAS";
+        cv_text(120 - text_w(&FONT_S, m) / 2, 180, &FONT_S, m, TE_G3);
+    }
+}
+
 /* the visualiser, every other frame: the update, then both bands */
 static void vis_draw(void)
 {
@@ -739,7 +815,8 @@ static void vis_draw(void)
         case 9: vis_orbit(); break;
         case 10: vis_wires(); break;
         case 11: vis_sloop(); break;
-        default: vis_chords(); break;
+        case 12: vis_chords(); break;
+        default: vis_prog(); break;
         }
         if (!pass && (vis_name_t || ui.msg_t)) {    /* the style's name a second (or a message) */
             char n[8];

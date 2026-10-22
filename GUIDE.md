@@ -911,6 +911,7 @@ On the TRACKS screen, **tap HOME**: the whole screen becomes a visualiser of wha
 | 11 | **WIRES** | a string per track, set swinging by its notes |
 | 12 | **SLOOP** | the logo alive: the sail's four bands are the tracks, the boat rocks on its wave |
 | 13 | **CHORDS** | the chord the selected synth track plays, big, with its degree in the track's scale, its notes and a keyboard that lights them; let go and the last chord stays, dimmed. See [Chords on screen](#chords-on-screen) |
+| 14 | **PROGRESSION** | the last six chords the selected synth track played, each with its degree in the key, and three ideas for the next chord. See [Chord progression](#chord-progression) |
 
 The visualiser sees the mix **as if MASTER were all the way up**: with MASTER turned down, even to 0, it still moves at full size. It costs the sound nothing.
 
@@ -929,6 +930,15 @@ How the chord is named:
 - Letting go of the keys one by one keeps the chord's name; adding a note renames it.
 - It follows the selected synth track. With the drum track selected, it keeps following the synth track selected before.
 - It names the keys you hold, however you press them: all at once or one after another. A MONO, LEGATO or UNISON sound plays one of them, but the chord of all the keys held is shown. With the arp on, it shows the chord the arp is playing through.
+
+
+### Chord progression
+
+The **PROGRESSION** visualiser (14: tap HOME on TRACKS, then turn SELECT past CHORDS) keeps the last six chords the selected synth track played, oldest first, each with its degree in the track's key (*I*, *IV*, *VI*…). The newest is lit while it is still the chord shown.
+
+- A chord counts once it has sounded for about 0.15 s, so the shapes you pass through while pressing keys one by one are not kept. The same chord twice in a row is kept once. It works for the keys, chord mode, MIDI in and the sequencer.
+- **NEXT** shows three chords that commonly follow the current one in the track's key, built from the scale's own triads (after *I*: IV, V, VI; after *IV*: V, I, II; after *V*: I, VI, IV; after *VI*: IV, II, V…). They need a seven-note scale on the track (SEL: KEY and SCALE); with none, or a chord outside the key, the screen says so.
+- Selecting another synth track starts a new list.
 
 ---
 
