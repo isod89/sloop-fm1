@@ -398,8 +398,10 @@ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
     uint32_t any = 0, i, mode = (uint32_t)t->p[P_VOICE];
     if (trk_silent(t))
         return;                                         /* MUTE, or another track soloed */
-    vis_hit |= (uint8_t)(1u << ((uint32_t)(t - trk) & 3u));
-    vis_note[(uint32_t)(t - trk) & 3u] = (uint8_t)note;
+    if (TRK_LEGACY(t - trk) <= 3u) {                    /* (the visualiser's four: tracks 1..3 and the drums) */
+        vis_hit |= (uint8_t)(1u << TRK_LEGACY(t - trk));
+        vis_note[TRK_LEGACY(t - trk)] = (uint8_t)note;
+    }
     if (is_drum(t)) {                                   /* the drum track: GM drums (drums.c) */
         if (note == 35u || note == 36u)
             vis_kick_hit = 1;

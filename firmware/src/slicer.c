@@ -46,7 +46,10 @@ static const uint16_t SL_PAT[SL_NPAT] = {
 };
 static const uint8_t SL_DEN[6] = {2, 4, 8, 3, 6, 12};   /* P_SLRATE (N_SLDIV): a step = 1 / DEN beats */
 
-static int16_t sl_buf[NTRK][SL_LEN] __attribute__((section(".pool")));
+#define SL_POOL 4u                              /* four tracks' buffers in the pool as before, the others in RAM */
+static int16_t sl_buf_pool[SL_POOL][SL_LEN] __attribute__((section(".pool")));
+static int16_t sl_buf_ram[NTRK > SL_POOL ? NTRK - SL_POOL : 1u][SL_LEN];
+#define sl_buf_at(k) ((uint32_t)(k) < SL_POOL ? sl_buf_pool[k] : sl_buf_ram[(uint32_t)(k) - SL_POOL])
 typedef struct {
     uint32_t pos, len;           /* clock units into the step, its length */
     uint32_t base;               /* the step without swing (units) */
@@ -162,7 +165,7 @@ static void slicer_track(const track_t *t, int32_t *b, uint32_t n)
         left = (s->len - s->pos + bpm - 1u) / bpm;  /* samples to the boundary */
         m = left < n - i ? left : n - i;
         if (act)
-            sl_seg(t, s, sl_buf[k], b + i, m, left);
+            sl_seg(t, s, sl_buf_at(k), b + i, m, left);
         s->pos += m * bpm;
         i += m;
     }

@@ -35,7 +35,10 @@ typedef union {
     fm6_part_t fm6;                      /* eng_fm6.c: six notes and the operator buses */
     uint32_t phys[PHYS_ARENA / 4u];      /* eng_phys.c: two SYMP slots or three small ones */
 } eng_arena_t;
-static eng_arena_t eng_arena[NPART] __attribute__((section(".pool")));
+#define ENG_ARENA_POOL 3u                     /* parts 1..3 in the pool as before, the others in RAM */
+static eng_arena_t eng_arena_pool[ENG_ARENA_POOL] __attribute__((section(".pool")));
+static eng_arena_t eng_arena_ram[NPART > ENG_ARENA_POOL ? NPART - ENG_ARENA_POOL : 1u];
+#define eng_arena_at(p) ((uint32_t)(p) < ENG_ARENA_POOL ? &eng_arena_pool[p] : &eng_arena_ram[(uint32_t)(p) - ENG_ARENA_POOL])
 static uint8_t eng_arena_own[NPART];            /* the engine + 1 whose state is in it, 0 = none */
 #ifdef ARENA_STATS
 static uint32_t eng_arena_claims, eng_arena_bad;   /* host tests: claims, accesses by an engine the part does not play */
@@ -50,13 +53,13 @@ static void *eng_arena_of(const track_t *t, uint32_t eng)
         eng_arena_bad++;
 #endif
     if (eng_arena_own[p] != eng + 1u) {
-        memset(&eng_arena[p], 0, sizeof eng_arena[p]);
+        memset(eng_arena_at(p), 0, sizeof(eng_arena_t));
         eng_arena_own[p] = (uint8_t)(eng + 1u);
 #ifdef ARENA_STATS
         eng_arena_claims++;
 #endif
     }
-    return &eng_arena[p];
+    return eng_arena_at(p);
 }
 
 /* fx.c units_split: rendering t this block would draw rng() (libc.c), so t stays on core 0, where the draws
@@ -66,7 +69,7 @@ static int phys_render_draws(const track_t *t, int32_t model)   /* model: the MO
 {
     uint32_t p = (uint32_t)(t - trk), md = (uint32_t)model % PM_COUNT, big = md == PM_SYMP, i;
     uint32_t sz = big ? PHYS_SLOT_BIG : PHYS_SLOT_SMALL;
-    const uint8_t *a = (const uint8_t *)&eng_arena[p % NPART];
+    const uint8_t *a = (const uint8_t *)eng_arena_at(p % NPART);
     if (p >= NPART)
         return 0;
     if (eng_arena_own[p] != ENGI_PHYS + 1u || phys_lay[p] != big + 1u)

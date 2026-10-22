@@ -99,7 +99,7 @@ Everything from 2.7 is unchanged and still here. Projects, autosaves and backups
 
 | Control | Kind | Main job |
 | --- | --- | --- |
-| **PLAY** | button | start / stop all four tracks |
+| **PLAY** | button | start / stop all six tracks |
 | **REC** | button | record (tap), clear the track (hold) |
 | **SAVE** | button | song layer (hold), song screen / save pages (tap) |
 | **HOME** | button | TRACKS screen, visualiser (tap), menu (hold), lock a layer |
@@ -112,7 +112,7 @@ Everything from 2.7 is unchanged and still here. Projects, autosaves and backups
 | **SEQ** | button | step layer (hold), sequencer pages (tap) |
 | **GLO** | button | mix layer (hold), global pages (tap) |
 | **OCT− / OCT+** | buttons | octave, ghost / hard hits, undo / redo, pages |
-| **ALGORITHM** | knob | selects the track (1–4) |
+| **ALGORITHM** | knob | selects the track (1–6) |
 | **PRESETS** | knob | the selected track's sound, or the drum kit |
 | **SELECT** | knob | tempo, or the previous / next page |
 | **KNOB 1–4** | knobs | what the four dials at the bottom of the screen show |
@@ -181,7 +181,7 @@ The layers are **FX** (punch-in effects), **EDIT** (erase), **ARP** (note repeat
 | **SEQ** | SEQ pages (STEP, PATTERN, SONG) · with the drum track: the **DRUMS** screen (2.7.1: from any page; it opened STEP from ARP's) · on DRUMS: grid ↔ kit | step layer |
 | **GLO** | GLO pages (GLOBAL, MASTER, SYSTEM, DRUMS) | mix layer |
 | **OCT− / OCT+** | synth track: octave down / up (−3 … +3) · both together: octave 0 | drum track: **ghost** (OCT−) / **hard** (OCT+) hits while held |
-| **ALGORITHM** | select track 1–4, on every screen (inside a layer it waits; not during a free take, on the SONG screen or in the menu) | — |
+| **ALGORITHM** | select track 1–6, on every screen (inside a layer it waits; not during a free take, on the SONG screen or in the menu) | — |
 | **PRESETS** | on TRACKS, HOME and the PRESETS page: the selected track's **sound** (your favourites first (2.7), then all factory sounds by kind, then your user presets) · drum track: the **kit** · on the DRUMS screen: the kit | — |
 | **SELECT** | on TRACKS, inside a layer and on the REC screen: the **tempo** · on a page: previous / next page of its button (stops at the ends) · DRUMS screen: grid ↔ kit · visualiser: the style · menu: the section | — |
 | **KNOB 1–4** | the four dials at the bottom of the screen | — |
@@ -355,7 +355,7 @@ All seven layers at a glance:
 | **ARP** | roll | note repeat on the grid | RATE | — | — | — | ARP pages |
 | **SEQ** | steps | steps 1–16 of the page | SOUND / NOTE | DIV | SWING | LENGTH | SEQ pages |
 | **SEL** | key | the key of the song | CHORD | SCALE | KEYS | TRANSPOSE | SEL pages |
-| **GLO** | mix | 1–4 mute · 5–8 solo · 9 fill · 10 fill bar · 16 tap tempo | level 1 | level 2 | level 3 | level 4 | GLO pages |
+| **GLO** | mix | 1–6 mute · 7–12 solo · 13 fill · 14 fill bar · 16 tap tempo | level | level | level | level (the four tracks in view on TRACKS) | GLO pages |
 | **SAVE** | song | 1–4 play A–D · 5–8 save A–D · 13 loop / song · 14 SONG REC · 16 song screen | — | — | — | — | song screen / SAVE pages |
 
 ### FX — punch
@@ -442,13 +442,13 @@ Details in [Key, scales, chords and CHORD+](#11-key-scales-chords-and-chord).
 
 | Control | Does |
 | --- | --- |
-| **GLO + key 1–4** | **mute** / unmute track 1–4 (fades out in a few ms; the pattern runs on in time) |
-| **GLO + key 5–8** | **solo** track 1–4 (several solos add up) |
-| **GLO + key 9 (held)** | **fill** for as long as the key is held |
-| **GLO + key 10** | **fill bar**: the whole next bar plays as a fill (press again before the bar to cancel) |
+| **GLO + key 1–6** | **mute** / unmute track 1–6 (fades out in a few ms; the pattern runs on in time) |
+| **GLO + key 7–12** | **solo** track 1–6 (several solos add up) |
+| **GLO + key 13 (held)** | **fill** for as long as the key is held |
+| **GLO + key 14** | **fill bar**: the whole next bar plays as a fill (press again before the bar to cancel) |
 | **GLO + key 16** | **tap tempo** (two taps or more) |
 | **GLO + F#3** (the first black key, 2.6) | **MIDI LEARN** on / off; see [MIDI LEARN](#midi-learn-26) |
-| **GLO + KNOB 1–4** | the **levels** of tracks 1–4 |
+| **GLO + KNOB 1–4** | the **levels** of the four tracks in view on TRACKS (the dials name them: *1 2 3 4*, … *3 4 5 dr*) |
 | **GLO + SELECT** | the tempo (also inside the visualiser) |
 
 The tiles show what is heard; the *fill* and *bar* tiles light while they act.
@@ -521,7 +521,7 @@ At the next step without a lock on that parameter, it comes back to its base val
 | **FILL ONLY** | small **F** (top left) | only during a fill |
 | **NO FILL** | **×** (top left) | always, except during a fill |
 
-Call a fill while you play: **GLO + key 9** (as long as you hold it) or **GLO + key 10** (the whole next bar). Build a beat whose rolls, crashes and pickup notes are FILL ONLY and whose main hat is NO FILL: one finger brings the fill in and out on the bar. A skipped step is silent whole (no note, no MIDI, no ratchet, no lock). On the drum track the condition is the step's, every sound in it. STOP ends any fill. The arp and the rolls ignore fills.
+Call a fill while you play: **GLO + key 13** (as long as you hold it) or **GLO + key 14** (the whole next bar). Build a beat whose rolls, crashes and pickup notes are FILL ONLY and whose main hat is NO FILL: one finger brings the fill in and out on the bar. A skipped step is silent whole (no note, no MIDI, no ratchet, no lock). On the drum track the condition is the step's, every sound in it. STOP ends any fill. The arp and the rolls ignore fills.
 
 ### Divisions
 
@@ -585,9 +585,9 @@ Tap **SEL** twice (or SEL, then SELECT) for **SEL 2**:
 
 | Where | What |
 | --- | --- |
-| **GLO + KNOB 1–4** | levels of tracks 1–4 |
+| **GLO + KNOB 1–4** | levels of the four tracks in view on TRACKS |
 | **TRACKS screen, KNOB 2** | the selected track's level (on a muted track: unmutes it) |
-| **GLO + keys 1–4 / 5–8** | mute / solo |
+| **GLO + keys 1–6 / 7–12** | mute / solo |
 | **VOICE 2 page** | PAN and MUTE of a synth track |
 | **TRACKS screen, KNOB 4** | the selected track's pan |
 | **GLO → DRUMS** | the drum track's LVL, its reverb and (2.5) delay sends, and its MIDI channel |
@@ -720,10 +720,11 @@ Tap a button to open its first page (or the last one you used); **tap it again**
 | **GLO** | **GLOBAL** | BPM 40–240 | SWING (all tracks) | CLICK: OFF, REC, ON | TUNE ±50 cents |
 | | **MASTER** | DUST | DUCK | FILT (DJ filter) | ROLL (note-repeat rate) |
 | | **SYSTEM** | OUT (MIDI out): KEYS / SEQ (also on MIDI 2) | SYNC: INT, USB, TRS | IN: NOTES / CLOCK / CH 1–16 (also on MIDI 2) | CPU load (USB link state when no computer is connected) |
-| | **DRUMS** | CH4: the drum track's MIDI channel (OFF, 1–16, default 10; the same setting as GLO → MIDI → CH4; 2.6: a setting of the FM-1) | LVL drum level | REV drum reverb | DLY drum delay (2.5): the drums into the tempo delay (FX → DLY sets its time, feedback and tone), saved with the project |
+| | **DRUMS** | DRUM: the drum track's MIDI channel (OFF, 1–16, default 10; the same setting as GLO → MIDI CH → DRUM; 2.6: a setting of the FM-1) | LVL drum level | REV drum reverb | DLY drum delay (2.5): the drums into the tempo delay (FX → DLY sets its time, feedback and tone), saved with the project |
 | | **TEXTURE** (2.6) | SRC: OFF, VINYL, TAPE, RAIN, WIND, RADIO, ROOM, USR1–4 | LEVEL | TONE (LP ← OFF → HP) | MOVE |
 | | **TEXTURE 2** (2.6) | RATE: 1–16 bars | WHEN: PLAY / ALWAYS | DUCK: OFF / ON | — |
-| | **MIDI** (2.6) | CH1: track 1's MIDI channel (OFF, 1–16) | CH2: track 2's | CH3: track 3's | CH4: the drum track's (default 10) |
+| | **MIDI** (2.6) | CH1: track 1's MIDI channel (OFF, 1–16) | CH2: track 2's | CH3: track 3's | CH4: track 4's (default 4) |
+| | **MIDI CH** | CH5: track 5's (default 5) | DRUM: the drum track's (default 10) | — | — |
 | | **MIDI 2** (2.6) | IN: NOTES / CLOCK / CH 1–16 | OTHER: the channels no track has: SEL (the selected track) / OFF | OUT: KEYS / SEQ | BEND: the pitch bend's range, 1–12 semitones |
 | | **MIDI 3** (2.7) | FX CH: the punch-in effects' MIDI channel (OFF, 1–16) | DR MAP: how MIDI notes play the drums (GM / 1-16) | REMOTE: the buttons over MIDI (OFF, 1–16) | CLOCK: OUT, the MIDI clock and START / STOP out on USB (OFF / OUT) |
 | **SAVE** | **PRESETS** | the sound | the engine | — | — |
@@ -902,7 +903,7 @@ On the TRACKS screen, **tap HOME**: the whole screen becomes a visualiser of wha
 | 2 | **SPECTRUM** | 32 bands with falling caps |
 | 3 | **SPECTROGRAM** | the spectrum scrolling down, black → blue → green → yellow → white |
 | 4 | **LISSAJOUS** | the stereo image: the wider the cloud, the wider the sound |
-| 5 | **VU METERS** | tracks 1–4 in their colours and the mix, with peak holds |
+| 5 | **VU METERS** | tracks 1–3 and the drums in their colours and the mix, with peak holds |
 | 6 | **CIRCLE** | the wave round a ring that swells on every kick |
 | 7 | **TAPE** | two reels turning with the song, the level, the bar and the tempo |
 | 8 | **LCD** | the tempo in seven-segment digits, bar and beat, four track meters |
@@ -912,6 +913,17 @@ On the TRACKS screen, **tap HOME**: the whole screen becomes a visualiser of wha
 | 12 | **SLOOP** | the logo alive: the sail's four bands are the tracks, the boat rocks on its wave |
 
 The visualiser sees the mix **as if MASTER were all the way up**: with MASTER turned down, even to 0, it still moves at full size. It costs the sound nothing.
+
+### Six tracks
+
+SLOOP plays **five synth tracks and the drums**: tracks 1–5 are synths, track 6 is the drums. Track 4 starts as CLAV and track 5 as WURLI (light DIGITAL sounds), in violet and pink. The voices are still shared: 8 for all the synth tracks.
+
+- **TRACKS** shows four rows at a time; the list scrolls so the selected track is always in view (the thin bar on the right shows where you are). The REC screen does the same with the track you record.
+- **GLO** (held): keys 1–6 mute tracks 1–6, keys 7–12 solo them, key 13 a fill, key 14 a fill bar, key 16 tap tempo. KNOB 1–4 set the levels of the four tracks in view on TRACKS.
+- **MIDI:** tracks 4 and 5 have their own channels, CH4 and CH5 (GLO → MIDI and MIDI CH; defaults 4 and 5); the drums' channel is DRUM (default 10).
+- **MIDI LEARN** works on tracks 1–3 and the drums (the screen says so on tracks 4 and 5).
+- **Projects and sections** keep all six tracks, packed: only the steps you use are stored, about 240 steps over the six tracks. A project too dense to keep says **PROJECT FULL** and the slot keeps what it had. Projects of SLOOP 2.8 and older load with the drums on track 6 and tracks 4 and 5 empty. (A SLOOP before six tracks reads sections saved in the new format as empty.)
+- The visualisers that draw one shape per track (VU METERS, BOUNCE, ORBIT, WIRES, LCD, SLOOP) show tracks 1–3 and the drums. The web editor does not know six tracks yet: do not use it with this build.
 
 ---
 
@@ -968,11 +980,12 @@ Every MIDI setting is on these pages of GLO (tap GLO until **MIDI**). They are s
 
 | Page | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
 | --- | --- | --- | --- | --- |
-| **MIDI**: which channel each track uses, in and out | **CH1** track 1 (default 1) | **CH2** track 2 (2) | **CH3** track 3 (3) | **CH4** the drum track (10) |
+| **MIDI**: which channel each track uses, in and out | **CH1** track 1 (default 1) | **CH2** track 2 (2) | **CH3** track 3 (3) | **CH4** track 4 (4) |
+| **MIDI CH**: the last two tracks' channels | **CH5** track 5 (5) | **DRUM** the drum track (10) | — | — |
 | **MIDI 2**: how MIDI comes in and goes out | **IN** | **OTHER** | **OUT** | **BEND** |
 | **MIDI 3** (2.7): the punch-in effects, the drums, the buttons over MIDI, the clock out | **FX CH** | **DR MAP** | **REMOTE** | **CLOCK** |
 
-- **CH1–CH4:** OFF or 1–16. A track's channel plays it (notes, CCs, sustain, pitch bend, Program Change) and its keys and sequence go out on it. **OFF**: nothing in, nothing out for that track. Two tracks never share a channel: turn a channel onto one another track has and it goes on to the next free one, and the screen says whose it was (*CH 3 = TRACK 3*). Changing a channel ends whatever was still sounding on it, here and on the other gear. CH4 is also on GLO → DRUMS (the same setting).
+- **CH1–CH5, DRUM:** OFF or 1–16. A track's channel plays it (notes, CCs, sustain, pitch bend, Program Change) and its keys and sequence go out on it. **OFF**: nothing in, nothing out for that track. Two tracks never share a channel: turn a channel onto one another track has and it goes on to the next free one, and the screen says whose it was (*CH 3 = TRACK 3*). Changing a channel ends whatever was still sounding on it, here and on the other gear. CH4 is also on GLO → DRUMS (the same setting).
 - **IN:** **NOTES** (notes, CCs and the clock: normal) · **CLOCK** (only the clock and START / CONTINUE / STOP; every note and CC ignored, except the REMOTE CCs when REMOTE is on) · **CH 1 … CH 16** (only that one channel, always on the selected track; CH1–CH4 and OTHER are set aside, the clock still followed). Opening GLO → MIDI while IN is not NOTES says so on the screen (*IN CH 5: SEL TRK ONLY*, *IN = CLOCK: NO NOTES*).
 - **OTHER:** what a channel that no track has does: **SEL** plays the selected track (set your keyboard to channel 4 and it follows ALGORITHM) · **OFF** ignores it (a sequencer's channels for other gear on the same cable).
 - **OUT:** **KEYS** only what you play on the keys goes out · **SEQ** the sequencer, the arp and the rolls go out too.

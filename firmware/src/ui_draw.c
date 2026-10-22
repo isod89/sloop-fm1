@@ -82,7 +82,7 @@ UI_SMALL static void draw_head(void)
         cv_icon(156, 2, ICON_TAPE, C_GRAY);
         b[0] = (char)('1' + song.sel);
         b[1] = 0;
-        cv_rect(168, 2, 12, 16, TE_COL[song.sel & 3u]);
+        cv_rect(168, 2, 12, 16, trk_col(song.sel));
         cv_text(170, 1, &FONT_S, b, C_BLACK);
     } else {
         b[0] = 'T';
@@ -317,7 +317,7 @@ UI_SMALL static void graph_roll(const track_t *t, uint16_t c)
                 continue;
             y = bot - ((int32_t)st->note[j] - lo + 1) * rh + 1;
             f = note_force(st, j);
-            cv_rect(xa, y, xb - xa, rh - 1, f ? c : TE_DIM[song.sel & 3u]);
+            cv_rect(xa, y, xb - xa, rh - 1, f ? c : trk_dim(song.sel));
             if (f == 1u && rh > 4)                      /* SOFT: hollow */
                 cv_rect(xa + 1, y + 1, xb - xa - 2, rh - 3, C_BLACK);
             if (f == 4u)                                /* ACC: a white cap */
@@ -348,7 +348,7 @@ UI_SMALL static void graph_roll(const track_t *t, uint16_t c)
         const char *val[6] = {cs->flags & SF_SLIDE ? "ON" : "OFF", nu, FILL_N[step_fill(t, ui.cursor) % 3u], "", "", ""};
         fmt_int(nu, t->micro[ui.cursor]);
         if (t->micro[ui.cursor] > 0) { nu[0] = '+'; fmt_int(nu + 1, t->micro[ui.cursor]); }
-        sheet_draw(112, 6, SHEET_N, val, ui.sheet - 1u, TE_DIM[song.sel & 3u]);
+        sheet_draw(112, 6, SHEET_N, val, ui.sheet - 1u, trk_dim(song.sel));
     }
 }
 UI_SMALL static void graph_scale(const track_t *t, uint16_t c)
@@ -739,7 +739,7 @@ UI_SMALL static void draw_graph(void)
 {
     const page_t *pg = cur_page();
     const track_t *t = TSEL;
-    uint16_t c = TE_COL[song.sel & 3u];               /* LIVE: the curves in the track's colour */
+    uint16_t c = trk_col(song.sel);               /* LIVE: the curves in the track's colour */
     uint32_t sig, top, drum_note = !ui.home && is_drum(t) && !page_for_drum(pg);
     if (!ui.home && pg->graph == GR_TRK) {
         draw_tracks();
@@ -887,7 +887,7 @@ UI_SMALL static void draw_foot(void)
             if (si >= (uint32_t)t->p[P_SLEN])
                 continue;
             if (step_on(st))
-                cv_rect(sx, 2, 2, 9, TE_COL[song.sel & 3u]);
+                cv_rect(sx, 2, 2, 9, trk_col(song.sel));
             else
                 cv_rect(sx, 10, 1, 1, C_DIM);
             if ((song.playing && si == t->seq_idx) || (song.seq_mode && si == ui.cursor))
@@ -935,7 +935,7 @@ UI_SMALL static void draw_columns(void)
         const track_t *t = TSEL;
         uint32_t lvl = trk_level(song.sel);
         fmt_int(val, (int32_t)song.sel + 1);
-        draw_column(0, "TRACK", val, "/4", VAL(0u), (int32_t)song.sel * 1000 / (NTRK - 1), ICON_AUTO);
+        draw_column(0, "TRACK", val, "/6", VAL(0u), (int32_t)song.sel * 1000 / (NTRK - 1), ICON_AUTO);
         if (!lvl || t->p[P_MUTE]) {                    /* (MUTE: a turn of KNOB 2 unmutes, tracks_edit) */
             str_cpy(val, "MUTE", 12);
             unit = "";

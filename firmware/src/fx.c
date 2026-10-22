@@ -896,11 +896,12 @@ static void cpu1_units_job(uint32_t arg)                /* core 1's job: the uni
     cpu1_job_ticks += cpu1_ticks() - t0;
 }
 
-/* the units core 1 renders this block: the last part and the drums (cpu1_units when set: the menu, the tests),
+/* the units core 1 renders this block: the last part (five parts: the last two) and the drums (cpu1_units when set: the menu, the tests),
  * less the parts that must stay here (above) */
 static uint32_t units_split(void)
 {
-    uint32_t mask = cpu1_units < 0 ? (1u << (NPART - 1u)) | U_DRUMS : (uint32_t)cpu1_units & U_ALL, k, nform = 0;
+    uint32_t mask = cpu1_units < 0 ? (NPART > 3u ? 3u << (NPART - 2u) : 1u << (NPART - 1u)) | U_DRUMS   /* (*/
+                                    : (uint32_t)cpu1_units & U_ALL, k, nform = 0;   /* five parts: the last two) */
     if (!mask)
         return 0;
     for (k = 0; k < NPART; k++)
