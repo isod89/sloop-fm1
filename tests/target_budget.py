@@ -18,6 +18,7 @@ FUNCS = ["analog_render", "digital_render", "phase_render", "lofi_render", "samp
          "trio_render", "trio_pass", "drawbar_render", "drawbar_block",
          "grain_render", "grain_block", "slicer_track", "drums_mix",
          "fm6_op_run", "fm6_op_fb", "fm6_render",     # FM6 (SLOOP 2.4): the operator loops (noinline), the voice
+         "snes_render", "snes_block", "snes_post",   # SNES (eng_snes.c): the voices, the chip clock, the echo
          "fm1_alnk0_irq"]
 TOL = 0.10                      # exact (no noise): small edits pass, a grown render loop does not
 DIV_W = 8                       # a divide weighs 1 + 8 instructions

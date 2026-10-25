@@ -19,6 +19,8 @@
  *              HP, a preset loaded under the sounding notes of two parts in one block (both fade with their old
  *              sound at once, one on each core), TEXTURE (VINYL, ducked), REV THROW then ECHO THROW, the punch-in
  *              FREEZE, a pitch bend, live drum mutes, the metronome
+ *   snes       three SNES parts, each S-DSP with its echo (in the part's arena) on its own FIR, one on the chip's
+ *              noise; the middle part to GRAIN and back under its notes (the arena changing hands on either core)
  * Runs under every mode of the host double of core 1 (tests/cpu1_host.c: CORES, CHAOS, CPU1_TIMEOUT_AT) and
  * under ThreadSanitizer (tests/cpu1_modes.sh). Prints the jobs handed to core 1, to show the split happened.
  *   build/host/mix_split_test [QUICK]       QUICK: the splits 0, 15 and -1 only (the TSan run) */
@@ -29,8 +31,8 @@
 #define BLOCKS 1500u                                     /* ~2.2 s at 44.1 kHz */
 static const int32_t MASKS[] = {0, -1, 1, 2, 4, 8, 3, 5, 12, 7, 15};
 static const int32_t MASKS_QUICK[] = {0, 15, -1};
-static const char *const SCENE_NAME[] = {"formant3", "fm6x3", "phys_lfo", "mix", "fx26"};
-#define NSCENE 5u
+static const char *const SCENE_NAME[] = {"formant3", "fm6x3", "phys_lfo", "mix", "fx26", "snes"};
+#define NSCENE (5u + FELUCCA_SNES)
 
 static void drums_pattern(void)                          /* kick 4 on the floor, snare 4 / 12, hats, a clap */
 {
@@ -135,6 +137,19 @@ static void scene_setup(uint32_t s)
         song.g[G_TXWHEN] = 1;                            /* ALWAYS */
         song.g[G_TXDUCK] = 1;
         break;
+#if FELUCCA_SNES
+    case 5:
+        for (k = 0; k < NPART; k++) {
+            host_preset(&trk[k], ENGI_SNES, 2 * k);
+            trk[k].p[P_E4] = 80;                         /* ECHO */
+            trk[k].p[P_E5] = (int16_t)(2 + k);           /* DELAY 32, 48, 64 ms */
+            trk[k].p[P_E6] = (int16_t)(20 + 15 * k);     /* FDBK */
+            trk[k].p[P_E7] = (int16_t)k;                 /* FIR FLAT, LOW, HIGH */
+            chords(&trk[k], k, 4, 48 + 5 * k);
+        }
+        trk[2].p[P_E3] = 24;                             /* NOISE */
+        break;
+#endif
     default:
         host_preset(&trk[0], 0, 4);                      /* ANALOG */
         host_preset(&trk[1], ENGI_GRAIN, 0);
@@ -173,6 +188,13 @@ static void scene_block(uint32_t s, uint32_t b)          /* what the UI would do
         if (b == 1000u)
             TDRUM->p[P_TFLT] = 40;
     }
+#if FELUCCA_SNES
+    if (s == 5u && (b == 500u || b == 900u)) {           /* GRAIN takes the middle part's arena, then SNES back */
+        sound_change(&trk[1]);
+        panic_req |= 2u;
+        host_preset_req(&trk[1], b == 500u ? ENGI_GRAIN : ENGI_SNES, b == 500u ? 0 : 3);
+    }
+#endif
     if (s == 4u) {
         if (b == 300u)
             thr_req = 1;                                 /* REV THROW held .. */

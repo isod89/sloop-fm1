@@ -21,4 +21,7 @@ grain_render 1734
 grain_block 138
 slicer_track 825
 drums_mix 6153
+snes_render 489
+snes_block 102
+snes_post 298
 fm1_alnk0_irq 174
