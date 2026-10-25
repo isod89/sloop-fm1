@@ -311,7 +311,7 @@ static uint32_t ed_panel_sig(void)
     for (i = 0; i < NE; i++)
         h = h * 31u + (uint32_t)(enc_seen[i] & 0x7F);
     return h * 31u + ((uint32_t)ui.page | (uint32_t)ui.home << 8 | (uint32_t)ui.layer << 9 | (uint32_t)ui.menu << 13 |
-                      (uint32_t)(song.playing != 0) << 16) ^ (song.master_q12 >> 6) << 20;   /* (MASTER: steps of 1/64) */
+                      (uint32_t)(song.playing != 0) << 16 | (uint32_t)(vis_shown() != 0) << 17) ^ (song.master_q12 >> 6) << 20;   /* (MASTER: steps of 1/64) */
 }
 static void ed_panel_frame(void)
 {
@@ -328,7 +328,7 @@ static void ed_panel_frame(void)
         enc_seen[i] = 0;
     }
     ed_b(ui.layer);                                      /* the layer drawn (LY_*, 0 = none) */
-    ed_b((ui.home ? 1u : 0u) | (ui.menu ? 2u : 0u) | (song.playing ? 4u : 0u));
+    ed_b((ui.home ? 1u : 0u) | (ui.menu ? 2u : 0u) | (song.playing ? 4u : 0u) | (vis_shown() ? 8u : 0u) | 16u);   /* bit 3: the visualiser; bit 4: bit 3 is sent */
     ed_b(ui.page);
     ed_str(ui.home ? "" : PAGES[ui.page].title, 15);     /* the page's title */
     ed_b(song.master_q12);                               /* the MASTER pot's gain, 0 .. 4096 (main.c: (knob / 1023)^2) */

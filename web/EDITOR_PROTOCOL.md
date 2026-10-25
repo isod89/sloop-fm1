@@ -489,7 +489,9 @@ session): what the hands do on the panel and where the screen is. Nothing in it 
 - **master:** the MASTER pot as the audio uses it, `song.master_q12` (0 … 4096, the knob's position squared: position =
   √(master / 4096)); 14 bits, LSB first. A turn of about 1/64 of its gain range pushes a frame.
 - **layer:** the layer drawn (`seq.c` `LY_*`: 0 none, 1 FX, 2 EDIT, 3 ARP, 4 SEQ, 5 SEL, 6 GLO, 7 SAVE).
-  **flags:** bit 0 the visualiser (HOME on TRACKS), bit 1 the HOME menu, bit 2 the transport plays.
+  **flags:** bit 0 `ui.home`, bit 1 the HOME menu, bit 2 the transport plays, bit 3 the full-screen visualiser
+  (HOME tapped on TRACKS: the title stays the page under it), bit 4 set: bit 3 is reported (an editor can tell this
+  from a frame without it).
   **page:** the index of the page in `PAGES` (`params.c`), **title** its title (`TRACKS`, `FX`, `STEP`…; "" in the
   visualiser).
 - **Push:** with `WATCH` bit 2 (`WATCH 7` = pushes, the other tracks' mix and the panel), a PANEL frame is pushed
