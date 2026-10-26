@@ -8,7 +8,8 @@
  * v6 = SLOOP 2.3: backup / restore (34-36); v7 = SLOOP 2.4: the steps' nudges and parameter locks (37-40);
  * v8 = SLOOP 2.4: the steps' fill conditions (41-42); v9 = SLOOP 2.4: the FM6 engine's patches (68-71,
  * editor_fm6.c: Felucca 1.0's numbers) and the patch bank as backup object 8); v10 = SLOOP 2.5: the SYN drum
- * kits (72-76, editor_dsyn.c) and backup object 9.
+ * kits (72-76, editor_dsyn.c) and backup object 9; v11, v12 = SLOOP 2.7: the theme, LIVE (77); v13 = the panel (43 PANEL: buttons, keys and knob detents held or
+ * turned, the layer and page shown), pushed with WATCH bit 2, for an editor that mirrors the FM-1.
  *   F0 7D 46 4C cmd args.. F7     (7D = non-commercial ID, "FL")
  * Values are 14 bit, two 7-bit bytes LSB first, offset by 8192 (so -8192..8191).
  * Every request gets a reply with the same cmd; 23/24/26 are also pushed
@@ -30,11 +31,13 @@ enum { ED_INFO = 1, ED_GET, ED_SET, ED_DUMP, ED_DESC, ED_STEP_GET, ED_STEP_SET, 
        ED_BK_LIST, ED_BK_GET, ED_BK_PUT,                                        /* v6: backup / restore */
        ED_LOCK_GET, ED_LOCK_SET, ED_MICRO_GET, ED_MICRO_SET,                    /* v7: parameter locks, nudges */
        ED_FILL_GET, ED_FILL_SET,                                                /* v8: fill conditions */
+       ED_PANEL,                                                                /* v13: the panel (keys, buttons, knobs, screen) */
        ED_FM6_GET = 68, ED_FM6_PUT, ED_FM6_LIST, ED_FM6_ERASE };                /* v9: FM6 patches (Felucca's numbers) */
 /* v10 (SLOOP 2.5): DSYN_LIST .. DSYN_PLAY = 72..76, editor_dsyn.c; backup object 9 = the SYN kits */
 /* v11 (SLOOP 2.7): backup object 11 = your theme (gfx.c theme_t), the editor's Theme page */
 /* v12 (SLOOP 2.7): LIVE = 77, editor_live.c: the LIVE page (transport, sections, mix keys, punch-in FX, REC, undo) */
-#define ED_PROTO 12u                                   /* the protocol version INFO ends with */
+/* v13: PANEL = 43, the buttons and keys held, the knob detents and where the screen is (WATCH bit 2: pushed) */
+#define ED_PROTO 13u                                   /* the protocol version INFO ends with */
 
 static uint8_t ed_out[600];
 static uint32_t ed_n;
@@ -166,6 +169,8 @@ static const uint8_t ED_TIDS[3] = {P_LEVEL, P_PAN, P_MUTE};
 static struct {
     uint8_t on, eng, preset, sel;
     uint8_t v4;                                          /* WATCH bit 1: TRACK_CHANGED pushes too */
+    uint8_t v13;                                         /* WATCH bit 2: PANEL pushes too */
+    uint32_t pn_sig, pn_ms;                              /* v13: the panel as last pushed */
     uint32_t pos, last_ms, run_ms, resets;
     int16_t v[ED_NV];                                    /* TSEL->p[], then song.g[] */
     uint16_t t[ED_NV];                                   /* ms (low 16 bits) of the last push */
@@ -298,6 +303,38 @@ UI_SMALL static void ed_known(uint32_t k, uint32_t id)            /* the editor'
             ed_w.tv[k * 3u + j] = trk[k].p[id];
 }
 
+/* v13: the panel, for an editor that shows the FM-1 (a mirror): the buttons and keys held, the knob detents
+ * taken since the last PANEL, and where the screen is. Pushed (WATCH bit 2) when any of it changes. */
+static uint32_t ed_panel_sig(void)
+{
+    uint32_t h = fm1_in.buttons * 2654435761u ^ fm1_in.notes, i;
+    for (i = 0; i < NE; i++)
+        h = h * 31u + (uint32_t)(enc_seen[i] & 0x7F);
+    return h * 31u + ((uint32_t)ui.page | (uint32_t)ui.home << 8 | (uint32_t)ui.layer << 9 | (uint32_t)ui.menu << 13 |
+                      (uint32_t)(song.playing != 0) << 16 | (uint32_t)(vis_shown() != 0) << 17) ^ (song.master_q12 >> 6) << 20;   /* (MASTER: steps of 1/64) */
+}
+static void ed_panel_frame(void)
+{
+    uint32_t b, labels = 0, i;
+    for (b = 0; b < NB; b++)
+        if ((fm1_in.buttons >> panel.btn[b]) & 1u)
+            labels |= 1u << b;
+    ed_b(labels);                                        /* buttons held, bit per label (B_FX .. B_OCTUP) */
+    ed_b(labels >> 7);
+    for (i = 0; i < 4u; i++)
+        ed_b(fm1_in.notes >> (7u * i));                  /* keys held, bit per key (0 = F3 .. 26 = G5) */
+    for (i = 0; i < NE; i++) {
+        ed_b((uint32_t)(enc_seen[i] + 64));              /* detents since the last PANEL, + 64 (EN_SELECT .. EN_K4) */
+        enc_seen[i] = 0;
+    }
+    ed_b(ui.layer);                                      /* the layer drawn (LY_*, 0 = none) */
+    ed_b((ui.home ? 1u : 0u) | (ui.menu ? 2u : 0u) | (song.playing ? 4u : 0u) | (vis_shown() ? 8u : 0u) | 16u);   /* bit 3: the visualiser; bit 4: bit 3 is sent */
+    ed_b(ui.page);
+    ed_str(ui.home ? "" : PAGES[ui.page].title, 15);     /* the page's title */
+    ed_b(song.master_q12);                               /* the MASTER pot's gain, 0 .. 4096 (main.c: (knob / 1023)^2) */
+    ed_b(song.master_q12 >> 7);
+}
+
 UI_SMALL static void ed_sync(void)                                /* main loop */
 {
     uint32_t i, n = 0, now = fm1_ms;
@@ -307,6 +344,20 @@ UI_SMALL static void ed_sync(void)                                /* main loop *
     if (!usb.config || usb.resets != ed_w.resets || now - ed_w.last_ms > 3000u) {
         ed_w.on = 0;                                     /* no host, USB reset, or 3 s without a request */
         return;
+    }
+    if (ed_w.v13 && (uint32_t)(now - ed_w.pn_ms) >= 5u) {   /* v13: the panel first, so a mirror replays the inputs before
+                                                         * it gets their results */
+        uint32_t sig = ed_panel_sig();
+        if (sig != ed_w.pn_sig) {
+            if (!ed_room())
+                return;
+            ed_w.pn_ms = now;
+            ed_begin(ED_PANEL);
+            ed_panel_frame();
+            ed_send();
+            ed_w.pn_sig = ed_panel_sig();                /* (the detents just sent are 0 now) */
+            n++;
+        }
     }
     if (sync_reload || ed_eng(TSEL) != ed_w.eng || TSEL->preset != ed_w.preset || song.sel != ed_w.sel) {
         if (!ed_room())
@@ -956,10 +1007,17 @@ UI_SMALL static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes b
             return;
         ed_w.on = a[0] & 1u;
         ed_w.v4 = (uint8_t)(ed_w.on && (a[0] & 2u));     /* v4: also TRACK_CHANGED; the reply says it is known */
+        ed_w.v13 = (uint8_t)(ed_w.on && (a[0] & 4u));    /* v13: also PANEL */
+        ed_w.pn_sig = 0;
+        for (uint32_t r = 0; r < NE; r++)
+            enc_seen[r] = 0;                             /* (only what turns from now on) */
         ed_w.resets = usb.resets;
         if (ed_w.on)
             ed_shadow();
-        ed_b(ed_w.on | ed_w.v4 << 1);
+        ed_b(ed_w.on | ed_w.v4 << 1 | ed_w.v13 << 2);
+        break;
+    case ED_PANEL:                                         /* -> the panel now (as the push; its detents taken) */
+        ed_panel_frame();
         break;
     case ED_PING:
         ed_b(0);

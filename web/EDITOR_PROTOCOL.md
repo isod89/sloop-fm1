@@ -6,6 +6,7 @@ protocol v3; commands 31-32 (any track's parameters) form protocol v4; command 3
 `INFO` and `TRACK` bytes form protocol v5 (SLOOP 2.0); commands 34-36 (backup / restore) form protocol v6
 (SLOOP 2.3); commands 37-40 (the steps' nudges and parameter locks) form protocol v7, commands 41-42 (the
 steps' fill conditions) protocol v8 and commands 68-71 (the FM6 engine's patches) protocol v9 (all SLOOP 2.4).
+Command 43 (the panel: buttons, keys, knobs and the screen's page, pushed with `WATCH` bit 2) forms protocol v13.
 
 **v3 (four tracks):** the device has four tracks: 1..3 are synth parts, 4 is the drum track. One
 of them is *selected* (the TRACKS page on the device, or `TRACK`). Every v1 / v2 command acts on the
@@ -469,6 +470,36 @@ level + 1), the THROWs (bits), and the 16 drum sounds' TUNE + 8 | DECAY + 4 << 4
 fill bar…) are sent once, never repeated on a timeout. The notes are not SysEx: the page plays them as MIDI notes on
 the tracks' channels (GLO > MIDI; OTHER = SEL: a free channel on the selected track; DR MAP for the drums). A device
 before 2.7 does not answer `LIVE`: the page keeps its mixer and keys (TRACK_MIX, TRACK_PARAM, SET, notes).
+
+## v13: the panel (PANEL push)
+
+`INFO` ends with 13. For an editor that shows the FM-1 itself (a mirror, a course, a screen recorder of a
+session): what the hands do on the panel and where the screen is. Nothing in it changes the device.
+
+| cmd | Request args | Reply args |
+| --- | --- | --- |
+| 43 PANEL | — | buttons (2 × 7 bits), keys (4 × 7 bits), 7 knob bytes, layer, flags, page, title string, master (2 × 7 bits) |
+
+- **buttons:** bit b = the button printed `B_NAME[b]` is held (`panel.c`: FX, SEL, ENV, LFO, EDIT, GLO, HOME, SAVE,
+  ARP, SEQ, PLAY, REC, OCT−, OCT+), whatever the HARDWARE CALIBRATION; 14 bits, LSB first.
+- **keys:** bit k = key k is held (0 = F3 … 26 = G5, the black keys too); 27 bits, LSB first.
+- **knobs:** the detents each knob turned since the last PANEL frame, + 64 (−63 … +63), in the order SELECT,
+  ALGORITHM, PRESETS, KNOB 1 … KNOB 4; counted as the UI takes them (`panel_enc`), so the turns a layer or a page
+  ignores are in it too.
+- **master:** the MASTER pot as the audio uses it, `song.master_q12` (0 … 4096, the knob's position squared: position =
+  √(master / 4096)); 14 bits, LSB first. A turn of about 1/64 of its gain range pushes a frame.
+- **layer:** the layer drawn (`seq.c` `LY_*`: 0 none, 1 FX, 2 EDIT, 3 ARP, 4 SEQ, 5 SEL, 6 GLO, 7 SAVE).
+  **flags:** bit 0 `ui.home`, bit 1 the HOME menu, bit 2 the transport plays, bit 3 the full-screen visualiser
+  (HOME tapped on TRACKS: the title stays the page under it), bit 4 set: bit 3 is reported (an editor can tell this
+  from a frame without it).
+  **page:** the index of the page in `PAGES` (`params.c`), **title** its title (`TRACKS`, `FX`, `STEP`…; "" in the
+  visualiser).
+- **Push:** with `WATCH` bit 2 (`WATCH 7` = pushes, the other tracks' mix and the panel), a PANEL frame is pushed
+  whenever any of it changes, at most every 5 ms, before the other pushes of that pass: an editor that replays the
+  buttons, keys and knob detents on a copy of the device sees them before their results (`CHANGED`, `RELOAD`,
+  `STEP_CHANGED`), which then put the copy exactly where the FM-1 is. A request takes the frame now (its detents
+  with it: they are not sent twice).
+- `WATCH` answers bit 2 when the panel is pushed; a device before v13 answers without it and sends no PANEL.
 
 ## Notes for the editor
 
