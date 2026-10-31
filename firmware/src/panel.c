@@ -89,6 +89,10 @@ static uint8_t lights_min;                     /* GLO > SYSTEM > IN (G_ROUTE): 0
 static uint8_t midi_set[10] = MIDI_SET_DEF;
 static uint8_t fxfade;                          /* (2.7.2) FX layer SELECT (FX held): the punch-in FX fade, 0..15 (punch.c);
                                                  * a setting of the FM-1, mirrored in song.g[G_FXFADE], kept in BEND's byte */
+static uint8_t aclk;                            /* (2.8.2) GLO > SYSTEM > CLK OUT: the audio sync click, 0 OFF .. 3 (seq.c, audio.c);
+                                                 * a setting of the FM-1, mirrored in song.g[G_ACLK], kept in FX CH's byte */
+static uint8_t aclkch;                          /* (2.8.2) GLO > SYSTEM > CLK OUT > SIDE: the click's channel, 0 RIGHT / 1 LEFT
+                                                 * (audio.c); a setting of the FM-1, mirrored in song.g[G_ACLKCH], FX CH's byte bit 7 */
 static const uint16_t LIGHTS_NS[LIGHTS_N] = {0u, 500u, 1000u, 2000u};   /* the backlight pulse a frame (ns): a lit
                                                 * LED ~95 us, the glow (landmarks) 4 us (fm1_input.h) */
 static uint8_t usb_serial;                      /* menu USB SERIAL: 1 = the serial console presented (usb.c) */

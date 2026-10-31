@@ -3269,6 +3269,42 @@ static void clkout_block(uint32_t n)
     }
 }
 
+/* 2.8.2, GLO > SYSTEM > CLK OUT: the audio sync click. A short, loud click on one channel on every clock tick, for the SYNC
+ * IN of a Volca, a Pocket Operator, a Game Boy (LSDJ) or small modular; the other channel sums the mix to mono (audio.c,
+ * SIDE picks the channel). G_ACLK: 0 OFF, 1 one pulse a beat (1 PPQN), 2 two (2 PPQN: Volca, PO), 3 four (per 1/16 step).
+ * The click is a full-amplitude square burst, not a flat gate: the FM-1's output is AC-coupled, which turns a DC level into
+ * one brief spike, so a Pocket Operator (which syncs off an audio click, by amplitude) never sees enough; a square is
+ * genuinely AC, passes the coupling cap intact and hits the slave with strong peaks (audio.c makes the waveform).
+ * Only while SYNC is INT and playing (no pulse stopped: an analog slave steps on each pulse) with the downbeat's pulse at
+ * the start, like clkout_block. aclk_hi, the output samples of the click left to play, is read in audio.c (one TU, included
+ * after seq.c). A tick lands in the block it falls in: < 1 ms late, as the metronome and MIDI clock are. */
+#define ACLK_WIDTH (5u * FS / 1000u)                  /* ~5 ms click a tick (a sharp audio transient the slave latches onto) */
+static uint32_t aclk_u;                               /* units since the last pulse */
+static uint32_t aclk_hi;                              /* output samples of the pulse still high (audio.c counts them down) */
+static uint8_t aclk_play;                             /* the sequencer was playing (for the downbeat's pulse) */
+static void aclk_block(uint32_t n)
+{
+    uint32_t rate = (uint32_t)song.g[G_ACLK];
+    if (!rate || song.g[G_SYNC] || !song.playing) {   /* OFF, following a clock, or stopped: no pulse */
+        aclk_u = 0;
+        aclk_play = 0;
+        return;
+    }
+    if (!aclk_play) {                                 /* just started: the downbeat's pulse, in phase */
+        aclk_hi = ACLK_WIDTH;
+        aclk_u = 0;
+        aclk_play = 1;
+    }
+    {
+        uint32_t pulse_u = BEAT_U >> (rate - 1u);     /* 1PP: BEAT_U, 2PP: /2, 4PP: /4 */
+        aclk_u += n * (uint32_t)song.g[G_BPM];
+        while (aclk_u >= pulse_u) {
+            aclk_u -= pulse_u;
+            aclk_hi = ACLK_WIDTH;
+        }
+    }
+}
+
 /* everything that happens between two rendered blocks: transport, input, the steps of every
  * track at the clock, the click, the rolls and the arps; then the clock moves on by n samples */
 static void events_block(uint32_t n)
@@ -3330,6 +3366,7 @@ static void events_block(uint32_t n)
         rec_begin();                                /* started some other way: record now */
     adv = mclk_on() && song.playing ? mclk_adv(n) : n * (uint32_t)song.g[G_BPM];   /* (after a START) */
     clkout_block(n);                                  /* (2.7) CLK OUT */
+    aclk_block(n);                                    /* (2.8.2) the audio sync click (R channel) */
     ft_block();
 #if FELUCCA_ARRANGER
     if (song.playing && arrangement_clock.running) {

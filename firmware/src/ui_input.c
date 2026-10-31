@@ -483,8 +483,9 @@ UI_SMALL static void project_new(void)
     drum_mute = 0;                                      /* (2.6: the live mutes) */
     for (i = 0; i < G_COUNT; i++)
         if (i != G_SLOT && i != G_DRCH && i != G_SYNC && i != G_MIDI && i != G_ROUTE && (i < G_CH1 || i > G_CHOTH) &&
-            i != G_BEND && i != G_FXCH && i != G_DRMAP && i != G_RMCH && i != G_CLKOUT && i != G_FXFADE)                                                                     /* (the
-                                                                 * FM-1's settings: GLO > MIDI 2.6) */
+            i != G_BEND && i != G_FXCH && i != G_DRMAP && i != G_RMCH && i != G_CLKOUT && i != G_FXFADE &&
+            i != G_ACLK && i != G_ACLKCH)                                                    /* (the
+                                                                 * FM-1's settings: GLO > MIDI 2.6, CLK OUT 2.8.2) */
             song.g[i] = GP[i].def;
     song.solo = 0;
     song.octave = 0;

@@ -59,6 +59,8 @@ static const char *const N_CLICK[] = {"OFF", "REC", "ON"};   /* G_CLOCK is the m
 static const char *const N_NOTE[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 static const char *const N_DASH[] = {"--"};
 static const char *const N_SYNC[] = {"INT", "USB", "TRS"};   /* G_SYNC: the tempo and PLAY / STOP from (seq.c mclk) */
+static const char *const N_ACLK[] = {"OFF", "1PP", "2PP", "4PP"};   /* 2.8.2, GLO > SYSTEM > CLK OUT: audio sync click out, PPQN */
+static const char *const N_ACLKCH[] = {"RIGHT", "LEFT"};   /* 2.8.2, GLO > SYSTEM > CLK OUT > SIDE: the click's channel (Volca: RIGHT, PO: LEFT) */
 static const char *const N_GO[] = {"--", "GO"};
 static const char *const N_SLCR[] = {"OFF", "GATE", "STUT"};             /* SL_OFF .. SL_STUT (slicer.c) */
 static const char *const N_SLDIV[] = {"1/8", "1/16", "1/32", "8T", "16T", "32T"};   /* SL_DEN */
@@ -204,6 +206,8 @@ static const param_desc_t GP[G_COUNT] = {
     [G_RMCH] = PE("REMOTE", N_MCH, 0),           /* 2.7, GLO > MIDI 3: the buttons over MIDI (CC 102..115, seq.c remote_cc) */        /* 2.7, GLO > MIDI 3: MIDI notes -> drum sounds (seq.c midi_drum_lane) */            /* 2.7, GLO > MIDI 3: the punch-in FX's channel (seq.c midi_fx) */
     [G_BEND] = PD("BEND", F_SEMI, 1, 12, 2),      /* 2.6, GLO > MIDI 2: MIDI pitch bend's range (a setting of the FM-1) */
     [G_FXFADE] = PD("FADE", F_INT, 0, 15, 0),     /* 2.7.2: the punch-in FX fade (FX layer SELECT), 0 off .. 15 (punch.c) */
+    [G_ACLK] = PE("ACLK", N_ACLK, 0),             /* 2.8.2, GLO > SYSTEM > CLK OUT: the audio sync click out (seq.c aclk_block, audio.c) */
+    [G_ACLKCH] = PE("SIDE", N_ACLKCH, 0),         /* 2.8.2: which channel the click is on (audio.c); RIGHT (default) / LEFT */
 };
 
 static const param_desc_t DRUM_KIT_DESC = PE("KIT", DRUM_KIT_NAMES, 0);
@@ -424,6 +428,7 @@ static const page_t PAGES[] = {
                                                                            * setting in these two pages (IN and OUT on
                                                                            * SYSTEM too, the drums' channel on DRUMS) */
     {"MIDI 3", FAM_GLO, SC_GLOBAL, GR_NONE, {G_FXCH, G_DRMAP, G_RMCH, G_CLKOUT}},   /* 2.7: the punch-in FX over MIDI */
+    {"CLK OUT", FAM_GLO, SC_GLOBAL, GR_NONE, {G_ACLK, G_ACLKCH, 0xFF, 0xFF}},   /* 2.8.2: the audio sync click for Volca / PO / LSDJ (KNOB 2: its channel) */
     {"TEXTURE", FAM_GLO, SC_GLOBAL, GR_NONE, {G_TXSRC, G_TXLVL, G_TXTONE, G_TXMOVE}},   /* 2.6: the bed under the mix */
     {"TEXTURE 2", FAM_GLO, SC_GLOBAL, GR_NONE, {G_TXRATE, G_TXWHEN, G_TXDUCK, 0xFF}},
     {"PRESETS", FAM_SAVE, SC_GLOBAL, GR_BROWSE, {0xFF, 0xFF, 0xFF, 0xFF}},   /* browser: PRESETS knob / KNOB 1 */

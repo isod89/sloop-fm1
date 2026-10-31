@@ -105,6 +105,12 @@ enum {                          /* global parameters */
                                  * while SYNC is INT (seq.c clkout_block; a setting of the FM-1, kept in DR MAP's byte) */
     G_FXFADE,                   /* SLOOP 2.7.2, the FX layer (FX held), SELECT: how fast a punch-in FX fades in and out, 0 (instant, as
                                  * before) .. 15 (punch.c; a setting of the FM-1, kept in BEND's byte) */
+    G_ACLK,                     /* SLOOP 2.8.2, GLO > SYSTEM > CLK OUT: the audio sync click for Volca / Pocket Operator / LSDJ sync
+                                 * in (the other channel sums to mono); OFF / 1PP / 2PP / 4PP (PPQN), while SYNC is INT and playing
+                                 * (seq.c aclk_block, audio.c; a setting of the FM-1, kept in FX CH's byte) */
+    G_ACLKCH,                   /* SLOOP 2.8.2, GLO > SYSTEM > CLK OUT > SIDE: which channel carries the click, 0 RIGHT (default, a
+                                 * Volca's SYNC IN over a splitter) / 1 LEFT (a Pocket Operator reads sync on its left channel);
+                                 * audio.c; a setting of the FM-1, kept in FX CH's byte (bit 7) */
     G_COUNT
 };
 

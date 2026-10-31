@@ -194,6 +194,8 @@ UI_SMALL static void felucca_init(void)
     song.g[G_CLKOUT] = midi_set[9];                  /* (2.7) GLO > MIDI 3: CLK OUT */
     song.g[G_RMCH] = midi_set[8];                    /* (2.7) GLO > MIDI 3: REMOTE */
     song.g[G_FXFADE] = fxfade;                        /* (2.7.2) GLO > MASTER 2: the punch-in FX fade */                    /* (2.7) GLO > MIDI 3: FX CH */   /* settings of the FM-1) */
+    song.g[G_ACLK] = aclk;                            /* (2.8.2) GLO > SYSTEM > CLK OUT: the audio sync click */
+    song.g[G_ACLKCH] = aclkch;                        /* (2.8.2) GLO > SYSTEM > CLK OUT > SIDE: its channel */
     layers_init();                            /* the panel's layer buttons for the keys (ui_layers.c) */
     go_home();
     ui.force = 1;
