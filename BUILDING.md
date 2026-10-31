@@ -115,6 +115,27 @@ playback continues. The piano keys and labeled computer keys audition the select
 The audio controls are available only in simulated mode. The physical-device editor continues to use Web MIDI.
 The standalone downloaded HTML editor does not include the WASM asset.
 
+## The browser emulator
+
+`web/emu/` compiles the whole firmware — the panel, the screen, the sequencer, storage and the projects — to
+WebAssembly and runs it against a simulated FM-1 in an AudioWorklet, so SLOOP can be played in a browser without
+the instrument. (After Felucca's `web/emu/`, itself after X0X's, both GPL-3.0.) It needs the generated headers in
+`build/gen` (the firmware build below makes them) and either clang + wasm-ld or Emscripten; no JieLi toolchain,
+AC79 SDK, Docker or FM-1.
+
+```sh
+sh web/emu/build.sh                                   # build/emu/{sloop.wasm, worklet.js, index.html, fonts/}
+node web/emu/emu_test.mjs build/emu/sloop.wasm        # boot, screen, LEDs, input, audio, flash, song files
+python3 -m http.server 8766 --directory build/emu     # then open http://localhost:8766/
+```
+
+`EMCC=1 sh web/emu/build.sh` builds with Emscripten instead of clang; `CC=` picks another clang, and `PYTHON=`
+another interpreter for the header generators. The page keeps the emulated flash's written sectors in the
+browser's storage, so the working project, the sections A–D and the user presets survive a reload. **Load a song or
+a backup** takes an editor `.sloopsong` or a `.json` backup and writes its objects the way the editor's `BK_PUT`
+does. `web/emu/sloop_web.c` is the adapter: nothing of the firmware changes for it. What it leaves out: USB (MIDI,
+audio, the editor, updates), TRS MIDI, the serial console, the second core, the battery and the U-BOOT paths.
+
 ## Install
 
 On Windows, `INSTALL-SLOOP.bat` builds and opens the web installer (Chrome or Edge). The

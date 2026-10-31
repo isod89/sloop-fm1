@@ -208,4 +208,12 @@ fi
 if [ -f build/preview/sloop-preview.wasm ]; then
     run "the editor's audio preview: WASM == host, all 12 engines" sh tests/run_preview_tests.sh
 fi
+
+# the browser emulator: the whole firmware in WASM against a simulated FM-1, when it is built
+# (web/emu/build.sh: clang + wasm-ld, or EMCC=1 with Emscripten)
+if [ -f build/emu/sloop.wasm ] && command -v node >/dev/null 2>&1; then
+    run "the web emulator: boot, screen, LEDs, input, audio, flash, song files" node web/emu/emu_test.mjs build/emu/sloop.wasm
+else
+    echo "== skip the web emulator test (sh web/emu/build.sh)"
+fi
 [ $fail -eq 0 ] && echo "ALL HOST TESTS PASSED" || { echo "HOST TESTS FAILED"; exit 1; }
