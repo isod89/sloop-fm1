@@ -63,6 +63,20 @@ static uint32_t noise_inc(int32_t p)
     inc = pitch_inc((uint32_t)clamp(p, 0, 2047));
     return sh && inc >= 0x80000000u >> (sh - 1u) ? 0xFFFFFFFFu : inc << sh;
 }
+/* (after 2.8.3) the same, unbounded (Q32: 2^32 = one clock a sample). LFSR: a clock past the sample rate steps the
+ * register more than once a sample (the sequence read further on, as the register would be at that time): its pitch
+ * goes on rising with the keys. It used to stop at one step a sample, so every note above it played the same pitch
+ * (NZ ARCADE: TONE +84 semitones, the whole upper half of the keyboard; clipper-fm1 #10) */
+static uint64_t noise_inc64(int32_t p)
+{
+    uint32_t sh = 0;
+    while (p > 2047) {
+        p -= 192;
+        sh++;
+    }
+    return (uint64_t)pitch_inc((uint32_t)clamp(p, 0, 2047)) << (sh < 20u ? sh : 20u);
+}
+#define NZ_STEPS_MAX 64u                              /* register steps a sample at most (64 x 44.1 kHz) */
 
 static uint32_t isqrt32(uint32_t x)
 {
@@ -103,6 +117,7 @@ static void noise_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const
     uint32_t ph = v->ph[0], reg = v->ph[1];         /* state in locals: out[] may alias v->s[] */
     int32_t drift = (int32_t)v->ph[2], d16 = 0, gain = 32767, gq, colr, cut, k, a1, a2, a3, g, bpg, mix, cf, thr = 0;
     uint32_t inc = 0, taps = NOISE_TAPS[sel];
+    uint64_t inc64 = 0;                               /* (after 2.8.3) LFSR: its clock, Q32, past the sample rate too */
     /* drift: a new random target every 0.7..3 s, followed with a 0.7 s lag */
     if (drft) {
         int32_t tg = v->s[3] >> 16, cnt = v->s[3] & 0xFFFF;
@@ -149,7 +164,7 @@ static void noise_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const
     }
     if (mode == NZ_LFSR) {
         uint32_t mask = taps;                         /* the register's own bits (MODE / LEN changes) */
-        inc = noise_inc(m->pitch16 + p[P_E7] * 16 + d16);
+        inc64 = noise_inc64(m->pitch16 + p[P_E7] * 16 + d16);
         mask |= mask >> 1;
         mask |= mask >> 2;
         mask |= mask >> 4;
@@ -175,9 +190,10 @@ static void noise_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const
             break;
         }
         case NZ_LFSR: {
-            uint32_t o = ph;
-            ph += inc;
-            if (ph < o)
+            uint64_t a = (uint64_t)ph + inc64;
+            uint32_t ns = (uint32_t)(a >> 32) < NZ_STEPS_MAX ? (uint32_t)(a >> 32) : NZ_STEPS_MAX;
+            ph = (uint32_t)a;
+            while (ns--)                               /* (after 2.8.3: as many steps as clocks in this sample) */
                 reg = (reg >> 1) ^ (-(reg & 1u) & taps);
             w = (reg & 1u) ? 12000 : -12000;
             break;
@@ -192,14 +208,14 @@ static void noise_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const
         x = w;
         if (colr) {                                   /* pink: three leaky poles (Kellet), brown: a leaky integrator */
             int32_t pk;
-            b0 = ((b0 * 32690) >> 15) + ((w * 3245) >> 15);
-            b1 = ((b1 * 31555) >> 15) + ((w * 9716) >> 15);
+            b0 = clamp(((b0 * 32690) >> 15) + ((w * 3245) >> 15), -65535, 65535);   /* (after 2.8.3: bounded: a held */
+            b1 = clamp(((b1 * 31555) >> 15) + ((w * 9716) >> 15), -65535, 65535);   /* LFSR level grew them past 2^31 / 32690) */
             b2 = ((b2 * 18678) >> 15) + ((w * 17247) >> 14);
             pk = (b0 + b1 + b2 + ((w * 6055) >> 15)) >> 2;
             if (colr <= (64 << 8)) {
                 x = w + mulq15(pk - w, cf);
             } else {
-                br = ((br * 32580) >> 15) + ((w * 3480) >> 15);
+                br = clamp(((br * 32580) >> 15) + ((w * 3480) >> 15), -65535, 65535);
                 x = pk + mulq15(br - pk, cf);
             }
         }
@@ -255,6 +271,17 @@ static const preset_t NOISE_PRESETS[] = {
     {"BITCRUSH", {NZ_ANLG, 40, 90, 40, 64, 0, 0, 100}, {0, 70, 110, 40}, 0, 0, FX(0, 0, 20, 30)},
     {"RADIO", {NZ_LFSR, 20, 70, 90, 64, 0, 60, 48}, {10, 70, 120, 50}, 0, 0, FX(0, 10, 30, 40)},
 };
+
+/* (after Clipper 1.2) UNISON (voice.c unison_spread): the phase moved by r (Q32) and the noise from its own
+ * seed (the note's: every voice the same noise at DTUNE 0) */
+static void noise_spread(track_t *t, voice_t *v, uint32_t r)
+{
+    (void)t;
+    v->ph[0] += r;
+    v->s[2] = (int32_t)((uint32_t)v->s[2] ^ r);
+    if (!v->s[2])
+        v->s[2] = 1;
+}
 
 static const engine_t ENG_NOISE = {
     .name = "NOISE",

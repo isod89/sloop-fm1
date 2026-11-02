@@ -181,6 +181,9 @@ static void con_status(void)
     con_kv("cpu1", (int32_t)cpu1_state);                 /* 1 did not start, 2 self-test failed, 3 running (cpu1.c) */
     con_kx("cpu1_trace", fm1_c1_trace);
     con_kv("cpu1_timeouts", (int32_t)cpu1_timeouts);
+    con_kv("cpu1_gave_up", (int32_t)fm1_c1_gave_up);      /* (2.8.3) 1 a wrong job read, 2 one late, 3 barred till power-off */
+    con_kv("cpu1_bad", (int32_t)fm1_c1_mb.bad);           /* jobs core 1 read wrong and refused (fm1_cpu1.h) */
+    con_kx("cpu1_bad_fn", fm1_c1_mb.bad_fn);
     con_kv("cpu1_units", cpu1_units);                    /* the render units it gets: -1 its share, else a mask (fx.c) */
     con_kv("cpu1_busy_pct", (int32_t)(cpu1_busy_q8 * 100u / 256u));   /* its time in the render, of a half (fx.c) */
     con_kv("cpu1_wait_pct", (int32_t)(cpu1_wait_q8 * 100u / 256u));   /* core 0's time waiting for it */

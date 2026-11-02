@@ -112,7 +112,7 @@ static inline const smp_zone_t *smp_zone(uint32_t zi)
 }
 
 /* voice: ph[0] position (samples), ph[1] fraction Q16, s[0] predictor, s[1] step
- * index, s[2] previous sample, s[3] current sample, s[4] zone, s[5] step Q16 */
+ * index, s[2] previous sample, s[3] current sample, s[4] zone, s[5] (UNISON) output samples before it starts */
 static inline int32_t sample_next(const smp_zone_t *z, voice_t *v, int loop)
 {
     uint32_t pos = v->ph[0], b = SMP_DATA[z->off + (pos >> 1)];
@@ -157,22 +157,46 @@ static void sample_note_on(track_t *t, voice_t *v)
     v->s[0] = 0;
     v->s[1] = 0;
     v->s[2] = v->s[3] = 0;
+    v->s[5] = 0;                 /* (after Clipper 1.2) no start delay (UNISON: sample_spread) */
     v->s[6] = zi == 0xFFFFu;     /* 1 = sample ended (one-shot); a kit key with no sound stays silent */
     v->s[7] = 0;                 /* lo-pass state */
 }
 
+#ifndef SMP_STEP_MAX
+#define SMP_STEP_MAX (8u << 16)   /* decodes an output sample at most (a 44.1 kHz zone 3 octaves up: 8, the cost bound as before) */
+#endif
 static void sample_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
 {
     const int16_t *p = t->p;
     const smp_zone_t *z = smp_zone((uint32_t)v->s[4]);
     uint32_t i, frac = v->ph[1];
-    int32_t d16 = clamp(m->pitch16 + p[P_E1] * 16 - z->root16, -1536, 576);   /* <= 3 octaves up: bounded decode load */
+    int32_t d16 = clamp(m->pitch16 + p[P_E1] * 16 - z->root16, -1536, 1536);
     uint32_t r = pow2_q16(d16), stepq = (r >> 8) * (z->rate >> 8);   /* Q16 samples per output */
+    uint32_t lim = (pow2_q16(576) >> 8) * (z->rate >> 8);   /* the decode load bounded: 3 octaves up, or SMP_STEP_MAX
+                                                         * source samples an output sample if that is more (a 16 kHz
+                                                         * set, one zone: its pitch went flat 3 octaves over its root) */
     int32_t bits = p[P_E2], lp = 4000 + ((clamp((p[P_E4] << 8) + m->cutoff, 0, 127 << 8) * 28767) >> 15);
     int32_t drv = p[P_E6], sh = bits / 10;
+    vmod_t m0;
+    if (stepq > (lim > SMP_STEP_MAX ? lim : SMP_STEP_MAX))
+        stepq = lim > SMP_STEP_MAX ? lim : SMP_STEP_MAX;
     if (v->s[6] || !z->n) {
         v->active = 0;
         return;
+    }
+    if (v->s[5]) {                                    /* (after Clipper 1.2) UNISON: this voice starts later */
+        if ((uint32_t)v->s[5] >= n) {
+            v->s[5] -= (int32_t)n;
+            return;
+        }
+        i = (uint32_t)v->s[5];                        /* within this block: the rest of it, its level ramp as it was */
+        v->s[5] = 0;
+        m0 = *m;
+        m0.amp0 = amp_at(m, i);
+        m0.amp1 = m0.amp0 + (m->amp1 - m->amp0);
+        m = &m0;
+        out += i;
+        n -= i;
     }
     if (v->ph[0] == 0 && v->ph[1] == 0 && v->s[3] == 0)
         v->s[3] = sample_next(z, v, p[P_E3]);         /* prime the interpolator */
@@ -202,6 +226,26 @@ static void sample_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
     v->ph[1] = frac;
 }
 
+
+/* (after Clipper 1.2) UNISON (voice.c unison_spread): the voice starts r (Q32) of four periods of the pitch it
+ * sounds later (s[5]: output samples of silence first; nothing decoded, per note): every voice read the same samples
+ * from the same start, in phase (+9 dB over POLY). Four: a sample may sound lower than its key says (UP BASS: two
+ * octaves). At most the time of 256 source samples (~6 .. 12 ms at its root) and of a quarter of the zone */
+static void sample_spread(track_t *t, voice_t *v, uint32_t r)
+{
+    const int16_t *p = t->p;
+    const smp_zone_t *z = smp_zone((uint32_t)v->s[4]);
+    int32_t d16 = clamp(v->pitch16 + p[P_E1] * 16 - z->root16, -1536, 1536);
+    uint32_t stepq = (pow2_q16(d16) >> 8) * (z->rate >> 8);   /* Q16 source samples an output sample */
+    uint32_t b = pitch_inc((uint32_t)clamp(v->pitch16 + p[P_E1] * 16, 0, 2047));   /* the pitch it sounds (TUNE) */
+    uint32_t d, q;                                    /* (32-bit divides: two a voice, per note) */
+    if (v->s[6] || !z->n || !b || !stepq || v->ph[0] || v->ph[1])
+        return;
+    d = (0xFFFFFFFFu / b) << 2;                       /* four periods (output samples; < 21600 at pitch 0) */
+    q = ((z->n >> 2 < 256u ? z->n >> 2 : 256u) << 16) / stepq;   /* the time of 256 source samples */
+    v->s[5] = (int32_t)(((d < q ? d : q) * (r >> 16)) >> 16);   /* x r (the span shortened, not clamped: a clamp */
+                                                                 /* gave many voices the same start) */
+}
 
 static const engine_t ENG_SAMPLE = {
     "SAMPLE", {"SET", "TONE"},

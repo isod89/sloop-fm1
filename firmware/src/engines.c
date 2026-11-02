@@ -16,6 +16,14 @@ static inline int32_t soft_knee(int32_t y, int32_t k)   /* linear up to k, then 
     return y < 0 ? -a : a;
 }
 /* (pitch_inc: felucca_tables.h, SLOOP 2.5: from the top octave) */
+/* (after Clipper 1.2) UNISON's start-phase spread (voice.c unison_spread): r (Q32: a turn of the note at pitch p16,
+ * 1/16 semitone) in turns of an oscillator d16 (1/16 semitone) above it, the share of the same time; per note */
+static uint32_t uni_turns(uint32_t r, int32_t p16, int32_t d16)
+{
+    uint32_t b = pitch_inc((uint32_t)clamp(p16, 0, 2047));
+    return b ? (uint32_t)(((uint64_t)r * pitch_inc((uint32_t)clamp(p16 + d16, 0, 2047))) / b) : r;
+}
+
 #include "eng_analog.c"
 #include "eng_digital.c"
 #include "eng_phase.c"

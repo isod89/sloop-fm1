@@ -377,6 +377,16 @@ static const preset_t TRIO_PRESETS[] = {
     {"PULSE PAD", {1, 0, 12, 20, 0, 70, 10, 30}, {60, 90, 115, 85}, 0, 0, FX(0, 50, 20, 60), XP(P_LD_SHP + 1, 25, P_LRATE + 1, 30)},
 };
 
+/* (after Clipper 1.2) UNISON (voice.c unison_spread): the three oscillators moved by r (Q32) of a turn of the
+ * note, each by its share (its interval, DTN): as if started that much sooner (2 and 3 from fixed phases at each note) */
+static void trio_spread(track_t *t, voice_t *v, uint32_t r)
+{
+    const int16_t *p = t->p;
+    v->ph[0] += r;
+    v->ph[1] += uni_turns(r, v->pitch16, p[P_E1] * 16 + p[P_E3] * 16 / 100);
+    v->ph[2] += uni_turns(r, v->pitch16, p[P_E2] * 16 - p[P_E3] * 16 / 100);
+}
+
 static const engine_t ENG_TRIO = {
     "TRIO", {"OSC", "TONE"},
     {

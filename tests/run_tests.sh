@@ -48,11 +48,25 @@ $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/song_audio_test" tests/song_audio
 run "song: four simultaneous tracks, scene transition and stop" "$OUT/song_audio_test" "$OUT/song-demo.wav"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/song_ui_test" tests/song_ui_test.c -lm
 run "song screen: commands, load (OCT+ twice), display bounds" "$OUT/song_ui_test" "$OUT/song-screen.ppm"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/song_arm_test" tests/song_arm_test.c -lm
+run "song screen: a confirmation left unconfirmed asks again weeks later (no load / replace on one press)" "$OUT/song_arm_test"
 
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/studio_drums_test" tests/studio_drums_test.c -lm
 run "drum lanes, kit audio, metronome, record arm, free take" "$OUT/studio_drums_test" "$OUT/drum-styles.wav"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/seq2_test" tests/seq2_test.c -lm
 run "sequencer 2.0: no drift, ratchets, roll, erase / undo, ghost / hard, chords, mute / solo, nudge, locks" "$OUT/seq2_test"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/hold_rec_test" tests/hold_rec_test.c -lm
+run "2.8.3: a note held under others (live, recorded, overdubbed), MIDI in overflow" "$OUT/hold_rec_test"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/len_test" tests/len_test.c -lm
+run "2.8.3: SEQ > NOTES, LEN under later notes, MONO / STEP FULL, shorter, delete" "$OUT/len_test"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/drum_steal_test" tests/drum_steal_test.c -lm
+run "2.8.3: drum voices on a busy beat, every kit: no kick cut by another sound" "$OUT/drum_steal_test"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/chop_attack_test" tests/chop_attack_test.c -lm
+run "2.8.3: a sample played again starts from silence with its ATK (POLY same note, MONO, LEGATO, UNISON), no click" "$OUT/chop_attack_test"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/fade_noise_test" tests/fade_noise_test.c -lm
+run "SLOOP Pro #4: a note fading out keeps 16-bit resolution (DAC, MASTER 2048, USB FULL, 808 SLIDE): no 16 LSB floor" "$OUT/fade_noise_test"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/knob_walk_test" tests/knob_walk_test.c -lm
+run "every page, HOME, REC READY: a knob turned alone changes one value (sloop-pro #6: REC READY K3 not K2 too)" "$OUT/knob_walk_test" "$OUT"
 
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/drumkit_test" tests/drumkit_test.c -lm
 run "synthesised drum kits: every kit x sound bounded, audible, finite, levels, cost" "$OUT/drumkit_test" "$OUT/drum-kits.wav" "$OUT/drum-kits.txt"
@@ -153,6 +167,17 @@ run "SLICER: no clicks, timing, sync with the sequencer, STUT, cost, demos" "$OU
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/fm6_test" tests/fm6_test.c -lm
 mkdir -p build/fm6_demo
 run "FM6: algorithms, envelopes, retrigger, DC, clipping, macros, patch formats, voices, the bank, demos" "$OUT/fm6_test" build/fm6_demo
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/noise_clock_test" tests/noise_clock_test.c -lm
+run "NOISE LFSR: the clock follows the keys past the sample rate (NZ ARCADE, clipper-fm1 #10)" "$OUT/noise_clock_test"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/sample_pitch_test" tests/sample_pitch_test.c -lm
+run "SAMPLE, GRAIN: the pitch follows the keys to the top of the keyboard (up to the decode bound)" "$OUT/sample_pitch_test"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/grain_release_test" tests/grain_release_test.c -lm
+run "GRAIN: a note played in the release of the one before is not starved of grains" "$OUT/grain_release_test"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/phys_tune_test" tests/phys_tune_test.c -lm
+run "PHYS: every pitched preset in tune (+-5 cents; a curved bridge +-20), notes 28..100" "$OUT/phys_tune_test"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/unison_level_test" tests/unison_level_test.c -lm
+run "UNISON: every engine spreads its voices' phases (no stack of voices in phase over POLY)" "$OUT/unison_level_test"
+run "the editor protocol and the other inputs (USB / TRS MIDI, damaged flash) fuzzed under ASan + UBSan, and its reproducers" sh tests/editor_fuzz.sh "${EDFZ_N:-2000}" 1
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress" tests/regress.c -lm
 # the CPU budget: counted by the kernel on macOS; elsewhere under callgrind when valgrind is there (exact, ~45 s;
 # SKIP_CPU_VALGRIND=1 to time instead, which is only a rough check)

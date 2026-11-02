@@ -546,6 +546,7 @@ static void proj_apply(const project_t *p, int all)
                     st->n = 4;
                 if (st->time > ST_REST)
                     st->time = ST_REST;
+                st->vel &= 127u;                    /* (after 2.8.3: past 127 from a file, up to twice as loud) */
                 for (j = 0; j < 4u; j++)
                     st->note[j] &= 127u;
             }
@@ -632,6 +633,20 @@ UI_SMALL static void project_erase(uint32_t slot)
     ui_say("ERASED SECTION ", SEC_NAME[slot]);
 }
 
+/* (2.8.4) a part whose sound is on an engine this firmware does not have (a project Clipper wrote: HYBRID,
+ * FMX, VECTOR...; left in the flash when SLOOP is installed after Clipper): proj_apply wrapped the engine number round
+ * onto another engine with the other one's values (Clipper's HYBRID played as 808 BOOM without its TRN -24: two
+ * octaves high, until another sound was chosen). The part's default sound instead; its pattern and mix stay */
+UI_SMALL static void proj_foreign_parts(const project_t *p)
+{
+    uint32_t k;
+    for (k = 0; k < NPART; k++)
+        if (p->t[k].preset != 0xFFu && p->t[k].engine >= NENGINES) {
+            set_engine_of(&trk[k], TRK_DEF[k][0]);
+            apply_preset_to(&trk[k], TRK_DEF[k][1]);
+        }
+}
+
 /* a project into the working one: the transport stops, everything sounding is released */
 UI_SMALL static void project_apply(const project_t *p)
 {
@@ -650,6 +665,7 @@ UI_SMALL static void project_apply(const project_t *p)
             apply_preset_to(&trk[k], TRK_DEF[k][1]);
             steps_clear(&trk[k]);
         }
+    proj_foreign_parts(p);
     sync_reload = 1;
     ui.force = 1;
 }
@@ -732,6 +748,7 @@ UI_SMALL static void autosave_resume(void)              /* power-on: the project
     drch_seed = 0;
     proj_apply(q, 1);
     song.sel = (uint8_t)(q->sel < NTRK ? q->sel : 0u);
+    proj_foreign_parts(q);                         /* (2.8.4) Clipper's working project: its own sounds, default */
     for (n = 0; n < NPART; n++)
         trk[n].engine = trk[n].eng_req;        /* (nothing sounds yet: no fade) */
 #endif

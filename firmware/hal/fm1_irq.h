@@ -91,11 +91,33 @@ static void fm1_irq_enable_all(void)
 /* called from fm1_fatal_common (fm1_vec.S) with the saved frame:
  * f[0..15] r0..r15, f[16] reti, f[17] rete, f[18] retx, f[19] stub+6,
  * f[20] psr, f[21] icfg, f[22] usp, f[23] ssp, f[24] sp, f[25] interrupted rets */
+extern uint32_t _c1_ustack[], _c1_sstack_top[];  /* fm1_cpu1.S (SLOOP 2.8.3, from X0X 20353c9) */
 void fm1_fault_c(uint32_t *f)
 {
     static volatile uint32_t in_fault;
-    uint32_t i, count = fm1_crash.magic == FM1_CRASH_MAGIC ? fm1_crash.count : 0;
-    uint32_t early = fm1_crash.magic == FM1_CRASH_MAGIC ? fm1_crash.early : 0;
+    uint32_t i, count, early;
+    if (f[24] >= (uint32_t)(uintptr_t)_c1_ustack && f[24] <= (uint32_t)(uintptr_t)_c1_sstack_top) {
+        /* the second core faulted (fm1_cpu1.h) and this runs on it: the record only, then it stops here.
+         * The screen and the reset would be core 1's, and fm1_reboot holds core 1 first: it would hold
+         * itself and the FM-1 would freeze. Core 0 gives it up when its job does not come back
+         * (fm1_cpu1_wait) and goes on with one core. (Jangada, fm1-x0x#10) */
+        fm1_crash.count = fm1_crash.magic == FM1_CRASH_MAGIC ? fm1_crash.count + 1u : 1u;
+        fm1_crash.magic = FM1_CRASH_MAGIC;
+        fm1_crash.vec = (f[19] - (uint32_t)(uintptr_t)fm1_fatal_stubs) / 6u - 1u;
+        fm1_crash.pc = f[16];
+        fm1_crash.rets = f[25];
+        fm1_crash.sp = f[24];
+        fm1_crash.psr = f[20];
+        fm1_crash.dbg = FM1_DBG_MSG;
+        fm1_crash.emu = 0xC1u;                /* (SLOOP: the record's mark that core 1 faulted; fm1_crash_t keeps its
+                                               * size, so nothing after it in .noinit moves) */
+        fm1_crash.uptime_ms = *(volatile uint32_t *)0x10804u / 24000u;
+        __asm__ volatile("csync" ::: "memory");
+        for (;;)
+            ;
+    }
+    count = fm1_crash.magic == FM1_CRASH_MAGIC ? fm1_crash.count : 0;
+    early = fm1_crash.magic == FM1_CRASH_MAGIC ? fm1_crash.early : 0;
     fm1_irq_off();
     if (in_fault++)                           /* fault while reporting: reset at once */
         *(volatile uint32_t *)0x10000u |= 1u << 4;

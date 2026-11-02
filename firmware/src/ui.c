@@ -3,7 +3,7 @@
 /* Felucca user interface. Four columns map to KNOB 1..4. Rendering is lazy:
  * every element remembers what it last drew and is redrawn only on change. */
 #ifndef FELUCCA_VERSION
-#define FELUCCA_VERSION "SLOOP 2.8.1"  /* the beat machine firmware for the FM-1 (based on Felucca) */
+#define FELUCCA_VERSION "SLOOP 2.8.4"  /* the beat machine firmware for the FM-1 (based on Felucca) */
 #endif
 static void project_save(uint32_t slot);
 static void arrangement_save(void);
@@ -213,6 +213,30 @@ UI_SMALL static uint32_t note_set_len(track_t *t, uint32_t i, uint32_t want)
     }
     return n;
 }
+/* ---- (2.8.3) LEN under later notes ----
+ * POLY: a note's LEN runs on under the notes after it: it joins their steps as a note going on (SF_CONT, as a
+ * recording over held notes writes it, seq.c rec_hold), 4 notes a step at most; after them, a NOTE of its notes only,
+ * all going on, carries it (the others end there). A long bass under a melody, programmed. MONO / LEGATO parts play one
+ * note at a time: it stops there and says so. The step format is 2.7's: a project of 2.8.3 opens in 2.7 and later.
+ * The work: seq.c span_len / span_set (a free take uses them too); span_why: why it stopped short */
+UI_SMALL static uint32_t note_span(const track_t *t, uint32_t i)   /* LEN: the steps step i's notes sound */
+{
+    uint8_t s[4];
+    uint32_t ns;
+    if (!step_on(&t->step[i]) || !(ns = span_notes(&t->step[i], s)))
+        return note_len(t, i);
+    return span_len(t, i, s, ns);
+}
+UI_SMALL static uint32_t note_span_set(track_t *t, uint32_t i, uint32_t want)
+{
+    uint8_t s[4];
+    uint32_t ns;
+    span_why = 3;
+    if (!step_on(&t->step[i]) || !(ns = span_notes(&t->step[i], s)))
+        return note_set_len(t, i, want);
+    return span_set(t, i, s, ns, want);
+}
+
 /* a synth step's velocity as it plays (seq.c step_vel: ACC 127, else its VEL, 96 when 0, through its first note's level) */
 UI_SMALL static uint32_t step_vel_shown(const step_t *st)
 {
@@ -327,6 +351,18 @@ static uint8_t drop2(uint32_t v, uint32_t k)            /* a 2-bit field per not
 {
     return (uint8_t)((v & ((1u << (2u * k)) - 1u)) | ((v >> (2u * k + 2u)) << (2u * k)));
 }
+UI_SMALL static void note_del_one(step_t *st, uint32_t k)   /* note k out of a chord's step */
+{
+    uint32_t j, c;
+    for (j = k; j + 1u < st->n; j++)
+        st->note[j] = st->note[j + 1u];
+    st->lvl = drop2(st->lvl, k);
+    st->rat = drop2(st->rat, k);
+    c = (st->flags & SF_CONT_ALL) / SF_CONT0;
+    c = (c & ((1u << k) - 1u)) | ((c >> (k + 1u)) << k);
+    st->flags = (uint8_t)((st->flags & ~SF_CONT_ALL) | c * SF_CONT0);
+    st->n--;
+}
 UI_SMALL static void note_del(track_t *t, uint32_t i, uint32_t k)   /* one note of a chord; the last one: the step */
 {
     step_t *st = &t->step[i];
@@ -334,9 +370,18 @@ UI_SMALL static void note_del(track_t *t, uint32_t i, uint32_t k)   /* one note 
     if (!step_on(st))
         return;
     if (st->n <= 1u) {
-        note_set_len(t, i, 1);                          /* (its TIEs: RESTs) */
+        note_span_set(t, i, 1);                         /* (its TIEs: RESTs; 2.8.3: where it went on under others, out) */
         step_clear(st);
         return;
+    }
+    {   /* (2.8.3) one note of a chord: the chord back to one step, then the others as long again (its going on: gone) */
+        uint32_t w = note_span(t, i);
+        if (w > 1u && w != note_len(t, i)) {
+            note_span_set(t, i, 1);
+            note_del_one(st, k);
+            note_span_set(t, i, w);
+            return;
+        }
     }
     for (j = k; j + 1u < st->n; j++)
         st->note[j] = st->note[j + 1u];
@@ -356,8 +401,8 @@ UI_SMALL static int step_free(const track_t *t, uint32_t i)   /* nothing there: 
 UI_SMALL static int32_t note_shift(track_t *t, uint32_t i, int32_t dir, int copy)
 {
     uint32_t len = trk_len(t), n = note_len(t, i), j, to;
-    if (!step_on(&t->step[i]))
-        return -1;
+    if (!step_on(&t->step[i]) || note_span(t, i) != n)
+        return -1;                                      /* (2.8.3: one going on under later notes: LEN 1 first) */
     to = copy ? i + n : dir > 0 ? i + 1u : i - 1u;
     if ((!copy && dir < 0 && i == 0u) || to + n > len)
         return -1;
@@ -933,7 +978,9 @@ UI_SMALL static void pc_poll(void)
             if (&trk[i] == TSEL)
                 sync_reload = 1;
         } else if (bank == PC_USER_BANK) {           /* (2.7.2) user presets straight: PC n = user slot n (0..31) */
-            if (!up_load_to(&trk[i], n))             /* (an empty slot or past the end: nothing) */
+            if (up_load_to(&trk[i], n))              /* (an empty slot or past the end: nothing; after 2.8.3: it
+                                                      * read the result the wrong way round: "PROG n" for an empty
+                                                      * slot, no message for a preset loaded) */
                 continue;
         } else {                                     /* (2.7.2) linear: bank 0 the sounds 0..127, bank 1 128..255 */
             n = bank * 128u + (r - 1u);

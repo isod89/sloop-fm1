@@ -120,7 +120,9 @@ typedef struct {
     uint8_t stage;               /* env: 0 off, 1 attack, 2 decay/sustain, 3 release, 4 fading out (given up) */
     uint8_t kill;                /* stage 4: blocks of the fade left */
     uint8_t pitch_frac;          /* the glide between 1/16 semitones: pitch_cur + pitch_frac / 256 */
+    uint8_t pend;                /* (2.8.3) VP_*: a sample's note waiting for its voice's fade (voice.c voice_start) */
     int16_t penv;                /* the pitch envelope (ENV > PIT): Q15, a fast fall from the note's start */
+    uint8_t pend_note, pend_vel; /* (2.8.3) that note (in the padding: voice_t keeps its size) */
     int32_t env;                 /* Q24 */
     int32_t env_out;             /* last control-rate amplitude, Q15 */
     int32_t pitch16, pitch_cur;  /* 1/16 semitone, with glide */
@@ -298,6 +300,7 @@ typedef struct track {
     uint8_t rh_last;             /* the last of them; rh_bak: what it held (an early release puts it back) */
     uint32_t rh_last_abs;        /* (its step of the transport grid) */
     step_t rh_bak;
+    step_t rh_put;               /* (2.8.3) what the hold wrote into rh_last (an early release puts rh_bak back only over it) */
     uint8_t rh_end;              /* (2.7.1) one of them let go, others still held: the next step, only those go on */
     uint8_t rh_rs;               /* (2.7.1) rh_start is such a step (rh_last, rh_last_abs: it) */
     uint8_t rh_offn, rh_off[4];  /* (2.7.1) the ones let go since the hold's last NOTE step (they end there) */

@@ -995,7 +995,7 @@ UI_SMALL static void draw_columns(void)
         }
         draw_column(1, "PITCH", val, u, on ? VAL(1u) : C_DIM, -1, ICON_AUTO);
         if (on)
-            fmt_int(ln, (int32_t)note_len(TSEL, ui.cursor));
+            fmt_int(ln, (int32_t)note_span(TSEL, ui.cursor));
         else
             str_cpy(ln, "--", 8);
         draw_column(2, "LEN", ln, on ? "STEP" : "", on ? VAL(2u) : C_DIM, -1, ICON_AUTO);

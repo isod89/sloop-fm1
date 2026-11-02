@@ -439,13 +439,14 @@ UI_SMALL static void step_edit(uint32_t slot, int32_t steps)
         break;
     case 2:                                               /* LEN: the note and the TIEs after it (2.6: ui.c note_set_len) */
         if (step_on(st)) {
-            uint32_t was = note_len(t, ui.cursor), n;
+            uint32_t was = note_span(t, ui.cursor), n;   /* (2.8.3: under later notes too, POLY) */
             note_mark();
             fm1_irq_off();
-            n = note_set_len(t, ui.cursor, (uint32_t)clamp((int32_t)was + steps, 1, NSTEP));
+            n = note_span_set(t, ui.cursor, (uint32_t)clamp((int32_t)was + steps, 1, NSTEP));
             fm1_irq_on();
             if (steps > 0 && n == was)
-                ui_message(ui.cursor + n < (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP) ? "NOTE AHEAD" : "END OF PATTERN");
+                ui_message(ui.cursor + n >= (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP) ? "END OF PATTERN"
+                           : span_why == 2u ? "MONO: SET VOICE POLY" : span_why == 1u ? "STEP FULL: 4 NOTES" : "NOTE AHEAD");
         }
         break;
     default:                                              /* FORCE: GHOST SOFT NORM HARD, ACC (the step's accent) */
@@ -626,6 +627,14 @@ static uint8_t mi_ok;                                     /* the last frame reac
 UI_SMALL static uint32_t midi_held(void) { return mi_held[0] | mi_held[1] | mi_held[2] | mi_held[3]; }
 UI_SMALL static void midi_entry(void)                              /* (top of ui_input: every frame) */
 {
+    {   /* (2.8.3) recording on a MONO / LEGATO sound, a key over a held one: it replaces it. Said once a session */
+        static uint8_t mono_said;
+        if (mono_hint && !mono_said) {
+            mono_said = 1;
+            ui_message("MONO: SET VOICE POLY");
+        }
+        mono_hint = 0;
+    }
     track_t *t = TSEL;
     int on_page = mi_ok && song.seq_mode && cur_page()->scope == SC_STEP && !is_drum(t) && !song.rec && !rec_wait && !ft_on;
     int rec_arm = song.rec || rec_wait || ft_on;          /* (2.6) recording, armed or a free take: on which track */
@@ -1172,9 +1181,13 @@ UI_SMALL static void ui_input(void)
     }
     if (rec_wait && !ft_on && !ci_on) {                 /* the REC screen, armed: how it records */
         rec_knobs();                                    /* (tempo and sound still work; the track too: */
+        enc_hold |= 15u << EN_K1;                       /* (after 2.8.3, sloop-pro #6) KNOB 1..4 are the REC screen's this
+                                                         * pass: a detent counted after rec_knobs read it never reaches
+                                                         * the page under it too (K3 START also moved TRACKS' LEN) */
     } else if (rec_wait || ft_on) {                     /* the arm follows) */
         for (k = 0; k < 4u; k++)                        /* a take / the count-in: KNOB 1..4 edit nothing */
             panel_enc(EN_K1 + k);
+        enc_hold |= 15u << EN_K1;
     }
 #if FELUCCA_ARRANGER
     if (on_song_page()) {

@@ -1,6 +1,6 @@
 <p align="center"><img src="assets/logo/sloop-logo.png" alt="SLOOP" width="420"></p>
 
-# SLOOP 2.8.1 — The Complete Guide
+# SLOOP 2.8.4 — The Complete Guide
 
 Everything SLOOP does, every button, every combination, every page, in one place. This guide is written to be read from the top the first time, then used as a reference: the [cheat sheet](#26-cheat-sheet) at the end has every combination on one page.
 
@@ -139,7 +139,7 @@ Everything from 2.7 is unchanged and still here. Projects, autosaves and backups
 Every function button has two lives:
 
 - **Tap** it: its **pages** open (sound design, settings), as on any FM-1 firmware. Tap it again: the next page of that button. **SELECT** also walks the pages of that button, both ways. Each button remembers the last page you used.
-- **Hold** it: a **layer**. While it is held, the 16 white keys and KNOB 1–4 do something else, and after 0.14 s the screen shows the 16 keys as 16 tiles (four rows of four: keys 1–4, 5–8, 9–12, 13–16) and the knobs as dials. Let go: back to playing.
+- **Hold** it: a **layer**. While it is held, the 16 white keys and KNOB 1–4 do something else, and after 0.35 s (2.8.3; 0.14 s before: a quick tap flashed it), or at once when you use a key or knob, the screen shows the 16 keys as 16 tiles (four rows of four: keys 1–4, 5–8, 9–12, 13–16) and the knobs as dials. Let go: back to playing.
 
 The layers are **FX** (punch-in effects), **EDIT** (erase), **ARP** (note repeat), **SEQ** (steps), **SEL** (key and chords), **GLO** (mix) and **SAVE** (song). ENV and LFO have no layer: they only open pages.
 
@@ -238,7 +238,7 @@ The FM-1's keys have no velocity: on the drum track every hit has one of four **
 - **Levels:** GHOST, SOFT, NORM, HARD (hold OCT− / OCT+ while you hit). Softer hits are darker as well as quieter.
 - **Ratchets:** a hit can repeat x1–x4 inside its step (ARP rolls record them; SEQ + step + KNOB 3 sets them).
 - **Choke:** the closed hat and the pedal hat cut the open hat.
-- **6 drum voices**, separate from the synths' 8.
+- **6 drum voices**, separate from the synths' 8. (2.8.3) When all six sound, a hit takes the voice of its own sound if it still rings (a hi-hat cuts the last hi-hat, as on a drum machine), else the oldest voice, the kick last: on a busy beat the kick no longer drops out.
 
 ### Kits
 
@@ -293,7 +293,7 @@ While the song plays in song mode, the grid's hit and level knobs wait (*STOP TH
 
 ## 8. Recording
 
-SLOOP records live and layers every pass on top of the last (overdub). Notes go to the nearest step **as you heard it**: the ~12 ms between a key and its sound are taken back, so what you play on the beat lands on the beat. Chords are kept on the synth tracks whose VOICE is POLY (up to 4 notes a step; a MONO, LEGATO or UNISON sound, as most basses and leads, plays and records one note at a time); held notes become ties. (2.7.1) On a POLY track each held note goes on until its own key is let go, even while other notes start and end over it: hold a note, play others on top, and it keeps sounding in the pattern (up to 4 at once). (2.7.2) On a MONO, LEGATO or UNISON track, a note played while the one before is still held is recorded **legato** and plays back as you played it: with LEGATO the sound goes on into the new note without a new attack (it glides only with GLIDE or a SLIDE), where before the sequencer ended the note and started the next one again. It works from the FM-1's keys and from a MIDI controller alike. Let go of the second note while the first is still held: the pattern does not go back to the first one (the live sound does). The TRACKS page draws one mark a step; the NOTES page shows a chord's notes one by one (*2/3*…).
+SLOOP records live and layers every pass on top of the last (overdub). Notes go to the nearest step **as you heard it**: the ~12 ms between a key and its sound are taken back, so what you play on the beat lands on the beat. Chords are kept on the synth tracks whose VOICE is POLY (up to 4 notes a step; a MONO, LEGATO or UNISON sound, as most basses and leads, plays and records one note at a time); held notes become ties. (2.7.1) On a POLY track each held note goes on until its own key is let go, even while other notes start and end over it: hold a note, play others on top, and it keeps sounding in the pattern (up to 4 at once). (2.7.2) On a MONO, LEGATO or UNISON track, a note played while the one before is still held is recorded **legato** and plays back as you played it: with LEGATO the sound goes on into the new note without a new attack (it glides only with GLIDE or a SLIDE), where before the sequencer ended the note and started the next one again. It works from the FM-1's keys and from a MIDI controller alike. Let go of the second note while the first is still held: the pattern does not go back to the first one (the live sound does). (2.8.3) Recording on a MONO or LEGATO sound (track 1's 808 BOOM is one), the screen says *MONO: SET VOICE POLY* the first time you play a key over a held one: to hold a note under others, set VOICE to POLY (EDIT → VOICE page, VCE) or record on a POLY sound. (2.8.3) On a POLY track a note you hold is never cut nor restarted by the pattern while you hold it, and it goes on through the steps that already have notes (an overdub over a melody), up to 4 notes a step. The TRACKS page draws one mark a step; the NOTES page shows a chord's notes one by one (*2/3*…).
 
 **Over held notes (2.7).** On a POLY track, a note you record while held notes of the pattern ring (a pad tied over the bar) no longer cuts them: they go on under it, and your note ends where you let it go. Up to 4 notes sound at once on a track (a fifth makes the oldest held one end there). Entering steps by hand (SEQ + key) still replaces what plays, so a long note can be cut on purpose. On SLOOP 2.6 such a pattern plays the held notes again where a note was laid over them.
 
@@ -308,6 +308,8 @@ SLOOP records live and layers every pass on top of the last (overdub). Notes go 
 | **Stopped, empty project** | arms (*rec ready · play freely*) | a **free take**, or, with MODE *tempo*, as with notes |
 
 REC again while armed disarms it (*REC OFF*). In **song mode**, REC waits until the song is stopped (*STOP THE SONG FIRST*), and arming REC switches back to loop mode.
+
+(2.8.3) A free take keeps what you held, too: on a POLY track a note held while you play others over it goes on under them when the loop closes (up to 4 notes a step), where it used to stop at the next note.
 
 While recording, the REC light is solid and the track shows a red *rec*. **Turn ALGORITHM** while recording and the take moves to the next track without stopping.
 
@@ -483,7 +485,7 @@ There are three ways to enter steps:
 | **keys** | the keys pressed together become the step under edit (POLY: up to 4 notes; MONO, LEG and UNI: the last one); in chord mode a key writes its whole chord, CHORD+ changes included; let go of all keys and it moves on to the next step (2.7.1: MENU → SEQ → **STEP ADVANCE OFF**: it stays, and the next keys write the same step again, for a chord tried twice) · **a MIDI keyboard** too (2.6): the notes it plays together on the selected track (the track its channel plays, GLO → MIDI) become the step, as they sound; on another track's channel, stopped, the screen says *MIDI PLAYS TRACK n* (and when you record: see REC) |
 | KNOB 1 **NOTE** | goes from note to note: a chord's notes one by one, then the next step (the empty ones too, to put a note there); the TIEs of a note are its length, not stops |
 | KNOB 2 **PITCH** | that note's pitch (a chord's others stay); an empty step gets your last note |
-| KNOB 3 **LEN** | how many steps the note lasts: longer turns the steps after it into TIEs (it stops at the next step that has notes, and at the pattern's end: *NOTE AHEAD*, *END OF PATTERN*), shorter turns its last TIEs back into RESTs |
+| KNOB 3 **LEN** | how many steps the note lasts: longer turns the steps after it into TIEs, shorter turns its last TIEs back into RESTs. (2.8.3) On a POLY track it goes on **under the notes after it**: a long bass under a melody, each note keeping its own length (up to 4 notes a step: *STEP FULL: 4 NOTES*). It stops at the pattern's end (*END OF PATTERN*), at the same pitch played again or a step with ratchets or a slide (*NOTE AHEAD*), and on a MONO, LEGATO or UNISON sound, which plays one note at a time (*MONO: SET VOICE POLY*: VOICE page, VCE = POLY) |
 | KNOB 4 **FORCE** | **GHOST**, **SOFT**, **NORM**, **HARD**, then **ACC** (the accent: the step's, for its whole chord) |
 | **PRESETS** | the zoom: 8, 16 (as it opens), 32 or 64 steps on the screen (the page with the note under edit) |
 | **EDIT (tap)** | deletes the note under edit (a chord keeps its others; its last note takes the step and its TIEs) |
@@ -693,7 +695,7 @@ Tap a button to open its first page (or the last one you used); **tap it again**
 
 | Button | Page | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
 | --- | --- | --- | --- | --- | --- |
-| **ENV** | **ENV** | ATK attack | DEC decay | SUS sustain | REL release |
+| **ENV** | **ENV** | ATK attack (2.8.3: on SAMPLE and SLICE every note starts with it, also a sample played again while its voice still sounds) | DEC decay | SUS sustain | REL release |
 | | **ENV DEST** | FLT: envelope → brightness (±) | PIT: envelope → pitch (±, the 808 punch) | SHP: envelope → the engine's shape (±) | ESYNC (2.6): OFF / ON, ATK DEC REL as note values |
 | **LFO** | **LFO** | RATE (Hz) | WAVE: SIN, TRI, SAW, SQR, S&H | PHS phase | FADE (fade-in time) |
 | | **LFO 2** (2.6) | SYNC: OFF, 4BAR, 2BAR, 1BAR, 1/2, 1/4, 1/8, 8T, 1/16, 16T, 1/32 | TRIG: NOTE / FREE | POL: BI / UNI | — |
@@ -925,7 +927,7 @@ The visualiser sees the mix **as if MASTER were all the way up**: with MASTER tu
 | **LIGHTS** | **LIGHTS**: OFF, LOW, MID, HIGH | **KEYS**: OFF, C KEYS, WHITE KEYS, ALL KEYS | **NOTES**: OFF / ON | — |
 | **AUDIO** | **SPEAKER LOWCUT**: ON cuts the lows the small speaker cannot play (~110 Hz) | **USB AUDIO**: MASTER / FULL | **USB RATE** (2.7): AUTO / 44.1 KHZ / 48 KHZ (takes effect at the next start) | **FILTER RESO** (2.7.2): the resonance of the per-track filter, 0 (clean, as before) … 10 |
 | **SEQ** (2.7.1) | **STEP ADVANCE**: ON (the default) the NOTES page moves on when you let go of the keys; OFF it stays, so a chord you missed is played again on the same step (KNOB 1 moves the cursor) | **DRUM PREVIEW**: OFF (the default) a drum sound picked with a knob (DRUMS screen, SEQ layer) is not heard, quiet for live; ON you hear it, as up to 2.7 | — | — |
-| **SYSTEM** | **2ND CORE** (2.7): **ON** (the default) / OFF. ON, the sound is computed on both of the FM-1's cores: about twice the room before the CPU runs out (many voices, INSERT effects on several tracks), the same sound. ON takes effect at the next power-on; ABOUT then says *2 CORES* (*1 CORE*: the second core did not answer and SLOOP runs on one, as before). OFF: one core, as in 2.6 | **HARDWARE CALIBRATION** (the knob selects it, OCT+ opens it) | **MIDI LEARN CLEAR** (2.6): how many CCs are learned; OCT+ forgets them all | **ABOUT**, the version (the knob selects it, OCT+ opens it) |
+| **SYSTEM** | **2ND CORE** (2.7): **ON** (the default) / OFF. ON, the sound is computed on both of the FM-1's cores: about twice the room before the CPU runs out (many voices, INSERT effects on several tracks), the same sound. ON takes effect at the next power-on; ABOUT then says *2 CORES* (*1 CORE*: the second core did not answer and SLOOP runs on one, as before). OFF: one core, as in 2.6. (2.8.3) On some FM-1s the second core can misread a word under heavy load (a backup over USB): it checks every job before running it and refuses a wrong one, and SLOOP then goes on with one core until the next power-off (ABOUT: *1 CORE*) instead of crashing; if a crash happens while both cores run, the next start is on one core too, until you power off. If it keeps happening on your FM-1, set 2ND CORE to OFF | **HARDWARE CALIBRATION** (the knob selects it, OCT+ opens it) | **MIDI LEARN CLEAR** (2.6): how many CCs are learned; OCT+ forgets them all | **ABOUT**, the version (the knob selects it, OCT+ opens it) |
 
 **The knobs (2.7).** A slow turn is fine tuning, one value a detent. Turn faster and the value sweeps wider, progressively (x2 up to x16 on the widest values); turning back to correct is always one value a detent, and lists of names never jump. MENU → SCREEN → KNOB ACCEL OFF keeps one value a detent everywhere. **LEVEL and PAN glide** over about 3 ms instead of stepping at each detent, on every track and the drums: no zipper on a held note. Both after JIANT FM by juanjiant-bit.
 
@@ -1263,7 +1265,7 @@ A 2.4 backup restores into 2.4 (or later) only. **Save a backup before every upd
 
 ### Going back to the official firmware
 
-**(2.8)** The in-browser return-to-stock was removed, because it was not reliable on every system. To go back to the official firmware, use **M-VAVE's own updater, M-UPGRADE** (m-vave.com → Downloads → PC Software → M-UPGRADE) with the official **FM-1 V15** firmware (PC Firmware → FM-1 V15); close every other app that uses MIDI first. Save a backup with the editor before you go. To come back, install SLOOP again and restore your backup.
+**(2.8)** The in-browser return-to-stock was removed, because it was not reliable on every system. To go back to the official firmware, use **M-VAVE's own updater, M-UPGRADE** (m-vave.com → Downloads → PC Software → M-UPGRADE) with the official **FM-1** firmware (PC Firmware → FM-1, **V16**, `FM-1.fwsc`); close every other app that uses MIDI first. If M-UPGRADE does not find the FM-1 (SLOOP shows up under its own name, and some systems' M-UPGRADE then does not list it): open **Clipper**'s installer page (https://isod89.github.io/clipper-fm1/webapp/installer/) and use its **Return to the official firmware** (it works with SLOOP on the FM-1: no need to install Clipper) with that file (V16 or V15; checked before anything is written). Save a backup with the editor before you go. To come back, install SLOOP again and restore your backup.
 
 If the official firmware comes up with odd settings or a scrambled display, it is reading the settings SLOOP left in the FM-1's memory — nothing is damaged. A factory reset in M-VAVE's own firmware, or M-UPGRADE's full restore, clears it; and installing SLOOP again brings your work back exactly as it was.
 

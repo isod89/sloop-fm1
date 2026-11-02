@@ -247,7 +247,37 @@ int main(int argc, char **argv)
     go_home(); frame();
     tap(B_FX); check(cur_fam() == FAM_FX, "FX tapped: the FX pages");
     go_home(); frame();
-    press(B_FX); frames(12); check(ui.layer == LY_FX && punch.hold, "FX held: the punch layer shows");
+    {   /* (2.8.3) a tap of 0.3 s: the layer never shows on the way (it used to flash after 0.14 s) */
+        uint32_t f, shown = 0;
+        press(B_FX);
+        for (f = 0; f < 18u; f++) { frame(); shown |= ui.layer == LY_FX; }
+        release(B_FX); frame();
+        check(!shown && cur_fam() == FAM_FX, "2.8.3: FX tapped in 0.3 s: no flash of the layer, the FX pages");
+    }
+    {   /* (after 2.8.3, clipper-fm1 #24) a firm press, let go untouched within a second, opens what a quick tap opens:
+         * a press of 0.6 s used to open nothing (TAP 0.45 s: the layer flashed, the TRACKS screen stayed); held
+         * 1.3 s: a look at the layer, back where it was */
+        static const uint32_t LB[7] = {B_FX, B_EDIT, B_ARP, B_SEQ, B_SCL, B_GLO, B_SAVE};
+        uint32_t q, ok = 1;
+        for (q = 0; q < 7u; q++) {
+            uint32_t h_home, h_page, t_home, t_page;
+            go_home(); frames(2);
+            h_home = ui.home; h_page = ui.page;
+            tap(LB[q]); frames(3);
+            t_home = ui.home; t_page = ui.page;
+            ok &= t_home != h_home || t_page != h_page;                    /* (the tap opens something) */
+            go_home(); frames(2);
+            press(LB[q]); frames(37); release(LB[q]); frames(3);           /* (0.6 s) */
+            ok &= ui.home == t_home && ui.page == t_page && !ui.menu;
+            go_home(); frames(2);
+            press(LB[q]); frames(80); release(LB[q]); frames(3);           /* (1.3 s) */
+            ok &= ui.home == h_home && ui.page == h_page && ui.layer == LY_PLAY;
+        }
+        go_home(); frames(2);
+        check(ok, "FX, EDIT, ARP, SEQ, SEL, GLO, SAVE pressed 0.6 s untouched: what a tap opens; held 1.3 s: no page");
+    }
+    go_home(); frame();
+    press(B_FX); frames(24); check(ui.layer == LY_FX && punch.hold, "FX held: the punch layer shows");   /* (2.8.3: after 0.35 s) */
     check(keys_guide() == (1u << key_of_white(0) | 1u << key_of_white(4) | 1u << key_of_white(8) | 1u << key_of_white(12)),
           "FX held: keys 1, 5, 9, 13 lit dim (the rows of the grid)");
     ppm("layer-punch");
@@ -547,7 +577,7 @@ int main(int argc, char **argv)
     /* ---- SAVE: tap = the song page; held = the SONG layer (live sections, SONG REC) */
     go_home(); frame();
     song.playing = 0; live_sec = -1; live_req = -1; srec = 0; arrangement_enabled = 0;
-    press(B_SAVE); frames(15); check(ui.layer == LY_SONG, "SAVE held: the song layer");
+    press(B_SAVE); frames(24); check(ui.layer == LY_SONG, "SAVE held: the song layer");   /* (2.8.3: after 0.35 s) */
     key(key_of_white(4)); check(sec_stores == 0 && sec_armed == 1u, "store over a used A: asks again");
     key(key_of_white(4)); check(sec_stores == 1 && live_sec == 0, "again: the loop stored in A");
     key(key_of_white(6)); check(sec_stores == 2 && live_sec == 2, "an empty C: stored at once");
@@ -1460,7 +1490,7 @@ int main(int argc, char **argv)
         { int16_t bpm = song.g[G_BPM], lv = trk[0].p[P_LEVEL];
           encs[panel.enc[EN_K2]] = 5; frame();
           check(trk[0].p[P_LEVEL] == lv && song.g[G_BPM] == bpm, "visualiser: KNOB 2 (the hidden TRACKS screen) edits nothing, SELECT is not the tempo"); }
-        press(B_GLO); frames(40);                  /* (held past a tap) */
+        press(B_GLO); frames(70);                  /* (held past a tap: 1 s, clipper-fm1 #24) */
         check(ui.layer == LY_MIX, "visualiser: a layer held shows its screen");
         release(B_GLO); frames(4);
         check(vis_shown(), "visualiser: ... and it comes back");

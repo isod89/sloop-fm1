@@ -72,6 +72,30 @@ timeouts, core 1's stack) and a worst-case pattern are the next thing to collect
 Later, outside the dual-core series: reverb and delay settings that change per song section (after shifl's
 song fragments), as a separate patch set.
 
+## SLOOP 2.8.3: a unit whose second core misreads
+
+A report on SLOOP 2.8.1 (2 CORES, a backup over USB, the heaviest USB load the FM-1 sees): core 1 read its job's
+function wrong (03380D04 instead of `cpu1_units_job`), called it and faulted. The crash screen then ran on core 1,
+and `fm1_reboot` held core 1 first: it held itself, and the red screen stayed until a power cycle. Some FM-1 units
+misread words on core 1 when both cores are busy (fm1-x0x issues 10 and 21).
+
+2.8.3 brings X0X's hardening of `hal/fm1_cpu1.h` (commits 20353c9, 33ed62b, ed35a45):
+
+- **A check word on every job** (`fn ^ arg ^ job * 0x9E3779B1`, written before the job): core 1 runs a job only
+  when it matches, and keeps the jobs it finished in a register. A wrong one is counted (`mb.bad`) and refused,
+  and core 0 holds core 1 at the first one: the block is rendered on core 0, and SLOOP goes on with one core.
+- **The mailbox on cache lines of its own**: each core writes its own 64-byte line.
+- **A fault on core 1** writes the crash record (EMU = 000000C1 marks it) and stops there. Core 0's
+  `fm1_cpu1_wait` times out after 8 ms, holds core 1, and goes on with one core.
+- **One core until power-off** (a flag in `.noinit.c1bar`, after the other `.noinit` objects: `app.ld`). It is set
+  when core 1 is given up, or when core 0 crashes while core 1 runs. ABOUT then says 1 CORE.
+- **Core 1 held first thing at boot** (`fm1_cstart`), before the RAM it might still read is cleared.
+- **Core 1's own stack limit** in its EMU bank, as Melodee sets it.
+- **Console**: `cpu1_gave_up` (1 wrong job, 2 late, 3 barred), `cpu1_bad`, `cpu1_bad_fn`. The crash screen's C1
+  line adds BAD n.
+
+If it keeps happening on a unit: HOME menu > SYSTEM > 2ND CORE = OFF, then power off and on.
+
 ## Testing on the Mac first
 
 The render reaches core 1 only through `cpu1.h`'s three calls, and the host tests have their own

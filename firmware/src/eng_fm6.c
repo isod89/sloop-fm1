@@ -374,6 +374,26 @@ static const preset_t FM6_PRESETS[] = {
     {"NYLON PICK", {0, 0, 0, 0, 0, 0, 0, 7}, {0, 0, 127, 0}, 0, 0, FX(0, 20, 35, 30)},
 };
 
+/* (after Clipper 1.2) UNISON (voice.c unison_spread): the six operators moved together by r (Q32) of a turn of
+ * the note, each by its own frequency's share (fixed ones too): the relative phases, the timbre, kept (phases 0 from
+ * silence: every voice in phase) */
+static void fm6_spread(track_t *t, voice_t *v, uint32_t r)
+{
+    fm6_note_t *nt = fm6_note_of(t, v);
+    uint32_t tr = (uint32_t)(t - trk), k;
+    int32_t lf, f0;
+    if (!nt || tr >= NPART)
+        return;
+    lf = fm6_note_logfreq(v->pitch16 + (fm6_eff[tr].p[FP_TRNSP] - 24) * 16, v->fine);
+    f0 = fm6_freq(lf);
+    if (f0 <= 0)
+        return;
+    for (k = 0; k < 6u; k++) {
+        int32_t fk = fm6_freq((nt->fixed >> k) & 1u ? nt->base[k] : lf + nt->base[k]);   /* Q24 cycles a sample */
+        nt->op[k].phase = (int32_t)((uint32_t)nt->op[k].phase + (uint32_t)(((uint64_t)(r >> 8) * (uint32_t)fk) / (uint32_t)f0));
+    }
+}
+
 static const engine_t ENG_FM6 = {
     "FM6", {"OPS", "PATCH"},
     {

@@ -30,4 +30,5 @@ _c1_ustack:			/* after rti the core runs on this one: the render's (filled with 
 _c1_ustack_top:
 _c1_sstack:			/* exceptions only (no interrupts on this core) */
 	.space 256
+	.globl _c1_sstack_top
 _c1_sstack_top:

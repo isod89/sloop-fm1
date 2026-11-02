@@ -182,6 +182,15 @@ static const preset_t PHASE_PRESETS[] = {
     {"CZ RESO", {6, 0, 80, 90, 0, 0, 0, 0}, {0, 70, 60, 40}, 0, 0, FX(0, 10, 25, 30)},
 };
 
+/* (after Clipper 1.2) UNISON (voice.c unison_spread): line 1, line 2 (DTN cents up) and the sub (an octave
+ * down) moved by r (Q32) of a turn of the note, each by its share (lines 2 and the sub from 0 at each note) */
+static void phase_spread(track_t *t, voice_t *v, uint32_t r)
+{
+    v->ph[0] += r;
+    v->ph[1] += uni_turns(r, v->pitch16, t->p[P_E4] * 16 / 100);
+    v->ph[2] += r >> 1;
+}
+
 static const engine_t ENG_PHASE = {
     "PHASE", {"PHS", "LINE"},
     {

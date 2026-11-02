@@ -200,8 +200,12 @@ static voice_t *voice_alloc(track_t *t, uint32_t note)
     uint32_t i, np = trk_nvoice(t), best = np, low = np, nfree = 0;
     int32_t bd = 0x7FFFFFFF;
     for (i = 0; i < np; i++) {
-        if (t->v[i].active && t->v[i].note == note)
+        if (t->v[i].active && t->v[i].note == note) {
+            if (t->v[i].stage == 4u && voices_busy() >= NVOICE)
+                voice_room(t, 0);                       /* (2.8.3) a voice fading out (given up) sounds again: within the
+                                                         * budget of NVOICE, as a new one (after Melodee's voice_reuse) */
             return &t->v[i];
+        }
         nfree += !t->v[i].active;
     }
     if (nfree && voices_busy() >= NVOICE) {
@@ -276,12 +280,36 @@ static void glide_set(track_t *t, voice_t *v, int glide)
     }
 }
 
+/* (2.8.3) a sample (SAMPLE, SLICE) played again on a voice still sounding: it starts over at its first frame, so
+ * its attack must start from silence too. Up to 2.8.2 the envelope went on from the level it had: the sample jumped
+ * from where it was to its start at that level (a click), and ATK did nothing. That was every note in MONO /
+ * LEGATO / UNISON (one voice) and the same note played again in POLY (its voice reused); different notes in POLY
+ * took fresh voices and faded in (a user's chopped breaks, ATK set to soften the chops' starts). Now the voice fades
+ * out over KILL_BLOCKS (~1.5 ms: env_tick stage 4), then the note starts on it from silence with its ATK
+ * (track_render: VP_ON). A note-off within the fade is kept for it (VP_OFF: released as it starts) */
+#define VP_ON 1u
+#define VP_OFF 2u
+#define VP_GLIDE 4u
+#define VP_UNI 8u   /* (after Clipper 1.2) an extra UNISON voice: its start spread (unison_spread) */
 static void voice_start(track_t *t, voice_t *v, uint32_t note, uint32_t vel, int glide)
 {
     const engine_t *e = ENGINES[t->engine];
     int sounding = v->active && v->stage != 0;
     uint32_t ph0 = v->ph[0], ph1 = v->ph[1], ph2 = v->ph[2];
     int32_t s0 = v->s[0], s1 = v->s[1], s4 = v->s[4], s5 = v->s[5], s6 = v->s[6], s7 = v->s[7];
+    if (sounding && eng_sampled(e)) {                   /* (2.8.3) fade it out first, then this note from silence */
+        v->note = (uint8_t)note;                        /* (the same note again finds it: voice_alloc) */
+        v->pend_note = (uint8_t)note;
+        v->pend_vel = (uint8_t)vel;
+        v->pend = (uint8_t)(VP_ON | (glide ? VP_GLIDE : 0u));
+        v->gate = 0;
+        if (v->stage != 4u)
+            v->kill = KILL_BLOCKS;
+        v->stage = 4;
+        v->age = ++vage;
+        return;
+    }
+    v->pend = 0;
     v->note = (uint8_t)note;
     v->vel = (uint8_t)vel;
     v->gate = 1;
@@ -328,6 +356,37 @@ static void voice_start(track_t *t, voice_t *v, uint32_t note, uint32_t vel, int
     }
 }
 
+/* a UNISON voice's start phases moved by r (Q32: a turn of its note), as if it had started that much of a period
+ * sooner: in phase the voices stack, spread they sum as noise */
+static void unison_spread(track_t *t, voice_t *v, uint32_t r)
+{
+    const engine_t *e = ENGINES[t->engine];
+    /* (after Clipper 1.2) each engine moves all its oscillators (and reseeds its noise): ph[0] alone left the others in
+     * phase (ANALOG's osc 2, TRIO's 2 and 3, DIGITAL's and FM6's operators, the subs, SAMPLE's start...) */
+    if (e == &ENG_ANALOG)
+        analog_spread(t, v, r);
+    else if (e == &ENG_DIGITAL)
+        digital_spread(t, v, r);
+    else if (e == &ENG_PHASE)
+        phase_spread(t, v, r);
+    else if (e == &ENG_LOFI)
+        lofi_spread(t, v, r);
+    else if (e == &ENG_TRIO)
+        trio_spread(t, v, r);
+    else if (e == &ENG_NOISE)
+        noise_spread(t, v, r);
+    else if (e == &ENG_FM6)
+        fm6_spread(t, v, r);
+    else if (e == &ENG_SAMPLE)
+        sample_spread(t, v, r);
+#if FELUCCA_SLICE
+    else if (e == &ENG_SLICE)
+        ;                                            /* (slices: as played) */
+#endif
+    else
+        v->ph[0] += r;
+}
+
 /* MONO / LEGATO / UNISON: one note on one voice (eight for UNISON, or the
  * engine's voice cap, spread by DETUNE over the same width) */
 static void mono_play(track_t *t, uint32_t note, uint32_t vel, int retrig, int glide)
@@ -345,11 +404,12 @@ static void mono_play(track_t *t, uint32_t note, uint32_t vel, int retrig, int g
                 continue;                                   /* no room for this extra UNISON voice */
             /* level: about the same sum for 8 or 4 voices at random phases */
             voice_start(t, v, note, nv >= NVOICE ? vel * 36u / 100u : nv > 1u ? vel / 2u : vel, glide);
-            if (nv > 1u && i && !eng_sampled(ENGINES[t->engine]) && !was_sounding) {   /* random start phases: */
+            if (nv > 1u && i && !was_sounding) {   /* random start phases (SAMPLE: its start; not SLICE): */
                 static uint32_t seed = 0x1234567u;          /* in phase they stack, evenly spread they cancel */
                 seed = seed * 1664525u + 1013904223u;
-                v->ph[0] += seed;
-            }
+                unison_spread(t, v, seed);
+            } else if (nv > 1u && i && (v->pend & VP_ON))
+                v->pend |= VP_UNI;                          /* (a sample's, after its fade: spread as it starts) */
         } else {                                            /* legato: new pitch, same envelope */
             v->note = (uint8_t)note;
             v->pitch16 = (int32_t)note * 16;
@@ -491,12 +551,15 @@ static void trk_note_off(track_t *t, uint32_t note)
             }
         }
     }
-    for (i = 0; i < NVOICE; i++)                        /* POLY voices (also ones left from another mode: */
+    for (i = 0; i < NVOICE; i++) {                      /* POLY voices (also ones left from another mode: */
         if (t->v[i].note == note && t->v[i].gate &&     /* VOICE changed while they were held) */
             (mode == V_POLY || i >= (mode == V_UNISON ? trk_nvoice(t) : 1u) || t->mono_note != note)) {
             t->v[i].gate = 0;
             t->v[i].stage = 3;
         }
+        if ((t->v[i].pend & VP_ON) && t->v[i].pend_note == note && t->mono_note != note)
+            t->v[i].pend |= VP_OFF;                     /* (2.8.3) waiting for its fade: it starts, then releases */
+    }
 }
 
 static void trk_all_off(track_t *t)
@@ -506,6 +569,7 @@ static void trk_all_off(track_t *t)
     for (i = 0; i < NVOICE; i++) {
         t->v[i].gate = 0;
         t->v[i].stage = t->v[i].active ? 3 : 0;
+        t->v[i].pend = 0;                               /* (2.8.3: a note waiting for its voice's fade: gone too) */
     }
     t->nmono = 0;
     t->mono_note = 0;
@@ -738,6 +802,22 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
         voice_t *v = &t->v[i];
         vmod_t m;
         int32_t env, pitch;
+        if ((v->pend & VP_ON) && !v->active && !fade) {   /* (2.8.3) faded out: the sample's note, from silence */
+            uint32_t pf = v->pend;
+            v->pend = 0;
+            if (voice_room(t, 0)) {                     /* (it was not counted while fading: within the budget) */
+                voice_start(t, v, v->pend_note, v->pend_vel, (pf & VP_GLIDE) != 0);
+                if (pf & VP_UNI) {                      /* (after Clipper 1.2) UNISON: not in phase with the others */
+                    static uint32_t seed = 0x13579BDu;
+                    seed = seed * 1664525u + 1013904223u;
+                    unison_spread(t, v, seed);
+                }
+                if (pf & VP_OFF) {                      /* let go within the fade (~1.5 ms): released as it starts */
+                    v->gate = 0;
+                    v->stage = 3;
+                }
+            }
+        }
         if (!v->active)
             continue;
         {

@@ -102,7 +102,7 @@ static uint32_t put(uint32_t k, uint32_t part, const uint8_t *d, uint32_t nd)
 static uint32_t hit_win = 22050;                     /* the crossings' window: half a second (a sample: 80 ms) */
 static void hit_render(uint32_t note, double *zc, double *tail)
 {
-    static int32_t L[66150], R[66150], RV[66150], DL[66150];
+    static int32_t L[66150 + CTL], R[66150 + CTL], RV[66150 + CTL], DL[66150 + CTL];   /* (+ CTL: the last block) */
     uint32_t i, n = 66150, c = 0;
     double e0 = 0, e1 = 0;
     memset(&drums, 0, sizeof drums);

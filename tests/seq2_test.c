@@ -67,6 +67,8 @@ static void reset(uint32_t bpm)
     rec_wait = 0;
     fm1_in.notes = fm1_in.buttons = 0;
     kb_prev = 0;
+    memset(live_held, 0, sizeof live_held);          /* (2.8.3: the keys let go with kb_prev, as on the FM-1) */
+    memset(mi_trk_held, 0, sizeof mi_trk_held);
     ly_bit[LY_ROLL] = 1u << 8;                       /* (the buttons: any bits) */
     ly_bit[LY_ERASE] = 1u << 4;
     dyn_bit[0] = 1u << 0;
