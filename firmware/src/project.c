@@ -42,7 +42,7 @@
 _Static_assert(G_DRDLY == PROJ_NG && G_TXSRC == PROJ_NG + 5u,
                "the globals a project holds, then G_DRDLY (then 2.6's GLO > MIDI: settings of the FM-1)");
 _Static_assert(G_FXFADE == G_CLKOUT + 1u && G_ACLK == G_FXFADE + 1u && G_ACLKCH == G_ACLK + 1u &&
-               G_COUNT == G_ACLKCH + 1u, "G_ACLKCH (2.8.2) is the last global, a setting of the FM-1");
+               G_COUNT == G_ACLKCH + 1u, "G_ACLKCH (2.8.4) is the last global, a setting of the FM-1");
 #define PROJ_NC6 ((uint32_t)P_ITYPE)           /* format 6: the parameters kept in 16 bits, P_LEVEL .. P_VLEAD (as 5), */
 #define PROJ_NX6 ((uint32_t)(P_E0 - P_ITYPE))  /* the 2.6 ones in a byte (0..127), then P_E0 .. P_E7 */
 _Static_assert(PROJ_NC6 == PROJ_NP_V5 - 8u && PROJ_NX6 == 10u, "format 6: format 5's parameters, then ten bytes");
@@ -890,8 +890,10 @@ UI_SMALL static void midi_part_fill(uint8_t *b)
                                                     /* (2.7.1: bit 5 DRUM PREVIEW, bit 6 STEP ADVANCE OFF: bits 2.7 does not read) */
     b[2u * ML_N + 4u] = (uint8_t)(midi_set[5] | (fxfade > 15u ? 15u : fxfade) << 4);   /* BEND (bits 0-3); 2.7.2: FX FADE bits 4-7 (0 = none: the byte reads as 2.6's BEND) */
     b[2u * ML_N + 5u] = (uint8_t)(midi_set[6] | (aclk > 3u ? 3u : aclk) << 5 | (aclkch != 0u) << 7);   /* (2.7) GLO > MIDI 3:
-                                                    * FX CH, bits 0-4 (2.6 read this spare byte as nothing); 2.8.2: CLK OUT (ACLK) in
-                                                    * bits 5-6, its SIDE in bit 7 (0 = none: the byte then reads as 2.7's FX CH) */
+                                                    * FX CH, bits 0-4 (2.6 read this spare byte as nothing); 2.8.4: AUDIO CLK (ACLK) in
+                                                    * bits 5-6, its SIDE in bit 7 (0 = none: the byte then reads as 2.7's FX CH).
+                                                    * Downgrade note: firmware <= 2.8.3 read this byte unmasked, so with ACLK on (bit 5
+                                                    * set) it sees FX CH > 16 and resets FX CH to OFF; re-set FX CH after a downgrade. */
     b[2u * ML_N + 6u] = (uint8_t)(midi_set[7] | midi_set[9] << 1 |
                                   (flt_reso > 10u ? 10u : flt_reso) << 2);   /* (2.7) GLO > MIDI 3: DR MAP, bit 1 CLK OUT
                                                                       * (a spare byte to 2.6); 2.7.2: FILTER RESO in bits
@@ -936,9 +938,9 @@ UI_SMALL static void midi_part_read(const uint8_t *b, uint32_t n)
         song.g[G_FXFADE] = fxfade;
         midi_set[6] = (uint8_t)((b[2u * ML_N + 5u] & 31u) <= 16u ? b[2u * ML_N + 5u] & 31u : 0u);   /* (2.7) FX CH (bits 0-4) */
         song.g[G_FXCH] = midi_set[6];
-        aclk = (uint8_t)((b[2u * ML_N + 5u] >> 5) & 3u);           /* (2.8.2) CLK OUT / ACLK (bits 5-6); older: 0 (OFF) */
+        aclk = (uint8_t)((b[2u * ML_N + 5u] >> 5) & 3u);           /* (2.8.4) AUDIO CLK / ACLK (bits 5-6); older: 0 (OFF) */
         song.g[G_ACLK] = aclk;
-        aclkch = (uint8_t)((b[2u * ML_N + 5u] >> 7) & 1u);         /* (2.8.2) CLK OUT SIDE (bit 7); older: 0 (RIGHT) */
+        aclkch = (uint8_t)((b[2u * ML_N + 5u] >> 7) & 1u);         /* (2.8.4) AUDIO CLK SIDE (bit 7); older: 0 (RIGHT) */
         song.g[G_ACLKCH] = aclkch;
         midi_set[7] = (uint8_t)(b[2u * ML_N + 6u] & 1u);             /* (2.7) DR MAP */
         midi_set[9] = (uint8_t)((b[2u * ML_N + 6u] >> 1) & 1u);      /* (2.7) CLK OUT */
@@ -1210,11 +1212,11 @@ UI_SMALL static void sections_flush(void)                        /* main loop */
             fxfade = (uint8_t)song.g[G_FXFADE];
             settings_later = 1;
         }
-        if ((uint32_t)song.g[G_ACLK] != aclk) {       /* (2.8.2) GLO > SYSTEM > CLK OUT: a setting of the FM-1 */
+        if ((uint32_t)song.g[G_ACLK] != aclk) {       /* (2.8.4) GLO > AUDIO CLK: a setting of the FM-1 */
             aclk = (uint8_t)song.g[G_ACLK];
             settings_later = 1;
         }
-        if ((uint32_t)song.g[G_ACLKCH] != aclkch) {   /* (2.8.2) GLO > SYSTEM > CLK OUT > SIDE: a setting of the FM-1 */
+        if ((uint32_t)song.g[G_ACLKCH] != aclkch) {   /* (2.8.4) GLO > AUDIO CLK > SIDE: a setting of the FM-1 */
             aclkch = (uint8_t)song.g[G_ACLKCH];
             settings_later = 1;
         }

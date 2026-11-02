@@ -3269,7 +3269,7 @@ static void clkout_block(uint32_t n)
     }
 }
 
-/* 2.8.2, GLO > SYSTEM > CLK OUT: the audio sync click. A short, loud click on one channel on every clock tick, for the SYNC
+/* 2.8.4, GLO > AUDIO CLK: the audio sync click. A short, loud click on one channel on every clock tick, for the SYNC
  * IN of a Volca, a Pocket Operator, a Game Boy (LSDJ) or small modular; the other channel sums the mix to mono (audio.c,
  * SIDE picks the channel). G_ACLK: 0 OFF, 1 one pulse a beat (1 PPQN), 2 two (2 PPQN: Volca, PO), 3 four (per 1/16 step).
  * The click is a full-amplitude square burst, not a flat gate: the FM-1's output is AC-coupled, which turns a DC level into
@@ -3366,7 +3366,7 @@ static void events_block(uint32_t n)
         rec_begin();                                /* started some other way: record now */
     adv = mclk_on() && song.playing ? mclk_adv(n) : n * (uint32_t)song.g[G_BPM];   /* (after a START) */
     clkout_block(n);                                  /* (2.7) CLK OUT */
-    aclk_block(n);                                    /* (2.8.2) the audio sync click (R channel) */
+    aclk_block(n);                                    /* (2.8.4) the audio sync click (R channel) */
     ft_block();
 #if FELUCCA_ARRANGER
     if (song.playing && arrangement_clock.running) {

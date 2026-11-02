@@ -524,7 +524,7 @@ UI_SMALL static int page_walk(int32_t s)
     const page_t *pg = cur_page();
     uint32_t i, fam = pg->fam, n = 0;
     int32_t cur = -1, to;
-    uint8_t idx[16];                               /* (2.7: GLO has 9 pages with MIDI 3) */
+    uint8_t idx[16];                               /* (2.8.4: GLO has 10 pages with AUDIO CLK) */
     if (ui.home || pg->scope == SC_SONG || pg->scope == SC_DRUM)
         return 0;
     for (i = 0; i < NPAGES && n < 16u; i++) {

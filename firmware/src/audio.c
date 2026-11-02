@@ -25,7 +25,7 @@ static volatile uint32_t t5_nested_ticks;              /* TIMER4 ticks TIMER5 sp
 static int16_t scope_buf[SCOPE_N], scope_bufr[SCOPE_N];   /* left, right (the visualiser): the mix at full level */
 static uint32_t scope_w;
 
-/* 2.8.2, GLO > SYSTEM > CLK OUT (G_ACLK): the audio sync click. While on, one channel is given over to a short, loud click
+/* 2.8.4, GLO > AUDIO CLK (G_ACLK): the audio sync click. While on, one channel is given over to a short, loud click
  * on every clock tick (seq.c aclk_block sets aclk_hi, the samples of the click left to play) and the other sums the stereo
  * mix to mono (L+R)/2, so nothing panned is lost and the click never bleeds into the music. SIDE (G_ACLKCH) picks the
  * channel: RIGHT (a Volca's SYNC IN over a splitter) or LEFT (a Pocket Operator reads sync on its left channel). The click
@@ -49,6 +49,8 @@ static void audio_block(int32_t *out, uint32_t n)       /* mix (fx.c), then Q15 
 #endif
     aclk_on = song.g[G_ACLK] != 0;                      /* one channel is the sync click, the other a mono sum */
     aclk_left = song.g[G_ACLKCH] != 0;                  /* SIDE: 0 the click on RIGHT (Volca), 1 on LEFT (Pocket Operator) */
+    /* one loop with a per-sample aclk_on test, not two loops hoisted on aclk_on: splitting would spare the ACLK-off
+     * path its per-sample branch, but target_budget.py counts both loop bodies, so two loops raise the static cost. */
     for (i = 0; i < n; i++) {
         if (i & 1u)
         {
