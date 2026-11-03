@@ -486,3 +486,7 @@ before 2.7 does not answer `LIVE`: the page keeps its mixer and keys (TRACK_MIX,
   Felucca's own storage; never the app or the update area. Since SLOOP 2.4 every one of them, and
   `BK_PUT` of a preset bank, answers rc 3 while the song plays (as the panel refuses to save then): a
   flash erase silences the audio for about 50 ms.
+
+## Default input duration (unchanged wire format)
+
+Backup object 10 remains 40 bytes. Its byte 38 bits 6..7 now store the hardware NOTES input preference: 0 STEP (legacy), 1 eighth note, 2 quarter note, 3 half note. Bits 0..5 keep DR MAP, clock out and filter resonance unchanged. Older firmware ignores the new high bits. The preference is set under HOME menu → SEQ → ENTRY LEN and does not change the project format or MIDI note mapping. Old 32/36-byte settings read it as STEP.

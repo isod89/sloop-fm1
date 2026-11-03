@@ -615,6 +615,72 @@ UI_SMALL static void edit_param(uint32_t slot, int32_t steps)
     }
 }
 
+/* One input transaction for panel and MIDI. Fixed duration grows only through empty steps,
+ * never under an existing melody; replacing a note first shortens its old tails. */
+UI_SMALL static int entry_begin(track_t *t)
+{
+    step_t *st = &t->step[ui.cursor];
+    uint32_t i = ui.cursor, want = entry_steps(t), n = 1, len = trk_len(t);
+    uint32_t fixed = step_entry_len > ENTRY_STEP && step_entry_len < ENTRY_LEN_N;
+    if (!want) {
+        ui_message("LEN NEEDS FINER DIV");
+        return 0;
+    }
+    if (fixed && (st->time == ST_TIE || (st->flags & SF_CONT_ALL))) {
+        ui_message(st->time == ST_TIE ? "SELECT NOTE START" : "ENTRY: HELD NOTE HERE");
+        return 0;
+    }
+    if (fixed) {
+        uint32_t old = step_on(st) ? note_span(t, i) : 1u, j;
+        for (j = 0; step_on(st) && j < st->n; j++)
+            if (span_len(t, i, &st->note[j], 1u) != old) {
+                ui_message("USE NOTE EDIT KNOBS");
+                return 0;                          /* preserve independently released notes of an existing chord */
+            }
+        /* A pre-existing TIE at the new end would extend the new note implicitly.
+         * Only the old note's plain ties can be reclaimed; leave foreign continuations alone. */
+        for (j = 1; j <= want && i + j < len; j++) {
+            const step_t *next = &t->step[i + j];
+            if (next->time == ST_TIE && (j >= old || next->n)) {
+                ui_message("ENTRY: TIE AHEAD");
+                return 0;
+            }
+            if (step_on(next)) {
+                if (step_pure_cont(next) && j < old)
+                    continue;
+                if ((next->flags & SF_CONT_ALL) && j >= old) {
+                    ui_message("ENTRY: TIE AHEAD");
+                    return 0;
+                }
+                break;
+            }
+        }
+    }
+    undo_mark(t, (undo_sess += 4u) | 3u);
+    fm1_irq_off();
+    if (fixed && step_on(st))
+        note_span_set(t, i, 1u);
+    st->n = 0;
+    st->lvl = st->rat = 0;
+    st->flags &= (uint8_t)~(SF_CONT_ALL | SF_LEG);
+    st->time = ST_NOTE;
+    if (fixed) {
+        for (; n < want && i + n < len; n++) {
+            step_t *next = &t->step[i + n];
+            if (!step_free(t, i + n))
+                break;
+            memset(next, 0, sizeof *next);
+            next->time = ST_TIE;
+        }
+    }
+    fm1_irq_on();
+    ui.entry_open = 1;
+    ui.entry_fixed = (uint8_t)fixed;
+    if (fixed && n < want)
+        ui_message(i + n >= len ? "ENTRY: PATTERN END" : "ENTRY: NOTE AHEAD");
+    return 1;
+}
+
 /* SLOOP 2.6: the STEP page's entry from a MIDI keyboard, as from the keys (seq_entry): the notes played together on the
  * selected track (the one its channel plays: GLO > MIDI) become the cursor step, as they sounded (no chord built: the
  * keyboard plays the notes it sends); letting them all go moves on. Called every frame (the queue is read even off the
@@ -679,14 +745,8 @@ UI_SMALL static void midi_entry(void)                              /* (top of ui
             continue;
         }
         mi_held[note >> 5] |= 1u << (note & 31u);
-        if (!ui.entry_open) {
-            ui.entry_open = 1;
-            undo_mark(t, (undo_sess += 4u) | 3u);
-            st->n = 0;
-            st->lvl = st->rat = 0;
-            st->flags &= (uint8_t)~(SF_CONT_ALL | SF_LEG);   /* (2.7: step entry: the step's own notes only) */
-            st->time = ST_NOTE;
-        }
+        if (!ui.entry_open && !entry_begin(t))
+            continue;
         if (t->p[P_VOICE]) {
             st->note[0] = (uint8_t)note;
             st->n = 1;
@@ -716,14 +776,8 @@ UI_SMALL static void seq_entry(uint32_t pressed)
         note = kb_map(t, k);
         if (note == KB_SILENT)
             continue;
-        if (!ui.entry_open) {
-            ui.entry_open = 1;
-            undo_mark(t, (undo_sess += 4u) | 3u);
-            st->n = 0;
-            st->lvl = st->rat = 0;
-            st->flags &= (uint8_t)~(SF_CONT_ALL | SF_LEG);   /* (2.7: step entry: the step's own notes only) */
-            st->time = ST_NOTE;
-        }
+        if (!ui.entry_open && !entry_begin(t))
+            continue;
         if (t->p[P_CHORD] && !t->p[P_VOICE]) {            /* chord mode (2.4.1): the chord as it sounded (CHORD+,
                                                             * VLEAD), not only its root; (not played yet: built here) */
             uint8_t c[4];
@@ -749,7 +803,7 @@ UI_SMALL static void seq_entry(uint32_t pressed)
             ui.entry_open = 0;                            /* (2.7.1) STEP ADVANCE OFF: the cursor stays, the next keys
                                                            * write the step again (a chord tried again) */
         else
-            cursor_set(ui.cursor + 1);
+            cursor_set(ui.cursor + (ui.entry_fixed ? note_span(t, ui.cursor) : 1u));
     }
 }
 
