@@ -37,6 +37,8 @@ static int32_t enc_late[7];                         /* a detent the timer ISR co
                                                      * scan runs while a UI pass does): it lands in the same pass */
 static int32_t fm1_enc_take(uint32_t e) { int32_t s = encs[e]; encs[e] = enc_late[e]; enc_late[e] = 0; return s; }
 static uint8_t fm1_led[16], fm1_led_dim[16], fm1_led_bg[16];
+static uint8_t fm1_led_scale[16], fm1_led_root[16];
+static volatile uint8_t fm1_led_scale_level;
 static volatile uint16_t fm1_led_bg_ns;
 #define FM1_NCOL 16u
 static const int8_t FM1_KEYMAP[5][16];
@@ -1069,11 +1071,16 @@ int main(int argc, char **argv)
             nbits++;
         check(lights_keys == KEYS_WHITE && nbits == 16u && !(lights_keys_mask() & (1u << 1)),
               "KEYS: WHITE KEYS (16 of 27, F#3 dark)");
-        encs[panel.enc[EN_K1 + mi_row(ui.menu_sel)]] = 1; frame(); encs[panel.enc[EN_K1 + mi_row(ui.menu_sel)]] = 1; frame();
-        check(lights_keys == KEYS_ALL && lights_keys_mask() == 0x7FFFFFFu, "KEYS: ALL KEYS (every one of the 27 keys), and it stops there");
+        encs[panel.enc[EN_K1 + mi_row(ui.menu_sel)]] = 1; frame();
+        check(lights_keys == KEYS_ALL && lights_keys_mask() == 0x7FFFFFFu, "KEYS: ALL KEYS (every one of the 27 keys)");
         ui.force = 1; frame(); ppm("page-menu-keys-all");
         tap(B_OCTUP);
-        check(lights_keys == KEYS_OFF, "KEYS: OCT+ from ALL KEYS steps round to OFF");
+        check(lights_keys == KEYS_SCALE, "KEYS: OCT+ from ALL KEYS reaches SCALE");
+        encs[panel.enc[EN_K1 + mi_row(ui.menu_sel)]] = 1; frame();
+        check(lights_keys == KEYS_SCALE, "KEYS: SCALE is the last mode, turning right stops there");
+        ui.force = 1; frame(); ppm("page-menu-keys-scale");
+        tap(B_OCTUP);
+        check(lights_keys == KEYS_OFF, "KEYS: OCT+ from SCALE steps round to OFF");
         lights_keys = KEYS_ALL;
         check(lights_word() >> 4 & 15u, "KEYS: ALL KEYS kept in the settings word");
         lights_from_word(lights_word());

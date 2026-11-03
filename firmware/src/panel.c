@@ -76,7 +76,8 @@ struct { uint32_t magic, palette, lowcut, zoom; } settings __attribute__((sectio
  * (project.c persist_t.lights), read at every boot; not in .noinit, so nothing there moves. The same
  * word keeps SYNC and the REC screen's MODE / START (seq.c rec_tempo, rec_count) */
 enum { LIGHTS_OFF, LIGHTS_LOW, LIGHTS_MID, LIGHTS_HIGH, LIGHTS_N };
-enum { KEYS_OFF, KEYS_C, KEYS_WHITE, KEYS_ALL, KEYS_N };   /* (ALL: SLOOP 2.4; an older SLOOP reads it as OFF) */
+enum { KEYS_OFF, KEYS_C, KEYS_WHITE, KEYS_ALL, KEYS_SCALE, KEYS_N };   /* append modes: the saved values stay compatible;
+                                                                      * an older SLOOP reads SCALE as OFF */
 static uint8_t lights_lvl, lights_keys;
 static uint8_t lights_notes;                   /* 1: on a synth track the sounding notes light their keys */
 static uint8_t lights_sync;                    /* GLO > SYSTEM > SYNC (G_SYNC), kept here: 0 INT, 1 USB, 2 TRS */

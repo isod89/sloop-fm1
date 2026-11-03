@@ -47,6 +47,7 @@
 #include "fm1_time.h"
 #include "fm1_gpio.h"
 #include "fm1_cc.h"
+#include "fm1_led_pwm.h"
 
 #ifndef FM1_INPUT_IDLE
 #define FM1_INPUT_IDLE() ((void)0)
@@ -106,6 +107,15 @@ static uint8_t fm1_led[FM1_NCOL];
 static uint8_t fm1_led_dim[FM1_NCOL];   /* same layout as fm1_led: the glow */
 static uint8_t fm1_led_bg[FM1_NCOL];    /* same layout: the backlight (labels readable in the dark) */
 static volatile uint16_t fm1_led_bg_ns; /* the backlight pulse a frame (ns), 0 = off (menu LIGHTS) */
+/* SCALE hints use normal column dwell on selected frames; labels/landmarks keep their old pulses. */
+static uint8_t fm1_led_scale[FM1_NCOL], fm1_led_root[FM1_NCOL];
+static volatile uint8_t fm1_led_scale_level;
+static uint8_t fm1__led_phase;
+static inline uint32_t fm1__led_lit(uint32_t col)
+{
+    return fm1_led_pwm_mask(fm1_led[col], fm1_led_scale[col], fm1_led_root[col],
+                            fm1__led_phase, fm1_led_scale_level);
+}
 
 static void fm1__led_lines(uint32_t rowmask)
 {
@@ -295,7 +305,7 @@ static void fm1_input_tick(void)
 {
     uint32_t p = fm1__tick_col, n = p + 1u == FM1_NCOL ? 0u : p + 1u, i;
     uint32_t w = 0xFFFFu ^ (1u << n) ^ (n < 2u ? 1u << (11u + n) : 0u);
-    uint32_t lit = fm1_led[p], a = fm1_led_dim[p] & ~lit, b = fm1_led_bg[p] & ~lit & ~a;
+    uint32_t lit = fm1__led_lit(p), a = fm1_led_dim[p] & ~lit, b = fm1_led_bg[p] & ~lit & ~a;
     uint32_t ta = a ? FM1__NS_T(FM1_GLOW_NS) : 0u, tb = b ? FM1__NS_T(fm1_led_bg_ns) : 0u;
     uint32_t tmax = ta > tb ? ta : tb;
     fm1__led_lines(0);
@@ -317,7 +327,9 @@ static void fm1_input_tick(void)
     } else {
         fm1__sr_word(w);
     }
-    fm1__led_lines(fm1_led[n]);
+    if (n == 0u)
+        fm1__led_phase = (uint8_t)((fm1__led_phase + 1u) & 7u);  /* before lighting column 0: one phase per full frame */
+    fm1__led_lines(fm1__led_lit(n));
     fm1__tick_col = (uint8_t)n;
     fm1__keys(p);                                  /* its keys now: no wait for the frame's end */
     if (n == 0u)
