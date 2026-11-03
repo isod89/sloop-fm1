@@ -42,6 +42,9 @@ run "flash storage (A/B, torn writes)" "$OUT/storage_test"
 $CC -o "$OUT/recovery_test" tests/recovery_test.c
 run "application USB recovery and boot-loop guard" "$OUT/recovery_test"
 
+$CC -o "$OUT/flash_id_test" tests/flash_id_test.c
+run "flash parts: P25Q80H and UC25HQ80 (loader, app, rescue)" "$OUT/flash_id_test"
+
 $CC -o "$OUT/arranger_test" tests/arranger_test.c
 run "song order, timing, repeats and missing scenes" "$OUT/arranger_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/song_audio_test" tests/song_audio_test.c -lm

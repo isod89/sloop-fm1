@@ -44,6 +44,7 @@ static unsigned keys_on, scans_before_on;
 #define RECOVERY_KEYS_ON() (keys_on++, scans_before_on += scans)   /* (2.7.2: PA2 driven low before the scan) */
 static void fm1_input_scan(void) { scans++; ticks += 24000u; fm1_in.buttons = keys_on ? input_buttons : 0u; }
 static uint32_t fl_jedec_ram(void) { jedec_reads++; return jedec; }
+#include "../firmware/hal/fm1_flash_id.h"
 static void lcd_init(void) { lcd_calls++; }
 static void lcd_fill(int x, int y, int w, int h, int c) { (void)x;(void)y;(void)w;(void)h;(void)c; }
 static void draw_text_box(int x, int y, int w, const void *f, const char *s, int c, int a)
@@ -98,6 +99,17 @@ int main(void)
     assert(recovery_active && bootguard.pending == 2 && flash_ok);
     assert(jedec_reads == 1 && lcd_calls == 1);
     assert(services == 7 && sessions == 2);  /* idle startup starts no update */
+    /* the rescue takes the second-source part (UC25HQ80) as the first, and still refuses an unknown one */
+    jedec = 0xB36014u; retries = 0;
+    if (!setjmp(exit_loop)) recovery_main();
+    assert(flash_ok && jedec_reads == 2);
+    jedec = 0xEF4014u; retries = 0;
+    if (!setjmp(exit_loop)) recovery_main();
+    assert(!flash_ok && jedec_reads == 3);
+    stop_at_retry = 0;                          /* (one step more, no exit from the loop) */
+    usb.ota_req = 1; recovery_step();
+    assert(sessions == 2 && usb.ota_req == 0);  /* an unknown part: no update session */
+    assert(bootguard.pending == 2);
     assert(bootguard_begin(&bootguard) == BOOT_ROM);
     puts("recovery: boot failures, manual key, timer wrap, polled USB during OTA, retry, flash refusal and ROM fallback passed");
     return 0;
