@@ -890,9 +890,9 @@ UI_SMALL static void midi_part_fill(uint8_t *b)
     b[2u * ML_N + 4u] = (uint8_t)(midi_set[5] | (fxfade > 15u ? 15u : fxfade) << 4);   /* BEND (bits 0-3); 2.7.2: FX FADE bits 4-7 (0 = none: the byte reads as 2.6's BEND) */
     b[2u * ML_N + 5u] = midi_set[6];                /* (2.7) GLO > MIDI 3: FX CH (2.6 read this spare byte as nothing) */
     b[2u * ML_N + 6u] = (uint8_t)(midi_set[7] | midi_set[9] << 1 |
-                                  (flt_reso > 10u ? 10u : flt_reso) << 2);   /* (2.7) GLO > MIDI 3: DR MAP, bit 1 CLK OUT
+                                  (flt_reso > 10u ? 10u : flt_reso) << 2 | (step_entry_len % ENTRY_LEN_N) << 6);   /* (2.7) GLO > MIDI 3: DR MAP, bit 1 CLK OUT
                                                                       * (a spare byte to 2.6); 2.7.2: FILTER RESO in bits
-                                                                      * 2..5 (0 = none: the byte then reads as 2.7's) */
+                                                                      * 2..5; ENTRY LEN in the formerly unused bits 6..7 */
     b[2u * ML_N + 7u] = midi_set[8];                /* (2.7) GLO > MIDI 3: REMOTE (the last spare byte) */
 }
 UI_SMALL static int midi_part_default(const uint8_t *b)
@@ -912,6 +912,7 @@ UI_SMALL static void midi_part_read(const uint8_t *b, uint32_t n)
 {
     uint32_t k, e;
     fm1_irq_off();                                  /* (the ISR reads the map and the channels: never half of them) */
+    step_entry_len = ENTRY_STEP;                    /* old 32/36-byte settings retain legacy one-step entry */
     for (k = 0; k < ML_N; k++) {
         e = (uint32_t)b[2u * k] | (uint32_t)b[2u * k + 1u] << 8;
         ml_tab[k] = (uint16_t)((e >> 9) && ml_free_cc(e & 127u) && ml_id(e >> 9) < P_COUNT ? e : 0u);
@@ -936,6 +937,7 @@ UI_SMALL static void midi_part_read(const uint8_t *b, uint32_t n)
         midi_set[7] = (uint8_t)(b[2u * ML_N + 6u] & 1u);             /* (2.7) DR MAP */
         midi_set[9] = (uint8_t)((b[2u * ML_N + 6u] >> 1) & 1u);      /* (2.7) CLK OUT */
         flt_reso = (uint8_t)((b[2u * ML_N + 6u] >> 2) & 15u);        /* (2.7.2) FILTER RESO (bits 2..5); older: 0 */
+        step_entry_len = (uint8_t)((b[2u * ML_N + 6u] >> 6) & 3u);
         if (flt_reso > 10u)
             flt_reso = 10u;
         song.g[G_DRMAP] = midi_set[7];

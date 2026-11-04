@@ -225,6 +225,7 @@ Keys 1, 5, 9 and 13 glow dimly while a layer is held: the first key of each row 
 
 ### Recording and the sequencer
 
+- **Default input length:** HOME menu → SEQ → **ENTRY LEN** lets panel/MIDI entries in NOTES use 1/8, 1/4 or 1/2 notes and advance by their written span. STEP preserves the previous behavior; STEP ADVANCE OFF still keeps the cursor in place. [Guide](GUIDE.md#10-the-step-sequencer-steps-nudge-locks-fills) · [中文说明](docs/note-entry-length.md).
 - **Records as you play, no click needed:** while it plays, REC records at once and every pass is added on top (overdub). Notes land where you heard them: the ~12 ms of the keys are taken back.
 - **The REC screen (2.3):** **mode** *free* — no tempo, no grid: play, press REC on the "1" after your last bar, and the loop's length sets the tempo — or *tempo* — record at the tempo you set; **length** 1, 2 or 4 bars; **start** on your first note, or after a one-bar **count-in**.
 - **Hold REC ~2 s** to clear a track; **undo / redo** brings it back.

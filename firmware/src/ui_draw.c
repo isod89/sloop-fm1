@@ -283,6 +283,12 @@ UI_SMALL static void graph_roll(const track_t *t, uint16_t c)
     str_cpy(b + str_len(b), "-", 2);
     fmt_int(b + str_len(b), (int32_t)(v0 + nv > len ? len : v0 + nv));
     cv_text(2, 0, &FONT_S, b, C_GRAY);
+    if (step_entry_len) {
+        char entry[12];
+        str_cpy(entry, "NEW ", sizeof entry);
+        str_cpy(entry + 4, ENTRY_LEN_NAME[step_entry_len % ENTRY_LEN_N], sizeof entry - 4u);
+        cv_text(82, 0, &FONT_S, entry, entry_steps(t) ? C_HI : C_AMB);
+    }
     str_cpy(b, "ZOOM ", 12);
     fmt_int(b + 5, (int32_t)nv);
     cv_text(238 - text_w(&FONT_S, b), 0, &FONT_S, b, C_DIM);
@@ -450,7 +456,7 @@ UI_SMALL static uint32_t graph_signature(void)
         uint32_t ph = song.playing ? t->seq_idx : 0xFFFFu;
         if (pg->graph == GR_ROLL)                    /* (2.7.2 NOTES: the note under edit, the zoom, the sheet) */
             h ^= ui.note_k * 104729u + ui.zoom * 7u + ui.sheet * 977u + (uint32_t)t->micro[ui.cursor] * 31337u +
-                 step_fill(t, ui.cursor) * 3u + last_note * 65537u;
+                 step_fill(t, ui.cursor) * 3u + last_note * 65537u + step_entry_len * 15485863u;
         h ^= steps_hash(t) + ph * 31u + ui.cursor * 7919u;
     }
     return h;

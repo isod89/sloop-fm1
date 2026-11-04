@@ -52,6 +52,7 @@ static struct {
     uint8_t bank;                /* SEQ: 16-step bank (follows the cursor) */
     uint8_t cursor;              /* SEQ: step being edited (STEP page KNOB 1 moves it) */
     uint8_t entry_open;          /* SEQ: keys held since the first press of this entry */
+    uint8_t entry_fixed;         /* chosen duration: release advances by the actual written span */
     uint8_t note_k;              /* (2.7.2) NOTES: the note of the cursor's chord (0..n-1) */
     uint8_t zoom;                /* (2.7.2) NOTES: the steps shown, NV_ZOOM[zoom] (PRESETS) */
     uint8_t sheet;               /* (2.7.2) NOTES / DRUMS grid: the sheet (OCT+ held) open: 1 + its row; 0 closed */
@@ -235,6 +236,17 @@ UI_SMALL static uint32_t note_span_set(track_t *t, uint32_t i, uint32_t want)
     if (!step_on(&t->step[i]) || !(ns = span_notes(&t->step[i], s)))
         return note_set_len(t, i, want);
     return span_set(t, i, s, ns, want);
+}
+
+/* STEP preserves old entry; musical values must fit the current grid exactly. Zero means off-grid. */
+UI_SMALL static uint32_t entry_steps(const track_t *t)
+{
+    uint32_t mode = step_entry_len, want, unit;
+    if (!mode || mode >= ENTRY_LEN_N)
+        return 1u;
+    want = mode == ENTRY_EIGHTH ? BEAT_U / 2u : mode == ENTRY_QUARTER ? BEAT_U : BEAT_U * 2u;
+    unit = div_units(trk_div(t));
+    return want % unit ? 0u : want / unit;
 }
 
 /* a synth step's velocity as it plays (seq.c step_vel: ACC 127, else its VEL, 96 when 0, through its first note's level) */
