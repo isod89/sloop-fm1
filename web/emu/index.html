@@ -1,0 +1,614 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only
+     Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
+     The page follows X0X's browser page, web/emu/index.html of charlesvestal/fm1-x0x (GPL-3.0), a Felucca fork. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SLOOP</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22/%3E%3Crect x=%224%22 y=%224%22 width=%228%22 height=%228%22 fill=%22%23fff%22/%3E%3C/svg%3E">
+<meta name="description" content="SLOOP, the four-track groovebox firmware for the M-VAVE FM-1, running in your browser: the same code the instrument runs.">
+<style>
+/* DotGothic16 (SIL OFL 1.1, fonts/OFL.txt), cut to printable ASCII, for the knob labels */
+@font-face { font-family: "DotGothic16"; src: url("fonts/DotGothic16-subset.woff") format("woff"); font-display: swap; }
+:root { --bg: #8e8e93; --fg: #111; --dim: #2c2c2e; --rule: #5a5a5e;
+        --body: #1d1d1f; --tray: #141415; --part: #2a2a2d; --edge: #3a3a3e; --label: #d6d6d8;
+        --lit: #fff4d6; --green: #5fe08a; color-scheme: light; }
+html, body { background: var(--bg); }
+body { margin: 0; color: var(--fg); font: 13px/1.6 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; }
+main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 32px; }
+@media (orientation: portrait) and (max-width: 700px) { main { padding: 8px 8px 24px; } }
+a { color: inherit; }
+.device { position: relative; width: 100%; aspect-ratio: 1000 / 624; user-select: none; -webkit-user-select: none;
+          -webkit-touch-callout: none; touch-action: manipulation;
+          border-radius: 22px; box-shadow: 0 14px 40px rgba(0, 0, 0, .26), 0 2px 6px rgba(0, 0, 0, .18); }
+.device svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.device canvas { position: absolute; image-rendering: crisp-edges; image-rendering: pixelated; background: #000; }
+.hit { position: absolute; touch-action: none; cursor: pointer; -webkit-tap-highlight-color: transparent; border-radius: 10px; }
+.hit.knob { cursor: ns-resize; border-radius: 50%; }
+.hit:focus-visible { outline: 2px solid var(--lit); outline-offset: 2px; }
+.face { transition: fill .05s; }
+.dim .face.btn { fill: #3a3934; }
+.lit .face.btn { fill: var(--lit); }
+.lit text { fill: #1d1d1f; }
+.green .face.btn { fill: var(--green); }
+.green text { fill: #0d2414; }
+.face.key { fill: #0c0c0d; stroke: var(--edge); stroke-width: 1.5; }
+.slit { fill: #3a3a3c; transition: fill .05s; }
+.dim .slit { fill: #77777b; }
+.lit .slit { fill: #ececee; filter: drop-shadow(0 0 3px rgba(255, 255, 255, .6)); }
+/* #119: what can be pressed breathes, dark .. ~60 % of lit and back (hal/fm1_input.h fm1_led_breath, ~1.1 s; MENU >
+ * LEDS DIM LO ~30 %): the peaks between dark and lit at ~0.8 / ~0.58 on screen (the LED's share, gamma-encoded) */
+@keyframes breath-btn { 0%, 100% { fill: #3a3934; } 50% { fill: #d8cfb6; } }
+@keyframes breath-slit { 0%, 100% { fill: #3a3a3c; } 50% { fill: #c8c8ca; } }
+@keyframes breath-btn-lo { 0%, 100% { fill: #3a3934; } 50% { fill: #aca592; } }
+@keyframes breath-slit-lo { 0%, 100% { fill: #3a3a3c; } 50% { fill: #a1a1a3; } }
+.breath .face.btn { animation: breath-btn 1.13s ease-in-out infinite; }
+.breath .slit { animation: breath-slit 1.13s ease-in-out infinite; }
+.dimlo .breath .face.btn { animation-name: breath-btn-lo; }
+.dimlo .breath .slit { animation-name: breath-slit-lo; }
+@media (prefers-reduced-motion: reduce) {
+  .breath .face.btn, .breath .slit { animation: none; }
+  .breath .face.btn { fill: #aca592; }
+  .breath .slit { fill: #a1a1a3; }
+}
+/* the DRUM grid's beats (hal/fm1_input.h fm1_led_mid): a steady level between the glow and lit, ~15 % (DIM LO ~10 %) */
+.mid .slit { fill: #9a9a9e; }
+.dimlo .mid .slit { fill: #8a8a8e; }
+.held .face { stroke: var(--lit); stroke-width: 3; }
+.latched .face { stroke: #79b8ff; stroke-width: 3; }
+.start { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px;
+         background: rgba(0, 0, 0, .5); border-radius: 4% / 6%; }
+.start[hidden] { display: none; }
+.start button { font: inherit; font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+                padding: 13px 30px; background: var(--tray); color: var(--lit);
+                border: 1px solid var(--lit); border-radius: 8px; cursor: pointer; }
+.start button:hover { background: #202024; }
+.start button:disabled { opacity: .55; cursor: progress; }
+.start button:disabled { opacity: .4; cursor: progress; }
+.start p { margin: 0; max-width: 32em; text-align: center; color: #fff; }
+.keys { display: flex; flex-wrap: wrap; justify-content: center; gap: 7px 18px; margin: 20px 0 0; color: var(--dim); }
+/* the file inputs, as the panel's own buttons (the browser's default control is not the thing here) */
+.loadrow { margin: 14px 0 0; text-align: center; }
+.loadbtn {
+  display: inline-block; cursor: pointer; font: inherit; font-size: 11.5px; letter-spacing: .10em;
+  text-transform: uppercase; padding: 8px 16px; border-radius: 7px;
+  color: var(--label); background: var(--tray); border: 1px solid var(--edge);
+  transition: color .12s, border-color .12s, background .12s;
+}
+.loadbtn:hover { color: var(--lit); border-color: var(--lit); }
+.loadbtn:active { transform: translateY(1px); }
+.loadrow .name { margin-left: 10px; font-size: 12px; color: var(--dim); }
+.keys span { white-space: nowrap; font-size: 12px; }
+.keys select { font: inherit; font-size: 12px; }
+kbd { font: 600 10.5px ui-monospace, Menlo, monospace; border: 1px solid var(--rule); border-bottom-width: 2px;
+      border-radius: 4px; padding: 1px 5px; color: var(--fg); background: rgba(255, 255, 255, .32); }
+/* the page's own chrome, above and below the instrument */
+.top { text-align: center; margin: 0 0 20px; }
+.top h1 { margin: 0; font-size: 21px; font-weight: 600; letter-spacing: .44em; text-indent: .44em; color: var(--fg); }
+.top p { margin: 7px 0 0; font-size: 12.5px; color: var(--dim); }
+.top .ver { display: inline-block; margin-top: 9px; font: 600 10.5px ui-monospace, Menlo, monospace;
+            letter-spacing: .08em; padding: 2px 8px; border-radius: 999px;
+            border: 1px solid var(--rule); color: var(--dim); }
+footer { margin-top: 22px; padding-top: 14px; border-top: 1px solid rgba(0, 0, 0, .16);
+         color: var(--dim); text-align: center; font-size: 11.5px; line-height: 1.8; }
+footer nav { margin: 6px 0; }
+footer nav a { margin: 0 8px; color: var(--fg); text-decoration: none; border-bottom: 1px solid var(--rule); }
+footer nav a:hover { border-color: var(--fg); }
+footer small { font-size: 10.5px; opacity: .85; }
+</style>
+</head>
+<body>
+<main>
+<header class="top">
+  <h1>SLOOP</h1>
+  <p>the four-track groovebox for the M-VAVE FM-1, running in your browser</p>
+  <span class="ver">@VERSION@@PREVIEW@</span>
+</header>
+<div class="device" id="device">
+  <svg id="panel" viewBox="0 0 1000 624" aria-hidden="true"></svg>
+  <canvas id="screen" width="240" height="240" role="img" aria-label="The screen"></canvas>
+  <div class="start" id="start"><button id="go" type="button">Switch on</button><p id="status" hidden></p></div>
+</div>
+
+<p class="keys">
+  <span><kbd>Z</kbd>–<kbd>'</kbd> <kbd>Q</kbd>–<kbd>O</kbd> keys</span>
+  <span><kbd>1</kbd>–<kbd>=</kbd> FX … REC</span>
+  <span><kbd>[</kbd> <kbd>]</kbd> OCT</span>
+  <span><kbd>↑</kbd> <kbd>↓</kbd> SELECT</span>
+  <span><kbd>←</kbd> <kbd>→</kbd> ALGORITHM</span>
+  <span><kbd>Shift</kbd>-click holds a button</span>
+  <span id="midiknobs" hidden><label><input type="checkbox" id="knobson"> MIDI CC 20–27 turn the panel's knobs</label>
+  <select id="knobmode" aria-label="How the controller sends CC 20–26" hidden>
+    <option value="abs">absolute</option>
+    <option value="bin">relative 64±n</option>
+    <option value="twos">relative 2's complement</option>
+    <option value="sign">relative sign bit</option>
+  </select></span>
+</p>
+
+<p class="loadrow">
+  <button type="button" class="loadbtn" id="loadbtn">Load a song or a backup</button>
+  <input type="file" id="loadfile" accept=".sloopsong,.json,application/json" hidden>
+  <span class="name" id="loadname"></span>
+</p>
+
+<footer>
+  SLOOP · <a href="https://www.gnu.org/licenses/gpl-3.0.html">GPL-3.0</a> · based on Felucca by Leo Kuroshita, Hügelton Instruments · browser build after his <a href="https://github.com/hugelton/Felucca">Felucca</a> and charlesvestal's <a href="https://github.com/charlesvestal/fm1-x0x">X0X</a> · DotGothic16 font, <a href="fonts/OFL.txt">SIL OFL 1.1</a><br>
+  <nav><a href="../installer/">Install</a><a href="../editor/">Editor</a><a href="https://github.com/isod89/sloop-fm1">Source</a></nav>
+  <small>M-VAVE and FM-1 are trademarks of their respective owners. SLOOP is not affiliated with or endorsed by them.</small>
+</footer>
+</main>
+
+<script type="module">
+import { midiKnob, KNOB_MODES } from "./worklet.js";
+const NS = "http://www.w3.org/2000/svg";
+// panel.c's labels (bit = label) and encoder roles
+const B = { FX: 0, SEL: 1, ENV: 2, LFO: 3, EDIT: 4, GLO: 5, HOME: 6, SAVE: 7, ARP: 8, SEQ: 9, PLAY: 10, REC: 11, "OCT-": 12, "OCT+": 13 };
+const EN = { SELECT: 0, ALGORITHM: 1, PRESETS: 2, "KNOB 1": 3, "KNOB 2": 4, "KNOB 3": 5, "KNOB 4": 6 };
+const PLAY_GREEN = 14;
+// the 27 keys F3..G5: key k = k semitones above F3
+const WHITE = [0, 2, 4, 6, 7, 9, 11, 12, 14, 16, 18, 19, 21, 23, 24, 26];
+const BLACK = [1, 3, 5, 8, 10, 13, 15, 17, 20, 22, 25];
+const BLACK_AFTER = [0, 1, 2, 4, 5, 7, 8, 9, 11, 12, 14];      // the white key each black one follows
+const STORE = "sloop-emu-flash", KNOBS_ON = "sloop-emu-knobs", KNOB_MODE = "sloop-emu-knobmode";
+
+// ------------------------------------------------------------------ the panel
+// Two drawings of the same controls: WIDE after the FM-1's own layout, TALL for a phone held upright (the
+// screen larger, the keys across the whole width). Rebuilt when the orientation changes; the state stays.
+const ROW1 = ["FX", "SEL", "ENV", "LFO", "EDIT", "GLO"], ROW2 = ["HOME", "SAVE", "ARP", "SEQ", "PLAY", "REC"];
+const KNOBS = ["MASTER", "SELECT", "PRESETS", "ALGORITHM", "KNOB 1", "KNOB 2", "KNOB 3", "KNOB 4"];
+const LAYOUTS = {
+  wide: {
+    w: 1000, h: 624, screen: [292, 44, 256],
+    knobs: [[105, 100, 24], [215, 100, 24], [105, 205, 24], [215, 205, 24], [610, 100, 22], [714, 100, 22], [818, 100, 22], [922, 100, 22]],
+    trays: [[50, 250, 220, 50], [568, 160, 400, 140]],
+    oct: [[60, 258, 90, 34], [170, 258, 90, 34]],
+    grid: [582, 174, 54, 48, 63, 62], keybed: [36, 332, 928, 256],
+  },
+  tall: {
+    w: 600, h: 1070, screen: [130, 104, 340],
+    knobs: [[66, 64, 24], [186, 64, 24], [414, 64, 24], [534, 64, 24], [90, 512, 26], [230, 512, 26], [370, 512, 26], [510, 512, 26]],
+    trays: [[14, 572, 572, 146], [150, 728, 300, 62]],
+    oct: [[164, 737, 128, 44], [308, 737, 128, 44]],
+    grid: [24, 582, 86, 60, 94, 70], keybed: [14, 800, 572, 256],
+  },
+};
+const svg = document.getElementById("panel"), device = document.getElementById("device"), canvas = document.getElementById("screen");
+function el(tag, attrs, parent = svg) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  parent.appendChild(e);
+  return e;
+}
+const SANS = "-apple-system, 'Helvetica Neue', Arial, sans-serif", DOT = "'DotGothic16', " + SANS;
+function label(parent, x, y, s, size, font = SANS, ink = "var(--label)") {
+  const t = el("text", { x, y, "text-anchor": "middle", "font-family": font,
+                         "font-size": size, "font-weight": 600, fill: ink, "letter-spacing": ".04em" }, parent);
+  t.textContent = s;
+  return t;
+}
+const KEYNAMES = ["F", "F♯", "G", "G♯", "A", "A♯", "B", "C", "C♯", "D", "D♯", "E"];
+const keyName = (k) => KEYNAMES[k % 12] + (3 + Math.floor((k + 5) / 12));
+
+let node = null, btnMask = 0, keyMask = 0, latched = 0, masterValue = 700, lastLeds = [0, 0, 0, 0, 0], layout = null;
+const angle = Object.fromEntries(KNOBS.map((n) => [n, 0]));
+angle.MASTER = -135 + 270 * masterValue / 1023;
+const knobs = [], buttons = [], keys = [];
+const btnBy = new Map(), keyBy = new Map();                   // pointer / key code -> label bit or key
+const send = (m) => { if (node) node.port.postMessage(m); };
+
+function build(name) {
+  const L = LAYOUTS[name];
+  layout = name;
+  svg.innerHTML = "";
+  svg.setAttribute("viewBox", `0 0 ${L.w} ${L.h}`);
+  device.style.aspectRatio = `${L.w} / ${L.h}`;
+  for (const d of device.querySelectorAll(".hit")) d.remove();
+  knobs.length = buttons.length = keys.length = 0;
+  el("rect", { x: 4, y: 4, width: L.w - 8, height: L.h - 8, rx: 40, fill: "var(--body)" });
+  for (const [x, y, w, h] of L.trays) el("rect", { x, y, width: w, height: h, rx: 14, fill: "var(--tray)" });
+  const [sx, sy, ss] = L.screen;
+  el("rect", { x: sx, y: sy, width: ss, height: ss, rx: 18, fill: "#0b0b0c" });
+  const inset = ss / 32;                                         // the 240 x 240 panel inside its bezel
+  Object.assign(canvas.style, { left: `${(sx + inset) / L.w * 100}%`, top: `${(sy + inset) / L.h * 100}%`,
+                                width: `${(ss - 2 * inset) / L.w * 100}%`, height: `${(ss - 2 * inset) / L.h * 100}%` });
+  KNOBS.forEach((n, i) => {
+    const [x, y, r] = L.knobs[i], g = el("g", {});
+    el("circle", { cx: x, cy: y, r: r + 5, fill: "var(--tray)" }, g);
+    el("circle", { cx: x, cy: y, r, fill: "var(--part)", stroke: "var(--edge)", "stroke-width": 2 }, g);
+    const ind = n === "MASTER" ? el("line", { x1: x, y1: y - r + 5, x2: x, y2: y - r + 14, stroke: "var(--label)", "stroke-width": 3, "stroke-linecap": "round" }, g) : null;
+    label(g, x, y - r - 12, n, 16, DOT);
+    el("circle", { cx: x, cy: y, r: r + 12, fill: "transparent" }, g);
+    knobs.push({ g, ind, x, y, name: n, role: n === "MASTER" ? "master" : EN[n] });
+  });
+  const button = ([x, y, w, h], n, sub) => {
+    const g = el("g", {});
+    el("rect", { x, y, width: w, height: h, rx: 8, fill: "var(--part)", stroke: "var(--edge)", "stroke-width": 1.5, class: "face btn" }, g);
+    const ink = n === "REC" ? "#ff453a" : undefined;
+    if (sub) { label(g, x + w / 2, y + h / 2 - 2, n, 10.8, SANS, ink); label(g, x + w / 2, y + h / 2 + 11, sub, 9.9); }
+    else label(g, x + w / 2, y + h / 2 + 4.5, n, 12.6, SANS, ink);
+    buttons.push({ g, bit: B[n], name: sub ? `${n} / ${sub}` : n });
+  };
+  button(L.oct[0], "OCT-");
+  button(L.oct[1], "OCT+");
+  const [gx, gy, gw, gh, dx, dy] = L.grid;
+  for (let i = 0; i < 6; i++) {
+    button([gx + i * dx, gy, gw, gh], ROW1[i]);
+    button([gx + i * dx, gy + dy, gw, gh], ROW2[i], ROW2[i] === "PLAY" ? "STOP" : "");
+  }
+  const [x0, y0, w, h] = L.keybed;
+  el("rect", { x: x0, y: y0, width: w, height: h, rx: 18, fill: "var(--tray)" });
+  // the keys: two rows of the same black keys, each with a slit down its middle that lights
+  const pitch = (w - 24) / 16, kw = pitch * 0.78, kh = h * 0.425, sw = Math.max(3, kw * 0.14);
+  const key = (cx, cy, k) => {
+    const g = el("g", {}), y = cy - kh / 2;
+    el("rect", { x: cx - kw / 2, y, width: kw, height: kh, rx: kw / 2, class: "face key" }, g);
+    el("rect", { x: cx - sw / 2, y: y + kw * 0.4, width: sw, height: kh - kw * 0.8, rx: sw / 2, class: "slit" }, g);
+    el("rect", { x: cx - pitch / 2, y: cy - h * 0.24, width: pitch, height: h * 0.48, fill: "transparent" }, g);   // its target
+    keys[k] = { g, name: keyName(k) };
+  };
+  WHITE.forEach((k, i) => key(x0 + 12 + (i + 0.5) * pitch, y0 + h * 0.75, k));
+  BLACK_AFTER.forEach((a, j) => key(x0 + 12 + (a + 1) * pitch, y0 + h * 0.25, BLACK[j]));
+  // HTML targets over the drawing (pointer-events: none): touch-action and pointer capture work on them everywhere
+  const hit = (c, cls, role) => {
+    const b = c.g.getBBox(), d = document.createElement("div");
+    d.className = "hit" + (cls ? " " + cls : "");
+    Object.assign(d.style, { left: `${b.x / L.w * 100}%`, top: `${b.y / L.h * 100}%`,
+                             width: `${b.width / L.w * 100}%`, height: `${b.height / L.h * 100}%` });
+    d.setAttribute("role", role);
+    d.setAttribute("aria-label", c.name);
+    d.title = c.name;
+    d.tabIndex = 0;
+    d.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
+    d.addEventListener("contextmenu", (e) => e.preventDefault());
+    device.insertBefore(d, document.getElementById("start"));
+    c.hit = d;
+  };
+  knobs.forEach((k) => { hit(k, "knob", "slider"); bindKnob(k); drawKnob(k); });
+  buttons.forEach((b) => { hit(b, "", "button"); bindButton(b); });
+  keys.forEach((k, i) => { hit(k, "", "button"); bindKey(k, i); });
+  syncButtons(true);
+  syncKeys(true);
+  drawLights(lastLeds);
+}
+
+// ------------------------------------------------------------------ input
+function syncButtons(redraw) {
+  let m = latched;
+  for (const b of btnBy.values()) m |= 1 << b;
+  if (m !== btnMask) { btnMask = m; send({ type: "buttons", mask: m }); }
+  else if (!redraw) return;
+  for (const b of buttons) {
+    const on = !!(m & (1 << b.bit));
+    b.g.classList.toggle("held", on);
+    b.g.classList.toggle("latched", !!(latched & (1 << b.bit)));
+    b.hit.setAttribute("aria-pressed", on);
+  }
+}
+function syncKeys(redraw) {
+  let m = 0;
+  for (const k of keyBy.values()) m |= 1 << k;
+  if (m !== keyMask) { keyMask = m; send({ type: "keys", mask: m }); }
+  else if (!redraw) return;
+  keys.forEach((k, i) => k.g.classList.toggle("held", !!(m & (1 << i))));
+}
+function bindButton(b) {
+  b.hit.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    if (e.shiftKey || e.button === 2) { latched ^= 1 << b.bit; syncButtons(true); return; }
+    if (latched & (1 << b.bit)) { latched &= ~(1 << b.bit); syncButtons(true); return; }
+    b.hit.setPointerCapture(e.pointerId);
+    btnBy.set("p" + e.pointerId, b.bit);
+    syncButtons();
+  });
+  b.hit.addEventListener("keydown", (e) => {
+    if ((e.key === "Enter" || e.key === " ") && !e.repeat) { btnBy.set("f" + b.bit, b.bit); syncButtons(); e.preventDefault(); e.stopPropagation(); }
+  });
+  b.hit.addEventListener("keyup", () => { if (btnBy.delete("f" + b.bit)) syncButtons(); });
+}
+function bindKey(k, i) {
+  k.hit.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    k.hit.setPointerCapture(e.pointerId);
+    keyBy.set("p" + e.pointerId, i);
+    syncKeys();
+  });
+}
+function release(e) {
+  const id = "p" + e.pointerId;
+  if (btnBy.delete(id)) syncButtons();
+  if (keyBy.delete(id)) syncKeys();
+}
+for (const t of ["pointerup", "pointercancel", "lostpointercapture"]) device.addEventListener(t, release);
+
+function drawKnob(k) { if (k.ind) k.ind.setAttribute("transform", `rotate(${angle[k.name]} ${k.x} ${k.y})`); }
+function setMaster(v) {
+  masterValue = Math.max(0, Math.min(1023, v));
+  angle.MASTER = -135 + 270 * masterValue / 1023;
+  send({ type: "master", value: masterValue });
+}
+function turn(k, n) {
+  if (!n) return;
+  if (k.role === "master") setMaster(masterValue + n * 16);
+  else {
+    angle[k.name] = (angle[k.name] + n * 18) % 360;            // 20 detents a turn
+    send({ type: "enc", role: k.role, n });
+  }
+  drawKnob(k);
+}
+function bindKnob(k) {
+  let drag = null, wheel = 0;
+  k.hit.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    k.hit.setPointerCapture(e.pointerId);
+    drag = { x: e.clientX, y: e.clientY, acc: 0 };
+  });
+  k.hit.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = drag.y - e.clientY;   // up or right: clockwise
+    drag.acc += Math.abs(dx) > Math.abs(dy) ? dx : dy;          // the larger of the two
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+    const step = k.role === "master" ? 3 : 8, n = Math.trunc(drag.acc / step);
+    if (n) { drag.acc -= n * step; turn(k, n); }
+  });
+  const end = () => { drag = null; };
+  k.hit.addEventListener("pointerup", end);
+  k.hit.addEventListener("pointercancel", end);
+  k.hit.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+    if (Math.abs(dy) >= 50) { turn(k, dy < 0 ? 1 : -1); wheel = 0; return; }   // a wheel notch: one detent
+    wheel -= dy;                                                                   // a trackpad: by distance
+    const n = Math.trunc(wheel / 25);
+    if (n) { wheel -= n * 25; turn(k, n); }
+  }, { passive: false });
+  k.hit.addEventListener("keydown", (e) => {
+    const d = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1 }[e.key];
+    if (d) { turn(k, d); e.preventDefault(); e.stopPropagation(); }
+  });
+}
+const tall = matchMedia("(orientation: portrait) and (max-width: 700px)");
+build(tall.matches ? "tall" : "wide");
+tall.addEventListener("change", () => build(tall.matches ? "tall" : "wide"));
+document.fonts?.load("16px DotGothic16").then(() => build(layout), () => {});   // the labels' width: the hit areas
+
+// the computer keyboard, every key one control: F3..A#4 on the Z (white) and A (black) rows, B4..G5 on Q..O
+// in semitones, the twelve buttons on the number row in the panel's order (held while the key is), [ ] OCT
+const KEYMAP = {};
+["KeyZ", "KeyX", "KeyC", "KeyV", "KeyB", "KeyN", "KeyM", "Comma", "Period", "Slash"].forEach((c, i) => KEYMAP[c] = { key: WHITE[i] });
+[["KeyS", 1], ["KeyD", 3], ["KeyF", 5], ["KeyH", 8], ["KeyJ", 10], ["KeyL", 13], ["Semicolon", 15], ["Quote", 17]].forEach(([c, k]) => KEYMAP[c] = { key: k });
+["KeyQ", "KeyW", "KeyE", "KeyR", "KeyT", "KeyY", "KeyU", "KeyI", "KeyO"].forEach((c, i) => KEYMAP[c] = { key: 18 + i });
+["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9", "Digit0", "Minus", "Equal"]
+  .forEach((c, i) => KEYMAP[c] = { btn: B[[...ROW1, ...ROW2][i]] });
+Object.assign(KEYMAP, { BracketLeft: { btn: B["OCT-"] }, BracketRight: { btn: B["OCT+"] } });
+const ARROWS = { ArrowUp: [EN.SELECT, 1], ArrowDown: [EN.SELECT, -1], ArrowRight: [EN.ALGORITHM, 1], ArrowLeft: [EN.ALGORITHM, -1] };
+addEventListener("keydown", (e) => {
+  if (!node || e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.(".hit.knob")) return;
+  if (ARROWS[e.code]) { const [r, n] = ARROWS[e.code]; turn(knobs.find((k) => k.role === r), n); e.preventDefault(); return; }
+  const m = KEYMAP[e.code];
+  if (!m) return;
+  e.preventDefault();
+  if (e.repeat) return;
+  if (m.key !== undefined) { keyBy.set("k" + e.code, m.key); syncKeys(); }
+  else { btnBy.set("k" + e.code, m.btn); syncButtons(); }
+});
+addEventListener("keyup", (e) => {
+  const id = "k" + e.code;
+  if (keyBy.delete(id)) syncKeys();
+  if (btnBy.delete(id)) syncButtons();
+});
+addEventListener("blur", () => {
+  for (const id of [...btnBy.keys()]) if (id[0] !== "p") btnBy.delete(id);
+  for (const id of [...keyBy.keys()]) if (id[0] !== "p") keyBy.delete(id);
+  syncButtons();
+  syncKeys();
+});
+
+// ------------------------------------------------------------------ screen and lights
+const ctx = document.getElementById("screen").getContext("2d");
+const img = ctx.createImageData(240, 240);
+function drawScreen(fb) {
+  const d = img.data;
+  for (let i = 0; i < 240 * 240; i++) {
+    const v = fb[i], p = ((v >> 8) | (v << 8)) & 0xFFFF;          // the panel's byte order -> RGB565
+    d[i * 4] = ((p >> 11) & 31) * 255 / 31;
+    d[i * 4 + 1] = ((p >> 5) & 63) * 255 / 63;
+    d[i * 4 + 2] = (p & 31) * 255 / 31;
+    d[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+// the power-on sweep (hal/fm1_led_anim.h): a level per LED, lit frames /64 (| 128: the glow under them), drawn as the
+// LED's share of lit between its dark (or glowing) colour and the lit one, mixed in linear light
+const lin = (h) => [1, 3, 5].map((i) => (parseInt(h.slice(i, i + 2), 16) / 255) ** 2.2);
+const ANIM = { btn: [lin("#3a3934"), lin("#3a3934"), lin("#fff4d6")], slit: [lin("#3a3a3c"), lin("#77777b"), lin("#ececee")] };
+function animFill(kind, q) {
+  const [dark, glow, lit] = ANIM[kind], s = Math.min(q & 127, 64) / 64, base = q & 128 ? glow : dark;
+  const c = base.map((v, i) => Math.round(255 * (v + (lit[i] - v) * s) ** (1 / 2.2)));
+  return `rgb(${c.join(",")})`;
+}
+function drawAnim(anim) {
+  for (const b of buttons) b.g.querySelector(".face").style.fill = anim ? animFill("btn", anim[b.bit]) : "";
+  keys.forEach((k, i) => { k.g.querySelector(".slit").style.fill = anim ? animFill("slit", anim[14 + i]) : ""; });
+}
+function drawLights([litB, litK, dimB, dimK, dimLo = 0, brB = 0, brK = 0, midK = 0], anim = null) {
+  drawAnim(anim);
+  document.documentElement.classList.toggle("dimlo", !!dimLo);   // (the breath's lower peak)
+  for (const b of buttons) {
+    const bit = 1 << b.bit, green = b.bit === B.PLAY && (litB & (1 << PLAY_GREEN));
+    b.g.classList.toggle("lit", !!(litB & bit) && !green);
+    b.g.classList.toggle("green", !!green);
+    b.g.classList.toggle("dim", !!(dimB & bit));
+    b.g.classList.toggle("breath", !!(brB & bit));
+  }
+  keys.forEach((k, i) => {
+    k.g.classList.toggle("lit", !!(litK & (1 << i)));
+    k.g.classList.toggle("dim", !!(dimK & (1 << i)));
+    k.g.classList.toggle("breath", !!(brK & (1 << i)));
+    k.g.classList.toggle("mid", !!(midK & (1 << i)));
+  });
+}
+
+// ------------------------------------------------------------------ the flash, kept in this browser
+// The emulated flash lives in localStorage, which is "best effort" until the origin asks for more: without
+// this, the browser may evict it under pressure, or as soon as the user clears site data. Asked once, at
+// load; the answer is kept by the browser and is not asked again.
+if (navigator.storage && navigator.storage.persist)
+  navigator.storage.persist().then((kept) => {
+    if (!kept) console.warn("SLOOP: this browser keeps the emulated FM-1's flash best-effort; export your songs to be safe.");
+  });
+
+function loadFlash() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORE) || "{}"), out = {};
+    for (const [off, b64] of Object.entries(raw)) out[off] = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    return out;
+  } catch { return {}; }
+}
+function saveFlash(sectors) {
+  try {
+    const raw = {};
+    for (const [off, u8] of Object.entries(sectors)) {
+      let s = "";
+      for (let i = 0; i < u8.length; i += 4096) s += String.fromCharCode.apply(null, u8.subarray(i, i + 4096));
+      raw[off] = btoa(s);
+    }
+    localStorage.setItem(STORE, JSON.stringify(raw));
+    return true;
+  } catch { return false; }                                       // private mode, full: this session only
+}
+
+// ------------------------------------------------------------------ Web MIDI in (channel messages)
+// With the page's checkbox on, CC 20..27 turn the panel's knobs (worklet.js midiKnob), any channel, CC 20..26 sent
+// as the select says; off (the default), and the rest, go to the firmware
+const knobCC = [], knobBox = document.getElementById("knobson"), knobSelect = document.getElementById("knobmode");
+let knobsOn = false, knobMode = "abs";
+try {
+  knobsOn = localStorage.getItem(KNOBS_ON) === "1";
+  const m = localStorage.getItem(KNOB_MODE);
+  if (KNOB_MODES.includes(m)) knobMode = m;
+} catch {}
+knobBox.checked = knobsOn;
+knobSelect.hidden = !knobsOn;
+knobSelect.value = knobMode;
+knobBox.addEventListener("change", () => {
+  knobsOn = knobBox.checked;
+  knobSelect.hidden = !knobsOn;
+  knobCC.length = 0;
+  try { localStorage.setItem(KNOBS_ON, knobsOn ? "1" : "0"); } catch {}
+});
+knobSelect.addEventListener("change", () => {
+  knobMode = knobSelect.value;
+  knobCC.length = 0;                                              // absolute again: no jump on the first touch
+  try { localStorage.setItem(KNOB_MODE, knobMode); } catch {}
+});
+document.getElementById("midiknobs").hidden = !navigator.requestMIDIAccess;
+async function midiOn() {
+  if (!navigator.requestMIDIAccess) return;
+  try {
+    const access = await navigator.requestMIDIAccess();
+    const bind = () => {
+      for (const input of access.inputs.values()) {
+        input.onmidimessage = (e) => {
+          const d = e.data;
+          if (d.length < 2 || d[0] < 0x80 || d[0] >= 0xF0) return;
+          const k = knobsOn && (d[0] & 0xF0) === 0xB0 ? midiKnob(knobCC, d[1], d[2] || 0, knobMode) : null;
+          if (!k) send({ type: "midi", data: [d[0], d[1], d[2] || 0] });
+          else if (k.master !== undefined) { setMaster(k.master); drawKnob(knobs.find((x) => x.role === "master")); }
+          else turn(knobs.find((x) => x.role === k.role), k.n);
+        };
+      }
+    };
+    access.onstatechange = bind;
+    bind();
+  } catch { /* no permission: the panel only */ }
+}
+
+// ------------------------------------------------------------------ switching on
+const status = document.getElementById("status");
+const say = (t) => { status.textContent = t; status.hidden = !t; };
+async function switchOn() {
+  const go = document.getElementById("go");
+  go.disabled = true;
+  go.textContent = "Starting…";
+  try {
+    const ac = new AudioContext({ sampleRate: 44100, latencyHint: "interactive" });
+    const [wasm] = await Promise.all([
+      fetch("sloop.wasm").then((r) => { if (!r.ok) throw new Error(`sloop.wasm: ${r.status}`); return r.arrayBuffer(); }),
+      ac.audioWorklet.addModule("worklet.js")]);
+    node = new AudioWorkletNode(ac, "sloop", { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+    node.connect(ac.destination);
+    let warned = false;
+    await new Promise((res, rej) => {
+      node.port.onmessage = (e) => {
+        const m = e.data;
+        if (m.type === "ready") res();
+        else if (m.type === "error") rej(new Error(m.message));
+        else if (m.type === "frame") {
+          if (m.fb) drawScreen(m.fb);
+          if (m.leds) drawLights(lastLeds = m.leds, m.anim);
+          if (m.sectors && !saveFlash(m.sectors) && !warned) {
+            warned = true;
+            console.warn("SLOOP: this browser does not keep the saves; they last until the page closes.");
+          }
+        }
+      };
+      node.port.postMessage({ type: "load", wasm, sectors: loadFlash(), master: masterValue }, [wasm]);
+    });
+    await ac.resume();
+    document.getElementById("start").hidden = true;
+    go.textContent = "On";
+    if (ac.sampleRate !== 44100) console.warn(`SLOOP: the browser plays at ${ac.sampleRate} Hz, the pitch is off by ${(1200 * Math.log2(ac.sampleRate / 44100)).toFixed(0)} cents.`);
+    syncButtons();
+    syncKeys();
+    send({ type: "visible", on: !document.hidden });
+    midiOn();
+  } catch (err) {
+    node = null;
+    go.disabled = false;
+    go.textContent = "Switch on";
+    say("Could not start: " + (err && err.message || err) + ". A current Chrome, Edge, Firefox or Safari should work.");
+  }
+}
+document.getElementById("go").addEventListener("click", switchOn);
+
+// ------------------------------------------------------------------ songs and backups
+// A .sloopsong (Song & sections > Export this song) or a .json backup: its objects are the firmware's own
+// structs; they go into the emulated flash and the page comes back with them loaded.
+const b64bytes = (s) => Uint8Array.from(atob(String(s || "")), (c) => c.charCodeAt(0));
+document.getElementById("loadbtn").addEventListener("click", () => document.getElementById("loadfile").click());
+document.getElementById("loadfile").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  document.getElementById("loadname").textContent = f.name;
+  let obj;
+  try { obj = JSON.parse(await f.text()); } catch { alert("Not a SLOOP file (no JSON)."); return; }
+  const isSong = obj && obj.format === "sloop-song";
+  const isBk = obj && obj.format === "sloop-backup";
+  if (!isSong && !isBk) { alert("Not a SLOOP song or backup."); return; }
+  if (!node) { alert("Switch the FM-1 on first."); return; }
+  const what = isSong ? `the song "${obj.name || ""}"` : "this backup";
+  if (!confirm(`Load ${what}? It replaces what this browser's FM-1 holds now.`)) return;
+  const objects = (obj.objects || [])
+    .filter((o) => o.id >= 0 && o.id <= 8)          // (9..11 live inside the settings object)
+    .map((o) => ({ id: o.id, data: b64bytes(o.data) }));
+  const order = obj.order ? b64bytes(obj.order) : null;
+  const done = new Promise((res) => {
+    const h = (ev) => {
+      if (ev.data && ev.data.type === "loaded") { node.port.removeEventListener("message", h); res(ev.data); }
+    };
+    node.port.addEventListener("message", h);
+  });
+  node.port.postMessage({ type: "objects", objects, order });
+  const r = await done;
+  if (r.bad && r.bad.length) alert("Refused: " + r.bad.join(", ") + ". The rest was written.");
+  location.reload();                                 // boot again, on the flash as it now is
+});
+document.addEventListener("visibilitychange", () => send({ type: "visible", on: !document.hidden }));
+</script>
+</body>
+</html>
