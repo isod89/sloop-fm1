@@ -16,6 +16,7 @@ static uint32_t input_buttons, stop_at_retry;
 static jmp_buf exit_loop;
 #define FM1_TICKS_PER_US 24u
 #define FL_FAR(x) x
+#include "../firmware/hal/fm1_flash_id.h"
 #define C_BLACK 0
 #define C_WHITE 65535
 #define FONT_S font
@@ -99,6 +100,14 @@ int main(void)
     assert(jedec_reads == 1 && lcd_calls == 1);
     assert(services == 7 && sessions == 2);  /* idle startup starts no update */
     assert(bootguard_begin(&bootguard) == BOOT_ROM);
-    puts("recovery: boot failures, manual key, timer wrap, polled USB during OTA, retry, flash refusal and ROM fallback passed");
+    /* the flash parts: the Puya P25Q80 and the UC25HQ80 known, anything else not (and recovery_main reads it) */
+    assert(FL_JEDEC_OK(0x856014u) && FL_JEDEC_OK(0xB36014u) && !FL_JEDEC_OK(0xEF4014u) && !FL_JEDEC_OK(0u) && !FL_JEDEC_OK(0xFFFFFFu));
+    jedec = 0xB36014u; flash_ok = 0; recovery_active = 0; retries = 0; stop_at_retry = 3;
+    if (!setjmp(exit_loop)) recovery_main();
+    assert(flash_ok);
+    jedec = 0xEF4014u; flash_ok = 1; retries = 0; stop_at_retry = 3;
+    if (!setjmp(exit_loop)) recovery_main();
+    assert(!flash_ok);
+    puts("recovery: boot failures, manual key, timer wrap, polled USB during OTA, retry, flash refusal and ROM fallback, the UC25HQ80 flash known passed");
     return 0;
 }

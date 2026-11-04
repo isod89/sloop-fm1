@@ -1,6 +1,6 @@
 <p align="center"><img src="assets/logo/sloop-logo.png" alt="SLOOP" width="420"></p>
 
-# SLOOP 2.8.4 — The Complete Guide
+# SLOOP 2.8.5 — The Complete Guide
 
 Everything SLOOP does, every button, every combination, every page, in one place. This guide is written to be read from the top the first time, then used as a reference: the [cheat sheet](#26-cheat-sheet) at the end has every combination on one page.
 

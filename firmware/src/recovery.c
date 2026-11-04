@@ -64,7 +64,7 @@ static void recovery_main(void)
     recovery_last = recovery_usb_last = fm1_ticks();
     recovery_fraction = fm1_ms = 0;
     /* No persist_boot or OTA cleanup: no flash write just for entering rescue. */
-    flash_ok = FL_FAR(fl_jedec_ram)() == 0x856014u;
+    flash_ok = FL_JEDEC_OK(FL_FAR(fl_jedec_ram)());
     lcd_init();
     lcd_fill(0, 0, 240, 240, C_BLACK);
     draw_text_box(0, 64, 240, &FONT_S, "SLOOP USB RESCUE", C_WHITE, 1);

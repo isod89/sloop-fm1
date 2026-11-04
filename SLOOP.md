@@ -1,13 +1,15 @@
 <p align="center"><img src="assets/logo/sloop-logo.png" alt="SLOOP" width="480"></p>
 
-# SLOOP 2.8.4
+# SLOOP 2.8.5
 
 **A live groovebox firmware for the M-VAVE FM-1 — for any style.** Four tracks — three synths and a drum machine with 16 sounds on the white keys — twelve synthesis engines (six-operator FM with DX7 patches, and now physical models and noise), 153 sounds, 37 drum kits (808, 909, trap, phonk, house, techno, UK garage, jungle, amapiano, reggaeton, synthwave, chiptune, ambient, jazz…), your own samples, ghost notes and ratchets, parameter locks, micro timing and fills, note repeat, one-key chords, 27 punch-in effects, a vinyl / sidechain / DJ-filter master, and a teenage-engineering-style screen that always shows what your hands can do next. No factory patterns, nothing to load: everything you hear, you play.
 
 SLOOP is free and open source (GPL-3.0), based on [Felucca](https://github.com/hugelton/Felucca) by Leo Kuroshita / Hügelton Instruments.
 
-> **Status:** 2.8.4, running on the FM-1. Still a beta: install at your own risk, and please report what you find (GitHub issues).
+> **Status:** 2.8.5, running on the FM-1. Still a beta: install at your own risk, and please report what you find (GitHub issues).
 
+> **2.8.5:** FM-1 units with the newer UC25HQ80 flash chip (sold from late 2026, mostly on AliExpress) were taken for an unknown chip: projects stayed in RAM ("flash error") and the update loader refused to install. Both chips are known now.
+>
 > **2.8.4:** a bug-fix release. no more distortion at the end of notes, 3.5 mm and USB; UNISON no longer stacks its voices in phase; PHYS strings in tune; NZ ARCADE, SAMPLE and GRAIN follow the top keys; a firm press on a layer button opens its pages; on REC READY a knob changes only its own value; the way back to the official firmware with V16.
 
 > **2.8.3:** hold a note under others. On a POLY track, a note you hold while you play others over it keeps sounding while you record and when you play it back, in a free take too (it used to restart and cut out), it goes on through steps that already have notes when you overdub, and in SEQ → NOTES its LEN now runs on under the notes after it (a long bass under a melody) instead of stopping at *NOTE AHEAD*. On a MONO or LEGATO sound (track 1's 808 BOOM), the screen says *MONO: SET VOICE POLY*. MIDI in: a burst too fast to keep no longer leaves a note stuck. A quick tap on a button no longer flashes its layer page: a layer shows after 0.35 s held (0.14 s before), or at once when you use a key or knob. Drums: on a busy beat the kick (and the other hits) no longer drop out: a drum sound hit again takes its own voice before another's, and the kick is taken last. Samples (SAMPLE, SLICE): a sample played again on a voice still sounding (the same chop again on POLY, every note on MONO, LEGATO or UNISON) now starts from silence with its ATK; it used to start at the level the voice had, with a click, and ATK did nothing. The second core: on some FM-1s it can misread a word under heavy USB traffic (a backup over USB); it now checks every job before running it and refuses a wrong one, and SLOOP goes on with one core until the next power-off instead of crashing (a fault on the second core used to leave the crash screen until a power cycle).

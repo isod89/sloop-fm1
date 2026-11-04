@@ -90,7 +90,7 @@
   <p id="status"></p>
   <pre id="log"></pre>
   <a class="ed" href="../editor/" data-t="editor"></a>
-  <p class="small"><a href="../editor/sloop-editor.html" download="sloop-editor-2.8.4.html" data-t="edOffline"></a></p>
+  <p class="small"><a href="../editor/sloop-editor.html" download="sloop-editor-2.8.5.html" data-t="edOffline"></a></p>
   <p><button id="app" class="ed" hidden data-t="appInstall"></button></p>
   <hr>
   <p class="small" data-t="direct"></p>
@@ -536,7 +536,7 @@ const sayK = (k, arg = "") => { lastKey = k; lastArg = arg; $("status").textCont
 const say = (txt) => { lastKey = null; $("status").textContent = txt; };
 const log = (t) => { $("log").textContent += t + "\n"; };
 let image = null;
-const meta = {"version": "2.8.4", "product": "FM-1_900", "pkg": "../../firmware/sloop-2.8.4.fwsc", "sha256": "5a6a0843c868650dba6718cf85e43e719aec18c3dc5cc803c57c38b382158d4e"};
+const meta = {"version": "2.8.5", "product": "FM-1_900", "pkg": "../../firmware/sloop-2.8.5.fwsc", "sha256": "b0446effb840740a3aa5c386ce004e79334e4f833d48d82a9eb5edbfde92ae67"};
 
 let writing = false;
 const lockAll = (on) => {
