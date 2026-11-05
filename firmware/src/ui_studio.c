@@ -6,6 +6,7 @@
  * LAYERS (a function button held: what the 16 white keys and the knobs do now), HOLD (a hold to
  * confirm: clear, save), REC (armed / free take). Every band is drawn into the canvas only when its
  * signature changed. */
+#include "chord.c"                                /* the notes and chord a synth track plays */
 static uint8_t drum_page, drum_cursor;   /* drum_page: 0 GRID, 1 KIT, 2 SOUND (2.7: a sound's TUNE, DECAY) */
 #define drum_lane pen_lane                 /* (2.7.1) one drum sound picked everywhere: the GRID, SOUND, the SEQ layer, a pad
                                             * played (seq.c pen_lane) */
@@ -253,8 +254,10 @@ UI_SMALL static void studio_tracks_draw(void)
             te_lower(e, ENGINES[t->eng_req % NENGINES]->name, sizeof e);
         }
         b[13] = 0;
+        if (i == chd.trk && chd.hold)                   /* playing: its chord where the engine was */
+            chd_label(e, sizeof e);
         h = studio_hash(selected + level * 7u + silent * 997u + rec * 1999u + solo * 4999u + len * 37u +
-                        song.playing * 7u + pos * 71u + bank * 13u, b);
+                        song.playing * 7u + pos * 71u + bank * 13u + (i == chd.trk && chd.hold) * chd.sig, b);
         for (j = 0; j < len; j++) h = h * 31u + (uint32_t)trk_step_on(t, j);
         if (!ui.force && h == rows[i]) continue;
         rows[i] = h;
@@ -355,6 +358,7 @@ UI_SMALL static void pads_tick(void)                             /* once a frame
     for (k = 0; k < 27u; k++)
         if (key_lit[k])
             key_lit[k]--;
+    chd_tick(n);                                      /* before the hits are used up */
     if (song.sel < NPART && (n[song.sel][0] | n[song.sel][1] | n[song.sel][2] | n[song.sel][3]))
         for (k = 0; k < 27u; k++) {
             uint32_t note = kb_map(TSEL, k);

@@ -912,8 +912,35 @@ On the TRACKS screen, **tap HOME**: the whole screen becomes a visualiser of wha
 | 10 | **ORBIT** | four planets turning in 1, 2, 4 and 8 beats round a sun that pulses with the mix |
 | 11 | **WIRES** | a string per track, set swinging by its notes |
 | 12 | **SLOOP** | the logo alive: the sail's four bands are the tracks, the boat rocks on its wave |
+| 13 | **CHORDS** | the chord the selected synth track plays, big, with its degree in the track's scale, its notes and a keyboard that lights them; let go and the last chord stays, dimmed. See [Chords on screen](#chords-on-screen) |
+| 14 | **PROGRESSION** | the last six chords the selected synth track played, each with its degree in the key, and three ideas for the next chord. See [Chord progression](#chord-progression) |
 
 The visualiser sees the mix **as if MASTER were all the way up**: with MASTER turned down, even to 0, it still moves at full size. It costs the sound nothing.
+
+### Chords on screen
+
+SLOOP names the notes and chords the selected synth track plays: from the keys, chord mode and CHORD+, a MIDI keyboard, or the sequencer playing back.
+
+- **TRACKS screen:** while you play, the track's row shows the chord (*C MAJ7*, *A MIN/C*) where the engine name was. It goes back about two seconds after the last note.
+- **CHORDS visualiser (13):** tap HOME on TRACKS, then turn SELECT to *CHORDS*. The chord fills the middle, with its degree in the track's key and scale under it (*IV IN C MAJ*, when the track has a seven-note scale and the chord's root is in it), then its notes, low to high, and a keyboard of two to four octaves with them lit in the track's colour (a white dot marks the root). Let go and the last chord stays, dimmed, until you play again.
+
+How the chord is named:
+
+- The screen font has capitals only, so the qualities are spelt out: **C** (major), **C MIN**, **C7**, **C MAJ7**, **C MIN7**, **C DIM**, **C AUG**, **C SUS2**, **C SUS4**, **C5**, **C6**, **C MIN6**, **C9**, **C MAJ9**, **C MIN9**, **C ADD9**, **C MIN ADD9**, **C MIN MAJ7**, **C MIN7B5**, **C DIM7**, **C7SUS4**, **C7#5**, **C7B5**, **C7B9**, **C6/9**. A 7th or 9th without its 5th is named as the full chord (SLOOP's own 9TH chords are 1 3 7 9).
+- An inversion shows its bass: **C/E**. When the same notes make two chords, the one whose root is the lowest note wins (C E G A is **C6**; A C E G is **A MIN7**).
+- One note shows the note and its octave (**E3**); notes that make no chord show their names (**C D**).
+- Letting go of the keys one by one keeps the chord's name; adding a note renames it.
+- It follows the selected synth track. With the drum track selected, it keeps following the synth track selected before.
+- It names the keys you hold, however you press them: all at once or one after another. A MONO, LEGATO or UNISON sound plays one of them, but the chord of all the keys held is shown. With the arp on, it shows the chord the arp is playing through.
+
+
+### Chord progression
+
+The **PROGRESSION** visualiser (14: tap HOME on TRACKS, then turn SELECT past CHORDS) keeps the last six chords the selected synth track played, oldest first, each with its degree in the track's key (*I*, *IV*, *VI*…). The newest is lit while it is still the chord shown.
+
+- A chord counts once it has sounded for about 0.15 s, so the shapes you pass through while pressing keys one by one are not kept. The same chord twice in a row is kept once. It works for the keys, chord mode, MIDI in and the sequencer.
+- **NEXT** shows three chords that commonly follow the current one in the track's key, built from the scale's own triads (after *I*: IV, V, VI; after *IV*: V, I, II; after *V*: I, VI, IV; after *VI*: IV, II, V…). They need a seven-note scale on the track (SEL: KEY and SCALE); with none, or a chord outside the key, the screen says so.
+- Selecting another synth track starts a new list.
 
 ---
 
