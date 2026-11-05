@@ -57,14 +57,17 @@ static uint32_t ui_input_ms;                    /* the last button, key or knob 
 /* the knobs (roles, bit per EN_*) not to be read again in this UI pass (ui_input: a layer took them, #102 of
  * Felucca): panel_enc returns 0 and leaves their detents for the next pass */
 static uint32_t enc_hold;
+static int16_t enc_seen[NE];                    /* the detents taken, per role, for the editor's PANEL push (editor.c) */
 UI_SMALL static int32_t panel_enc(uint32_t role)
 {
     int32_t s;
     if ((enc_hold >> role) & 1u)
         return 0;
     s = fm1_enc_take(panel.enc[role]) * panel.dir[role];
-    if (s)
+    if (s) {
         ui_input_ms = fm1_ms;                      /* a knob turning is not idle either: autosave waits */
+        enc_seen[role] = (int16_t)clamp(enc_seen[role] + s, -63, 63);
+    }
     return s;
 }
 
