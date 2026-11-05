@@ -264,6 +264,8 @@ The FM-1 is also a **USB audio input**: record its master output on a computer, 
 
 Every button can glow so its label is readable on a black FM-1; the C keys or every white key can glow too; the notes playing can light their keys. Details: [The menu](#the-menu-settings-of-the-fm-1).
 
+**Scale-key hints:** HOME menu → LIGHTS → KEYS → **SCALE** keeps the selected synth track's in-scale keys lit, with brighter roots and full-bright played notes. It follows ROOT/SCALE and the existing keyboard mapping without changing the sound. [Details](GUIDE.md#lights) · [中文说明](docs/scale-key-lights.md).
+
 ### Memory and safety
 
 - **Autosave:** stop and leave it 2.5 s, your work is kept; at power-on SLOOP comes back exactly as you left it.

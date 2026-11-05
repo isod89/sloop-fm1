@@ -37,6 +37,8 @@ static int32_t enc_late[7];                         /* a detent the timer ISR co
                                                      * scan runs while a UI pass does): it lands in the same pass */
 static int32_t fm1_enc_take(uint32_t e) { int32_t s = encs[e]; encs[e] = enc_late[e]; enc_late[e] = 0; return s; }
 static uint8_t fm1_led[16], fm1_led_dim[16], fm1_led_bg[16];
+static uint8_t fm1_led_scale[16], fm1_led_root[16];
+static volatile uint8_t fm1_led_scale_level;
 static volatile uint16_t fm1_led_bg_ns;
 #define FM1_NCOL 16u
 static const int8_t FM1_KEYMAP[5][16];
