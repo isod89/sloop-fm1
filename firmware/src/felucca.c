@@ -2,6 +2,12 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* SLOOP (based on FELUCCA): one compilation unit (the HAL is header-only). Order matters. */
 #include <stdint.h>
+#ifndef SLOOP_BIG_SCREEN
+#define SLOOP_BIG_SCREEN 1       /* the FM-1 Big Screen mirror: the screen over USB SysEx to FM-1 Mirror (sloop_mirror.c) */
+#endif
+#if SLOOP_BIG_SCREEN
+#define SXQ 512u                 /* usb.c's SysEx ring: 64 keeps the screen to ~25 KB/s; 512 ~67 KB/s */
+#endif
 #include "fm1_time.h"
 #include "fm1_sys.h"
 #include "fm1_irq.h"
@@ -27,6 +33,9 @@
 #include "fx.c"
 #ifndef FELUCCA_OTA
 #define FELUCCA_OTA 1            /* M-UPGRADE update entry; needs FELUCCA_FLASH */
+#endif
+#if SLOOP_BIG_SCREEN && !FELUCCA_OTA
+#error "SLOOP_BIG_SCREEN needs FELUCCA_OTA (usb.c's SysEx ring)"
 #endif
 #ifndef FELUCCA_OTA_DRYRUN
 #define FELUCCA_OTA_DRYRUN 0     /* 1 = stage, ask "success", then undo: no record, no reset */
@@ -199,4 +208,7 @@ static void ota_commit(const uint8_t *parm)
 #include "recovery.c"        /* early, polled USB updater; no synth or settings */
 #endif
 #include "splash.c"          /* SLOOP boot logo (build/gen/sloop_logo.h) */
+#if SLOOP_BIG_SCREEN
+#include "sloop_mirror.c"        /* the FM-1 Big Screen mirror (MIT; after usb.c, gfx.c and ui_draw.c, before main.c) */
+#endif
 #include "main.c"

@@ -150,7 +150,9 @@ static uint8_t sx_frame[640];
 static uint32_t sx_pos;
 static volatile uint32_t sx_frame_len;
 static volatile uint8_t sx_ready, sx_collect, sx_busy;
-#define SXQ 64u
+#ifndef SXQ
+#define SXQ 64u                                         /* (a power of two; the Big Screen build: 512) */
+#endif
 static uint32_t sx_out_q[SXQ];
 static volatile uint32_t so_w, so_r;
 #endif
@@ -744,6 +746,13 @@ stall:
 }
 
 /* SysEx assembly: only short commands matter here */
+#ifndef SLOOP_BIG_SCREEN
+#define SLOOP_BIG_SCREEN 0
+#endif
+#if SLOOP_BIG_SCREEN
+int sm_sysex(const uint8_t *m, unsigned n);           /* the Big Screen mirror (sloop_mirror.c, screen_mirror.c) */
+#endif
+
 static void sysex_byte(uint8_t b)
 {
     static const uint8_t UBOOT_KEY[6] = {0xF0, 0x22, 0x24, 0x35, 0x7D, 0xF7};
@@ -782,6 +791,10 @@ static void sysex_byte(uint8_t b)
             ok = usb.sysex[i] == UBOOT_KEY[i];
         if (ok)
             usb.uboot_req = 1;
+#if SLOOP_BIG_SCREEN
+        else if (usb.sx_len == 6u && usb.sysex[1] == 0x7D && usb.sysex[2] == 'F' && usb.sysex[3] == 'S')
+            sm_sysex(usb.sysex, 6u);                    /* the Big Screen mirror's hello (sloop_mirror.c) */
+#endif
 #if FELUCCA_OTA
         else if (usb.sx_len == 6u && usb.sysex[1] == 0x22 && usb.sysex[2] == 0x24 && usb.sysex[3] == 0x35 &&
                  usb.sysex[4] == 0x7F)
