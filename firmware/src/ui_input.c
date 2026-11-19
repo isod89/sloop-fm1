@@ -32,7 +32,7 @@ UI_SMALL static uint32_t cur_fam(void) { return ui.home ? FAM_HOME : cur_page()-
 UI_SMALL static uint32_t cur_btn(void)                      /* the button of the screen shown */
 {
     if (!ui.home && cur_page()->scope == SC_SONG)
-        return B_SAVE;
+        return B_SEQ;
     if (!ui.home && cur_page()->scope == SC_DRUM)
         return B_SEQ;
     return FAM_BTN[cur_fam()];
@@ -817,10 +817,10 @@ UI_SMALL static void layer_tap(uint32_t layer)
     case LY_SONG:                                         /* SAVE tapped: TRACKS -> the song, else the SAVE pages */
         if (on_song_page())
             arrangement_save();
-        else if (!ui.home && cur_page()->scope == SC_TRK)
+/*        else if (!ui.home && cur_page()->scope == SC_TRK)
             studio_open(SC_SONG);
         else if (on_drum_page())
-            studio_open(SC_SONG);
+            studio_open(SC_SONG); */
         else
             open_family(FAM_SAVE);
         break;
