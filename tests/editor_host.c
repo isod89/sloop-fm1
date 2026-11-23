@@ -59,6 +59,7 @@ static uint32_t scope_w;
 #include "../firmware/src/ui_menu.c"
 #include "../firmware/src/ui_input.c"
 /* ---- felucca.c's flash part, on the RAM image (as hal/fm1_flash.h: ranges, one page a program) */
+#include "../firmware/hal/fm1_flash_id.h"
 #define FL_DATA_LO 0x00097000u
 #define FL_DATA_HI 0x000E0000u
 #define FL_GLOB_LO 0x000FC000u
