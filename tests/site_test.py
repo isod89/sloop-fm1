@@ -50,6 +50,19 @@ try:
     (tmp / "p.fwsc").write_bytes(bytes(pkg))
     make_site.main(tmp / "p.fwsc", "9.9", tmp / "site")
     app = tmp / "site" / "webapp"
+    def installer_meta(site):
+        html = (site / "webapp" / "installer" / "index.html").read_text(encoding="utf-8")
+        return json.loads(re.search(r"const meta = (\{.*?\});", html).group(1))
+
+    check("installer: release version is included in verification metadata",
+          installer_meta(tmp / "site")["release"] == "9.9")
+    make_site.main(tmp / "p.fwsc", "dev", tmp / "dev")
+    meta = installer_meta(tmp / "dev")
+    check("installer: a local display label does not set an expected release",
+          meta["version"] == "dev" and meta["release"] is None)
+    make_site.main(tmp / "p.fwsc", "dev", tmp / "dev", expected_release="9.9")
+    check("installer: an explicit release works with a local display label",
+          installer_meta(tmp / "dev")["release"] == "9.9")
     sw = (app / "sw.js").read_text(encoding="utf-8")
     files = json.loads(re.search(r"const FILES = (\[.*?\]);", sw).group(1))
     path = lambda f: (app / f / "index.html") if f.endswith("/") else (app / f)   # noqa: E731

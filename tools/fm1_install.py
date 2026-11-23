@@ -19,7 +19,7 @@ Exit codes: 0 done, 1 cancelled or other error, 2 bad arguments or package,
 3 FM-1 not found, 4 connection lost or the device stopped, 5 timeout (no
 loader / no restart), 6 wrong model, another identity after the install, or the
 FM-1 is in the update mode of another firmware (only SLOOP's own loader,
-ota-FM-1_9XX, is resumed).
+ota-FM-1_9XX, is resumed). Connect only the intended FM-1 for the entire update.
 """
 import argparse
 import queue
@@ -33,12 +33,12 @@ FINISH_CHECK, FINISH_WRITE = 0xE0000000, 0xF0000000
 MAXDATA = 512
 BLOCKS, BLK, KEEP = 20, 0x30, 0x2F
 LOADER_MARK = b"FELUCCA-LOADER-1"
-PORT_RE = re.compile(r"fm-1|felucca|sloop|clipper|ota|composite|sinco|usb-midi", re.I)   # never probe other gear
+PORT_RE = re.compile(r"fm-1|felucca|sloop|clipper|ota|composite|sinco|usb[- ]midi", re.I)   # never probe other gear
 # (the FM-1 under SLOOP / Felucca, under CLIPPER, the update loaders, the stock firmware: as web/fm1ota.js FM1_PORT)
 
 # seconds; the tests shorten them
 DELAY = {"open": 0.3, "start": 2.0, "reply": 0.01, "loader": 3.0, "reboot": 3.0, "retry": 1.0,
-         "poll": 1.0, "hs": 1.0, "idle_check": 8.0, "idle_write": 180.0,
+         "handoff": 0.1, "hs": 1.0, "idle_check": 8.0, "idle_write": 180.0,
          "wait_loader": 30.0, "wait_reboot": 40.0}
 
 EXIT = {"usage": 2, "badpkg": 2, "notfound": 3, "model": 6, "lost": 4, "stopped": 4, "badreq": 4,
@@ -193,11 +193,25 @@ class MidoBackend:
         import mido
         self.mido = mido
 
+    def port_names(self, rtmidi_class, mido_names):
+        if self.mido.backend.name != "mido.backends.rtmidi":
+            return mido_names()
+
+        # Mido's RtMidi adapter also collapses duplicate names before returning them.
+        import rtmidi
+        api = self.mido.backend.api
+        rtapi = getattr(rtmidi, f"API_{api}") if api else rtmidi.API_UNSPECIFIED
+        port = getattr(rtmidi, rtmidi_class)(rtapi=rtapi)
+        try:
+            return port.get_ports()
+        finally:
+            port.delete()
+
     def input_names(self):
-        return list(dict.fromkeys(self.mido.get_input_names()))
+        return self.port_names("MidiIn", self.mido.get_input_names)
 
     def output_names(self):
-        return list(dict.fromkeys(self.mido.get_output_names()))
+        return self.port_names("MidiOut", self.mido.get_output_names)
 
     def open(self, in_name, out_name):
         return MidoLink(self, in_name, out_name)
@@ -216,8 +230,9 @@ def pair_output(name, outs):
 # --------------------------------------------------------------- updater ---
 
 class Device:
-    def __init__(self, link, ident, name):
-        self.link, self.id, self.name = link, ident, name
+    def __init__(self, link, ident, pair):
+        self.link, self.id, self.pair = link, ident, pair
+        self.name = pair[0]
 
 
 def handshake(link, tries=3):
@@ -263,37 +278,132 @@ class Updater:
                 continue
             ident = handshake(link, 2)
             if ident and (want is None or want(ident)):
-                return Device(link, ident, name)
+                return Device(link, ident, (name, out))
             link.close()
         return None
 
-    def wait_for(self, want, secs):
-        end = time.monotonic() + secs
-        while time.monotonic() < end:
-            dev = self.find(want, only_port=False)
-            if dev:
-                return dev
-            time.sleep(DELAY["retry"])
+    def matches_port(self, name):
+        return self.port and self.port.lower() in name.lower()
+
+    def ports(self):
+        # Keep duplicates. Mido opens by display name, so it cannot disambiguate them.
+        return tuple([n for n in names if PORT_RE.search(n) or self.matches_port(n)]
+                     for names in (self.backend.input_names(), self.backend.output_names()))
+
+    @staticmethod
+    def ambiguous():
+        return InstallError("ambiguous", "the FM-1 MIDI target is ambiguous. "
+                            "Connect only the intended FM-1 and run the install again.")
+
+    def pair(self, inputs, outputs):
+        if len(inputs) > 1 or len(outputs) > 1:
+            raise self.ambiguous()
+        if not inputs or not outputs:
+            return None
+        inp, out = inputs[0], outputs[0]
+        if self.port_key(inp) != self.port_key(out):
+            raise self.ambiguous()
+        return inp, out
+
+    @staticmethod
+    def port_key(name):
+        # Windows can number the two directions differently or prefix a direction.
+        name = re.sub(r"^midi(?:in|out)\d* \((.*)\)$", r"\1", name, flags=re.I)
+        return re.sub(r"\s+\d+$", "", name).lower()
+
+    def probe(self, pair, inspect, transitioning=False):
+        try:
+            link = self.backend.open(*pair)
+        except Exception:
+            return None
+        keep = False
+        try:
+            ident = handshake(link, 2)
+            current = inspect()
+            if current != pair and not transitioning:
+                raise self.ambiguous()
+            if current == pair and ident:
+                keep = True
+                return Device(link, ident, pair)
+        finally:
+            if not keep:
+                link.close()
         return None
 
-    def serve(self, link, image, finish, idle, progress):
+    def select(self):
+        inputs, outputs = self.ports()
+        pair = self.pair(inputs, outputs)
+        if pair:
+            if self.port and not self.matches_port(pair[0]):
+                return None
+            return self.probe(pair, lambda: self.pair(*self.ports()))
+        if inputs or outputs:
+            raise self.ambiguous()
+        return None
+
+    def active(self, dev):
+        pair = self.pair(*self.ports())
+        if pair and pair != dev.pair:
+            raise self.ambiguous()
+        return pair == dev.pair and not dev.link.lost
+
+    def wait_for(self, previous, want, secs, settle):
+        ready = time.monotonic() + settle
+        end = ready + secs
+        observed = None
+
+        def inspect():
+            nonlocal observed
+            inputs, outputs = self.ports()
+            pair = self.pair(inputs, outputs)
+            if pair and pair != previous.pair:
+                if previous.pair[0] in inputs or previous.pair[1] in outputs:
+                    raise self.ambiguous()
+                if observed and pair != observed:
+                    raise self.ambiguous()
+                observed = pair
+            elif pair and observed:
+                raise self.ambiguous()
+            return pair
+
+        # Watch the inventory during USB settle time as well as during the search.
+        while time.monotonic() < end:
+            pair = inspect()
+            if pair and time.monotonic() >= ready:
+                dev = self.probe(pair, inspect, transitioning=True)
+                if dev:
+                    if want(dev.id):
+                        return dev
+                    dev.link.close()
+                    if pair != previous.pair:
+                        raise self.ambiguous()
+                time.sleep(DELAY["retry"])
+            else:
+                time.sleep(DELAY["handoff"])
+        return None
+
+    def serve(self, dev, image, finish, idle, progress):
         """answer read requests until the device asks for `finish`; -> (served, finished, lost)"""
-        served, last = 0, time.monotonic()
+        link = dev.link
+        served, last, next_check = 0, time.monotonic(), 0
         while True:
-            pkt = link.read(DELAY["poll"])
-            if pkt is None:
-                if link.lost:
+            pkt = link.read(DELAY["handoff"])
+            r = parse_request(pkt) if pkt is not None else None
+            now = time.monotonic()
+            finishing = r and r[1] in (FINISH_CHECK, FINISH_WRITE)
+            if finishing or now >= next_check:
+                if not self.active(dev):
                     return served, False, True
-                if time.monotonic() - last > idle:
+                next_check = now + DELAY["handoff"]
+            if not r:
+                if now - last > idle:
                     return served, False, False
                 continue
-            r = parse_request(pkt)
-            if not r:
-                continue
             fl, addr, n = r
-            last = time.monotonic()
-            if addr in (FINISH_CHECK, FINISH_WRITE):
-                link.send(response(addr, b"success\0"))
+            last = now
+            if finishing:
+                if not link.send(response(addr, b"success\0")):
+                    return served, False, True
                 if addr == finish:
                     return served, True, False
                 continue
@@ -308,18 +418,14 @@ class Updater:
     def check(self, dev, image, step):
         """step 1: the running firmware checks the package and starts the loader"""
         step("start", dev.id.text)
-        dev.link.send(UPGRADE)
-        time.sleep(DELAY["start"])
-        served, finished, lost = self.serve(dev.link, image, FINISH_CHECK, DELAY["idle_check"],
-                                            lambda k, end: step("check", k))
-        dev.link.close()
+        served, finished, lost = self.transfer(dev, image, FINISH_CHECK, DELAY["idle_check"],
+                                               lambda k, end: step("check", k))
         if not finished:
             raise InstallError("lost" if lost else "stopped",
                                f"the FM-1 {'was disconnected' if lost else 'stopped answering'} after "
                                f"{served} requests; nothing was written")
         step("loader")
-        time.sleep(DELAY["loader"])
-        ota = self.wait_for(lambda i: i.loader, DELAY["wait_loader"])
+        ota = self.wait_for(dev, lambda i: i.loader, DELAY["wait_loader"], DELAY["loader"])
         if not ota:
             raise InstallError("noloader", "the update loader did not appear. Replug the USB cable and "
                                            "run the install again: the FM-1 stays in update mode until it is done")
@@ -327,22 +433,31 @@ class Updater:
 
     def write(self, ota, image, step):
         """step 2: the loader reads and writes the whole package, then restarts"""
+        if not re.fullmatch(r"ota-FM-1_9\d\d", ota.id.text, re.I):
+            ota.link.close()
+            raise InstallError("foreign", f"the FM-1 is in the update mode of another firmware ({ota.id.text}): "
+                                          "finish that update with its own updater (M-UPGRADE), then install again")
         step("write", 0)
-        ota.link.send(UPGRADE)
-        time.sleep(DELAY["start"])
-        served, finished, lost = self.serve(ota.link, image, FINISH_WRITE, DELAY["idle_write"],
-                                            lambda k, end: step("write", min(99, end * 100 // len(image))))
-        ota.link.close()
+        served, finished, lost = self.transfer(ota, image, FINISH_WRITE, DELAY["idle_write"],
+                                               lambda k, end: step("write", min(99, end * 100 // len(image))))
         if not finished:
             raise InstallError("lost" if lost else "stopped",
                                f"the loader {'was disconnected' if lost else 'stopped answering'} after "
                                f"{served} requests. Replug the USB cable and run the install again to finish")
         step("write", 100)
 
-    def verify(self, product, step):
+    def transfer(self, dev, image, finish, idle, progress):
+        try:
+            if not self.active(dev) or not dev.link.send(UPGRADE):
+                return 0, False, True
+            time.sleep(DELAY["start"])
+            return self.serve(dev, image, finish, idle, progress)
+        finally:
+            dev.link.close()
+
+    def verify(self, ota, product, step):
         step("reboot")
-        time.sleep(DELAY["reboot"])
-        back = self.wait_for(lambda i: not i.loader, DELAY["wait_reboot"])
+        back = self.wait_for(ota, lambda i: not i.loader, DELAY["wait_reboot"], DELAY["reboot"])
         if not back:
             raise InstallError("noreturn", "the FM-1 did not come back: power-cycle it")
         back.link.close()
@@ -352,18 +467,14 @@ class Updater:
         return back.id.text
 
     def install(self, dev, image, product, step=lambda *a: None):
-        """running firmware -> loader -> new firmware; dev from find(). A device already in
+        """running firmware -> loader -> new firmware; dev from select(). A device already in
         update mode only needs the write."""
         if model_of(dev.id.text) != model_of(product):
             dev.link.close()
             raise InstallError("model", f"the device is {dev.id.text}, the package is for {product}")
-        if dev.id.loader and not re.fullmatch(r"ota-FM-1_9\d\d", dev.id.text, re.I):
-            dev.link.close()           # another firmware's loader: its image layout may differ
-            raise InstallError("foreign", f"the FM-1 is in the update mode of another firmware ({dev.id.text}): "
-                                          "finish that update with its own updater (M-UPGRADE), then install again")
         ota = dev if dev.id.loader else self.check(dev, image, step)
         self.write(ota, image, step)
-        return self.verify(product, step)
+        return self.verify(ota, product, step)
 
 
 # ------------------------------------------------------------------- CLI ---
@@ -476,19 +587,19 @@ def run(a, backend, out, ask):
         return 0
     product, image = load_package(a.package, a.force)
     print(f"package: {product}  ({a.package})", file=out)
-    dev = up.find()
+    dev = up.select()
     if not dev:
         raise not_found(up)
     print(f"device:  {dev.id.text}  ({dev.name})" + ("  in update mode: the write will be finished" if dev.id.loader else ""),
           file=out)
-    if not a.yes and not ask("Install? Do not unplug the FM-1 while writing. [y/N] "):
-        dev.link.close()
-        print("cancelled", file=out)
-        return 1
     prog = Progress(out)
     try:
+        if not a.yes and not ask("Install? Do not unplug the FM-1 while writing. [y/N] "):
+            print("cancelled", file=out)
+            return 1
         up.install(dev, image, product, prog)
     finally:
+        dev.link.close()
         prog.end()
     return 0
 
