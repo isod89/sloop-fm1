@@ -170,16 +170,29 @@ static voice_t *gated_voice(track_t *t, uint32_t note)
     return NULL;
 }
 
+/* Load through the existing project format with the slot cache empty, as on first load. */
+static void reload_section(track_t *t)
+{
+    const uint8_t load[] = {0, 0};
+    section_store(0);
+    sections_write();
+    memset(&proj_slot[0], 0, sizeof proj_slot[0]);
+    memset(t->step, 0, sizeof t->step);
+    ed(ED_PROJECT, load, sizeof load);
+}
+
 static int repro_cont(void)
 {
     track_t *t = &trk[0];
     uint8_t edit[] = {1, 2, 48, 60, 0, 0, ST_NOTE, 8, 77, 1, 3, 2, 0};
     voice_t *held, *after;
-    uint32_t age, read_ok, read_flags, write_ok, plays, cases = 1;
+    uint32_t age, stored, read_ok, read_flags, write_ok, plays, cases = 1;
     song.sel = 0;
     t->p[P_VOICE] = V_POLY;
     t->step[0] = (step_t){.note = {48}, .n = 1, .vel = 96};
     t->step[1] = (step_t){.note = {48, 60}, .n = 2, .flags = SF_CONT(0), .vel = 96};
+    reload_section(t);
+    stored = t->step[1].flags == SF_CONT(0);
     read_ok = step_reply(ED_STEP_GET, edit, 1, 8, 0);
     read_flags = rx_last[12];
     write_ok = step_reply(ED_STEP_SET, edit, 12, 8, 0); /* old editor echoes bit 3, but has no extension */
@@ -195,8 +208,9 @@ static int repro_cont(void)
     seq_step(t, &t->step[1], 1024, 0);
     after = gated_voice(t, 48);
     plays = held && after && after->age == age && gated_voice(t, 60);
-    printf("selected-track continuation: GET %s (flags %u), SET %s (flags %u), played without retrigger %s\n",
-           read_ok ? "ok" : "FAIL", read_flags, write_ok ? "ok" : "FAIL", t->step[1].flags, plays ? "ok" : "FAIL");
+    printf("selected-track continuation: saved section %s, GET %s (flags %u), SET %s (flags %u), played without retrigger %s\n",
+           stored ? "ok" : "FAIL", read_ok ? "ok" : "FAIL", read_flags,
+           write_ok ? "ok" : "FAIL", t->step[1].flags, plays ? "ok" : "FAIL");
     edit[2] = 60; edit[3] = 48; edit[7] = 3;
     cases &= step_reply(ED_STEP_SET, edit, 9, 19, 0); /* short legacy reorder, accent + slide */
     cases &= t->step[1].lvl == 0 && t->step[1].rat == 0;
@@ -210,14 +224,13 @@ static int repro_cont(void)
     edit[6] = ST_REST;
     cases &= step_reply(ED_STEP_SET, edit, 9, 0, 0);
     printf("selected-track legacy reorder, replacement, explicit clear and rest: %s\n", cases ? "ok" : "FAIL");
-    return !(read_ok && write_ok && plays && cases);
+    return !(stored && read_ok && write_ok && plays && cases);
 }
 
 static int repro_leg(void)
 {
     track_t *t = &trk[1];
     uint8_t edit[] = {1, 1, 1, 55, 0, 0, 0, ST_NOTE, 0, 77, 0, 0, 0, 0};
-    uint8_t load[] = {0, 0};
     uint32_t stored, read_ok, write_ok, plays, cases = 1;
     int32_t env;
     voice_t *after;
@@ -228,11 +241,7 @@ static int repro_leg(void)
     t->p[P_GLIDE] = 0;
     t->step[0] = (step_t){.note = {48}, .n = 1, .vel = 96};
     t->step[1] = (step_t){.note = {55}, .n = 1, .flags = SF_LEG, .vel = 96};
-    section_store(0);
-    sections_write();
-    memset(&proj_slot[0], 0, sizeof proj_slot[0]);       /* reload an existing section from the NOR image */
-    memset(t->step, 0, sizeof t->step);
-    ed(ED_PROJECT, load, sizeof load);
+    reload_section(t);
     stored = t->step[1].flags == SF_LEG && song.sel == 0;
     read_ok = step_reply(ED_TRACK_STEP, edit, 2, 0, 1);
     write_ok = step_reply(ED_TRACK_STEP, edit, 10, 0, 1); /* short legacy edit on the other track */

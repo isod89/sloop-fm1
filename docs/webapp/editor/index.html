@@ -3941,7 +3941,10 @@ function previewToggleStep(step, note) {
     const next = { ...step, notes: step.notes.slice(), time: step.time === 2 ? 0 : 2 };
     return { ...next, flags: stepEditFlags(step, next) };
   }
-  return stepWithNotes({ ...step, vel: step.vel || 100 }, [note]);
+  return previewSetStepNotes(step, [note]);
+}
+function previewSetStepNotes(step, notes) {
+  return stepWithNotes({ ...step, vel: step.vel || 100 }, notes);
 }
 function stepWithNotes(step, notes) {
   const next = { ...step, n: notes.length, notes: [...notes, 0, 0, 0, 0].slice(0, 4), time: 0 };
@@ -5606,7 +5609,7 @@ $("preview-note-form").addEventListener("submit", async (e) => {
   stopPreviewNoteAudition();
   $("preview-note-apply").disabled = true;
   try {
-    if (await previewSequenceClick(target.track, target.index, -1, stepWithNotes({ ...target.step, vel: target.step.vel || 100 }, notes))) {
+    if (await previewSequenceClick(target.track, target.index, -1, previewSetStepNotes(target.step, notes))) {
       previewNotes[target.track] = notes[0];
       $("preview-note-dialog").close();
       renderPreviewSequence();
