@@ -7,6 +7,8 @@
 // the device sends cmd 0x30 read requests on the logical image and we answer.
 
 const HS_QUERY = [0xF0, 0x00, 0x32, 0x45, 0x00, 0x00, 0x00, 0x40, 0x7F, 0xF7];
+const INFO = [0xF0, 0x7D, 0x46, 0x4C, 0x01, 0xF7];
+const RELEASE = /^(?:FELUCCA )?(?:SLOOP )?(\d+(?:\.\d+)+(?:[-+][A-Za-z0-9_.+-]+)?)$/;
 const UPGRADE = [0xF0, 0x22, 0x24, 0x35, 0x7F, 0xF7];
 const MAXDATA = 512;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -70,6 +72,7 @@ function parseRequest(pkt) {
 }
 
 function parseIdentity(pkt) {
+  if (pkt[0] !== 0xF0 || pkt.at(-1) !== 0xF7) return null;
   const d = unpack7(pkt.slice(1, -1));
   if (d.length !== 34 || d[0] !== 0 || d[1] !== 0x59 || d[2] !== 0x11) return null;
   const txt = String.fromCharCode(...d.slice(6, 33)).replace(/\0+$/, "");
@@ -119,6 +122,33 @@ async function handshake(link, tries = 3) {
     }
   }
   return null;
+}
+
+function infoRelease(packet) {
+  if (!INFO.slice(0, -1).every((byte, i) => packet[i] === byte) || packet.at(-1) !== 0xF7) return null;
+  const data = packet.slice(5, -1);
+  if (data.some((byte) => byte > 0x7F)) return null;
+  const nul = data.indexOf(0);
+  if (nul < 1 || nul > 24 || data.length < nul + 6) return null;
+  const version = RELEASE.exec(String.fromCharCode(...data.slice(0, nul)))?.[1];
+  const engineCount = data[nul + 1];
+  if (!version || !engineCount) return null;
+  let pos = nul + 6; // version, engine count and four more INFO fields
+  for (let i = 0; i < engineCount; i++) {
+    const end = data.indexOf(0, pos);
+    if (end <= pos || end - pos > 8) return null;
+    pos = end + 1;
+  }
+  // Older apps may omit the track count and editor protocol version.
+  return data.length - pos <= 2 ? version : null;
+}
+
+function expectedRelease(product, release = null) {
+  const version = release === null ? null : RELEASE.exec(release)?.[1];
+  if (!/^FM-1_\d{3}$/.test(product || "") || (release !== null && !version)) {
+    throw fail("metadata", "The update requires the expected FM-1 product and a valid release, if specified.");
+  }
+  return version;
 }
 
 export class Updater {
@@ -203,13 +233,16 @@ export class Updater {
     return names.length ? ` (MIDI: ${names.join(", ")})` : " (MIDI: none)";
   }
 
-  async waitFor(previous, filter, ms, context) {
-    const ready = Date.now() + 3000, end = ready + ms;
+  async waitFor(previous, filter, ms, context, check) {
+    let ready = Date.now() + 3000;
+    const end = ready + ms;
     let observed;
     context.onInventory = ({ pair, inputs, outputs }) => {
       if (pair && !samePair(pair, previous.pair)) {
         if (inputs.includes(previous.pair[0]) || outputs.includes(previous.pair[1])) throw ambiguous();
         if (observed && !samePair(pair, observed)) throw ambiguous();
+        // Give the replacement pair time to settle while watching for competing units.
+        if (!observed && check) ready = Date.now() + 3000;
         observed = pair;
       } else if (pair && observed) {
         throw ambiguous();
@@ -222,9 +255,20 @@ export class Updater {
         if (pair && Date.now() >= ready) {
           const dev = await this.probe(pair, context, true);
           if (dev) {
-            if (filter(dev.id)) return dev;
-            dev.link.close();
-            if (!samePair(pair, previous.pair)) throw ambiguous();
+            let keep = false;
+            try {
+              if (filter(dev.id)) {
+                if (check) await check(dev);
+                if (this.active(dev, context)) {
+                  keep = true;
+                  return dev;
+                }
+              } else if (!samePair(pair, previous.pair)) {
+                throw ambiguous();
+              }
+            } finally {
+              if (!keep) dev.link.close();
+            }
           }
           await sleep(1000);
         } else {
@@ -271,15 +315,15 @@ export class Updater {
   }
 
   // The page can also resume a loader using the same selection and live link.
-  async install(image, product, onStep, { resume = false } = {}) {
+  async install(image, product, onStep, { resume = false, release } = {}) {
     const step = onStep || (() => {});
+    const version = expectedRelease(product, release);
     return this.withPorts(async (context) => {
       const dev = await this.select(context);
       if (!dev) throw fail("notfound", "FM-1 not found (USB cable, and no other app using it?)", this.seen());
       if (IS_OTA(dev.id) && resume) {
-        const result = await this.write(dev, image, step, context);
-        if (result.finished) step("done");
-        return result.finished;
+        await this.resumeLoader(dev, image, step, context, { product, release: version, official: false });
+        return true;
       }
       const [model] = product.split("_");
       if (dev.id.model !== model) { dev.link.close(); throw fail("model", `the device is ${dev.id.text}, the package is for ${product}`); }
@@ -291,7 +335,7 @@ export class Updater {
       if (!ota) throw fail("noloader", "the update loader did not appear. Replug the USB cable and press Install again: the device stays in update mode until it is finished.", this.seen());
       const s2 = await this.write(ota, image, step, context);
       if (!s2.finished) throw fail(s2.lost ? "lost" : "stopped", `the loader ${s2.lost ? "was disconnected" : "stopped"} after ${s2.served} requests. Replug and press Install again to resume.`);
-      return this.verify(ota, product, step, context);
+      return this.verify(ota, product, step, context, release === undefined ? null : { release: version });
     });
   }
 
@@ -316,25 +360,61 @@ export class Updater {
     return this.transfer(ota, image, 0xF0000000, 180000, (n) => step("write", n), context);
   }
 
-  async verify(ota, product, step, context) {
+  async readAppRelease(dev, context) {
+    const { link } = dev;
+    const deadline = Date.now() + 8000;
+    link.drain();
+    while (Date.now() < deadline && this.active(dev, context)) {
+      if (!link.send(INFO)) throw fail("lost", "The USB connection was lost while checking the app.");
+      const attempt = Math.min(deadline, Date.now() + 750);
+      while (Date.now() < attempt) {
+        const packet = await link.read(attempt - Date.now());
+        if (!this.active(dev, context)) throw fail("lost", "The USB connection was lost while checking the app.");
+        if (!packet) break;
+        const version = infoRelease(packet);
+        if (version) return version;
+      }
+    }
+    throw fail("noinfo", "The FM-1 did not answer the editor INFO query.");
+  }
+
+  async verify(ota, product, step, context, app) {
     step("reboot");
-    const back = await this.waitFor(ota, (id) => !IS_OTA(id), 60000, context);
+    let observed;
+    const back = await this.waitFor(ota, (id) => !IS_OTA(id), 60000, context, async (dev) => {
+      if (dev.id.text !== product) throw fail("mismatch", `written, but the FM-1 reports ${dev.id.text}`, dev.id.text);
+      if (!app) return;
+      observed = await this.readAppRelease(dev, context);
+      if (app.release && observed !== app.release) {
+        throw fail("mismatch", `written, but the FM-1 reports SLOOP ${observed}`, `SLOOP ${observed}`);
+      }
+    });
     if (!back) throw fail("noreturn", "the FM-1 did not come back: power-cycle it");
     back.link.close();
-    if (back.id.text !== product) throw fail("mismatch", `written, but the FM-1 reports ${back.id.text}`, back.id.text);
-    step("done", back.id.text);
+    if (!this.active(back, context)) throw fail("lost", "The USB connection was lost while checking the app.");
+    if (app && !app.release) step("booted", `SLOOP ${observed}`);
+    else step("done", app ? `SLOOP ${observed}` : back.id.text);
     return back.id.text;
   }
 
-  // A normal resume ends when the write finishes. An explicit return to official firmware also checks the reboot.
-  async resume(image, onStep, opts = {}) {
+  async resumeLoader(ota, image, step, context, { product, release, official }) {
+    const result = await this.write(ota, image, step, context, official ? product : undefined);
+    if (!result.finished) throw fail(result.lost ? "lost" : "stopped", "The loader transfer did not finish. Replug and press Install again.");
+    return this.verify(ota, product, step, context, official ? null : { release });
+  }
+
+  // The official recovery caller must explicitly authorize the matching stock loader.
+  async resume(image, onStep, { product, release, official = false } = {}) {
     const step = onStep || (() => {});
+    const version = expectedRelease(product, release);
+    if (official === true && !/^FM-1_0\d\d$/.test(product)) {
+      throw fail("metadata", "Official recovery requires an official FM-1 product.");
+    }
     return this.withPorts(async (context) => {
       const ota = await this.select(context);
       if (!ota) return false;
       if (!IS_OTA(ota.id)) { ota.link.close(); return false; }
-      if (!(await this.write(ota, image, step, context, opts.product)).finished) return false;
-      if (opts.product) await this.verify(ota, opts.product, step, context);
+      await this.resumeLoader(ota, image, step, context, { product, release: version, official: official === true });
       return true;
     });
   }

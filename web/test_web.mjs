@@ -1627,13 +1627,14 @@ sys.stdout.buffer.write(b"".join(raw[i * 48:i * 48 + 47] for i in range(20)) + r
 
 /* ------------------------------------------------- update protocol (fm1ota.js) --- */
 const HS = [0xF0, 0x00, 0x32, 0x45, 0x00, 0x00, 0x00, 0x40, 0x7F, 0xF7];
+const INFO = [0xF0, 0x7D, 0x46, 0x4C, 0x01, 0xF7];
 const UPGRADE = [0xF0, 0x22, 0x24, 0x35, 0x7F, 0xF7];
 
 /* an FM-1 on WebMIDI: identity, then "device asks, host answers" reads of the image */
 class FakeFM1 {
-  constructor(image, { unplugAfter = Infinity, finalIdentity = "FM-1_900", name = "FM-1", identity = "FM-1_015", loaderName = "Felucca Update", access = { inputs: new Map(), outputs: new Map() } } = {}) {
+  constructor(image, { unplugAfter = Infinity, release = "FELUCCA SLOOP 2.8.5", finalIdentity = "FM-1_900", name = "FM-1", identity = "FM-1_015", loaderName = "Felucca Update", access = { inputs: new Map(), outputs: new Map() } } = {}) {
     this.image = image; this.unplugAfter = unplugAfter; this.served = 0; this.bad = 0;
-    this.finalIdentity = finalIdentity; this.loaderName = loaderName;
+    this.finalIdentity = finalIdentity; this.loaderName = loaderName; this.release = release;
     this.access = access; this.sent = [];
     this.boot(identity, name);
   }
@@ -1667,6 +1668,9 @@ class FakeFM1 {
       const t = [...new TextEncoder().encode(this.identity)];
       const body = [0, 0x59, 0x11, 0, 0, 0, ...t, ...new Array(28 - t.length).fill(0)];
       this.tx([0xF0, ...pack7(body), 0xF7]);
+    } else if (eq(d, INFO) && this.identity === "FM-1_900") {
+      const text = [...new TextEncoder().encode(this.release)];
+      this.tx([...INFO.slice(0, -1), ...text, 0, 1, 71, 45, 16, 63, 65, 0, 4, 12, 0xF7]);
     } else if (eq(d, UPGRADE)) {
       this.queue = this.identity.startsWith("ota-")
         ? [...Array.from({ length: 6 }, (_, k) => [k * 512, 512]), [0xF0000000, 8]]
@@ -1717,8 +1721,10 @@ async function updater() {
   {   /* the same loader, but the device is already stuck in update mode: resume must find it too */
     const win2 = new FakeFM1(image, { loaderName: "USB MIDI Device" });
     win2.boot("ota-FM-1_900", "USB MIDI Device");
-    const done = await new Updater(win2.access).resume(image);
-    ok(done === true && win2.bad === 0, "fm1ota.js: resume finds a generically-named loader already in update mode");
+    const steps = [];
+    const done = await new Updater(win2.access).resume(image, (...args) => steps.push(args), { product: "FM-1_900" });
+    ok(done === true && win2.bad === 0 && eq(win2.sent.at(-1), INFO) &&
+      steps.at(-1)?.join(" ") === "booted SLOOP 2.8.5", "fm1ota.js: resume finds a generically-named loader already in update mode");
   }
 
   const rescue = new FakeFM1(image);
@@ -1733,8 +1739,8 @@ async function updater() {
   const dev2 = new FakeFM1(image, { unplugAfter: 3 });
   dev2.boot("ota-FM-1_900", "Felucca Update");
   const t0 = Date.now();
-  const done = await new Updater(dev2.access).resume(image);
-  ok(done === false && Date.now() - t0 < 6000, "fm1ota.js: unplugged during the write -> stops at once");
+  const lost = await new Updater(dev2.access).resume(image, null, { product: "FM-1_900" }).then(() => null, (e) => e);
+  ok(lost?.code === "lost" && Date.now() - t0 < 6000, "fm1ota.js: unplugged during the write -> stops at once");
 
   const dev3 = new FakeFM1(image, { unplugAfter: 2 });
   const e = await new Updater(dev3.access).install(image, "FM-1_900").then(() => null, (x) => x);
@@ -1770,17 +1776,28 @@ async function updater() {
   }
   const stock = new FakeFM1(image);
   stock.boot("ota-FM-1_015", "FM-1 Update");
-  const e3 = await new Updater(stock.access).resume(image).then(() => null, (x) => x);
+  const e3 = await new Updater(stock.access).resume(image, null, { product: "FM-1_015", release: "2.8.5" }).then(() => null, (x) => x);
   ok(e3 && e3.code === "foreign" && e3.detail === "ota-FM-1_015" && stock.served === 0, "fm1ota.js: another firmware's loader is never resumed ('foreign')");
   const back = new FakeFM1(image, { finalIdentity: "FM-1_015" });   /* the return to the official V15, interrupted */
   back.boot("ota-FM-1_015", "FM-1 Update");
   const st = [];
-  const r4 = await new Updater(back.access).resume(image, (k) => st.push(k), { product: "FM-1_015" });
+  const r4 = await new Updater(back.access).resume(image, (k) => st.push(k), { product: "FM-1_015", official: true });
   ok(r4 === true && back.bad === 0 && st.at(-1) === "done", "fm1ota.js: return to official: its own loader resumed, V15 checked when back");
   const wrong = new FakeFM1(image, { finalIdentity: "FM-1_900" });
   wrong.boot("ota-FM-1_015", "FM-1 Update");
-  const e5 = await new Updater(wrong.access).resume(image, null, { product: "FM-1_015" }).then(() => null, (x) => x);
+  const e5 = await new Updater(wrong.access).resume(image, null, { product: "FM-1_015", official: true }).then(() => null, (x) => x);
   ok(e5 && e5.code === "mismatch", "fm1ota.js: return to official: another firmware coming back is not 'done'");
+  const missing = new FakeFM1(image, { name: "Felucca Update", identity: "ota-FM-1_900" });
+  const noProduct = await new Updater(missing.access).resume(image).then(() => null, (e) => e);
+  ok(noProduct?.code === "metadata" && !missing.sent.some((pkt) => eq(pkt, UPGRADE)),
+    "fm1ota.js: missing expected product fails before a transfer");
+
+  const previous = new FakeFM1(image, { name: "Felucca Update", identity: "ota-FM-1_900", release: "FELUCCA SLOOP 2.8.4" });
+  const stepsAfterOldBoot = [];
+  const old = await new Updater(previous.access).resume(image, (k) => stepsAfterOldBoot.push(k),
+    { product: "FM-1_900", release: "2.8.5" }).then(() => null, (e) => e);
+  ok(old?.code === "mismatch" && old.detail === "SLOOP 2.8.4" && !stepsAfterOldBoot.includes("done"),
+    "fm1ota.js: resume rejects an older app with the same product");
   const pk = await import(join(HERE, "fm1pkg.js"));
   const notStock = new Uint8Array(pk.STOCK_V15_SIZE);
   const e6 = await pk.validateStockPackage(notStock).then(() => null, (x) => x);
@@ -1881,7 +1898,7 @@ async function updaterTargeting() {
     const steps = [];
     vm.runInNewContext(clickHandler, {
       $: () => ({ addEventListener: (_name, fn) => { click = fn; } }),
-      Updater, image, meta: { product: "FM-1_900" }, writing: false,
+      Updater, image, meta: { product: "FM-1_900", release: "2.8.5" }, writing: false,
       navigator: { requestMIDIAccess: async () => a.access },
       log() {}, lockAll() {}, sayK: (k) => steps.push(k), step: (k) => steps.push(k),
       failed: (e) => steps.push(e.code),
@@ -1891,8 +1908,9 @@ async function updaterTargeting() {
     await new Promise((resolve) => setTimeout(resolve, 10));
     const probes = a.sent.filter((pkt) => eq(pkt, HS)).length;
     if (identity === "ota-FM-1_900")
-      ok(steps.at(-1) === "done" && upgrades(a) === 1 && probes === 1 && a.served === 7,
-        "Install button writes through the selected loader link without rediscovering");
+      ok(steps.at(-1) === "done" && steps.filter((k) => k === "done").length === 1 &&
+        steps.includes("reboot") && upgrades(a) === 1 && probes === 2 && eq(a.sent.at(-1), INFO) && a.served === 7,
+        "Install button writes through the selected loader and verifies the returned app");
     else
       ok(steps.at(-1) === "foreign" && quiet(a), "Install button refuses a foreign loader");
   }

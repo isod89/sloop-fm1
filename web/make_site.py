@@ -16,18 +16,18 @@
                               as content://, where Chrome refuses Web MIDI)
   src/                        not touched
 
-  web/make_site.py build/felucca-X.Y.fwsc X.Y OUT_DIR [--beta]
+  web/make_site.py build/felucca-X.Y.fwsc X.Y OUT_DIR [--beta] [--expected-release RELEASE]
   (--beta: web/beta_banner.html at the top of the installer: the beta channel, docs/beta)
 
 The package identity (FM-1_9xx) is read from the package; the device reports it
 after the install.
 """
+import argparse
 import base64
 import hashlib
 import json
 import re
 import shutil
-import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -104,7 +104,12 @@ def product_of(raw):
     return "".join(chr((m - i - 1) & 0xFF) for i in range(BLOCKS) if (m := raw[i * BLK + KEEP]) != 0x7D)
 
 
-def main(pkg, version, out):
+RELEASE = r"\d+(?:\.\d+)+(?:[-+][A-Za-z0-9_.+-]+)?"
+
+def main(pkg, version, out, expected_release=None, *, beta=False, studio_guide=False):
+    release = expected_release if expected_release is not None else (version if re.fullmatch(RELEASE, version) else None)
+    if release is not None and not re.fullmatch(RELEASE, release):
+        raise SystemExit(f"Invalid expected release: {release!r}")
     pkg, out = Path(pkg), Path(out)
     raw = pkg.read_bytes()
     product = product_of(raw)
@@ -116,7 +121,7 @@ def main(pkg, version, out):
     lib = strip_module((HERE / "fm1pkg.js").read_text(encoding="utf-8")) + "\n" + \
         strip_module((HERE / "fm1ota.js").read_text(encoding="utf-8"))
     name = f"sloop-{re.sub(r'[^A-Za-z0-9.-]', '-', version)}.fwsc"
-    meta = json.dumps({"version": version, "product": product, "pkg": "../../firmware/" + name,
+    meta = json.dumps({"version": version, "release": release, "product": product, "pkg": "../../firmware/" + name,
                        "sha256": hashlib.sha256(raw).hexdigest()})   # the page checks the download against it
     for mark in ("/*LIB*/", "/*META*/"):
         if html.count(mark) != 1:
@@ -129,12 +134,12 @@ def main(pkg, version, out):
         d.mkdir(parents=True, exist_ok=True)
     guide = HERE.parent / "output/pdf/Studio-0.3-guide-rapide-FR.pdf"
     guide_link = ""
-    if guide.exists() and "--studio-guide" in sys.argv:   # LIVE: that guide describes the removed RYTHME tab
+    if guide.exists() and studio_guide:   # LIVE: that guide describes the removed RYTHME tab
         shutil.copy(guide, out / guide.name)
         guide_link = '<p lang="fr"><a href="../../' + guide.name + '">Guide rapide illustré (PDF, 4 pages)</a></p>'
     html = html.replace("<!--STUDIO_GUIDE-->", guide_link)
     banner = ""
-    if "--beta" in sys.argv:                       # the beta channel (docs/beta): what it is, what it implies
+    if beta:                       # the beta channel (docs/beta): what it is, what it implies
         notes = HERE / "beta_banner.html"
         banner = notes.read_text(encoding="utf-8") if notes.exists() else "<p><b>BETA</b></p>"
     html = html.replace("<!--BANNER-->", banner)
@@ -168,7 +173,12 @@ def main(pkg, version, out):
 
 
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if a not in ("--studio-guide", "--beta")]
-    if len(args) != 3:
-        sys.exit(__doc__)
-    main(*args)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("package")
+    parser.add_argument("version", help="display label (a release number also sets the expected app version)")
+    parser.add_argument("output")
+    parser.add_argument("--expected-release", help="match this app release when the display label is local, e.g. dev")
+    parser.add_argument("--beta", action="store_true")
+    parser.add_argument("--studio-guide", action="store_true")
+    args = parser.parse_args()
+    main(args.package, args.version, args.output, args.expected_release, beta=args.beta, studio_guide=args.studio_guide)

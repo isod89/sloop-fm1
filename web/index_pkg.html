@@ -113,6 +113,9 @@ const TEXT = {
     lost: "USB の接続が切れました。挿し直してもう一度押してください。",
     noloader: "書き込みモードの FM-1 が見つかりません。USB を挿し直してもう一度押してください（終わるまで書き込みモードのままです）。",
     noreturn: "FM-1 が戻ってきません。電源を入れ直してください。",
+    noinfo: "FM-1 がエディタの INFO に応答しません。電源を入れ直して、もう一度試してください。",
+    metadata: "インストールファイルの製品またはバージョン情報が正しくありません。",
+    booted: "アプリの起動を確認しました: ",
     mismatch: "書き込みは終わりましたが、FM-1 が別のバージョンを報告しています: ",
     ambiguous: "接続した MIDI ポートから対象の FM-1 を特定できません。更新したい FM-1 だけを接続して、もう一度インストールしてください。",
     foreign: "FM-1 は別のファームウェアの書き込みモードです。そのアップデーター（M-UPGRADE）で書き込みを終えてから、もう一度インストールしてください: ",
@@ -150,6 +153,9 @@ const TEXT = {
     lost: "The USB connection was lost. Replug it and press Install again.",
     noloader: "The FM-1 in update mode was not found. Replug the USB cable and press Install again (it stays in update mode until it is finished).",
     noreturn: "The FM-1 did not come back. Power-cycle it.",
+    noinfo: "The FM-1 did not answer the editor INFO query. Power-cycle it and try again.",
+    metadata: "The installer package is missing valid product or version information.",
+    booted: "App boot confirmed: ",
     mismatch: "Written, but the FM-1 reports another version: ",
     ambiguous: "Could not identify a single FM-1 MIDI target. Connect only the FM-1 you want to update, then press Install again.",
     foreign: "The FM-1 is in the update mode of another firmware. Finish that update with its own updater (M-UPGRADE), then press Install again: ",
@@ -236,11 +242,11 @@ const total = 74 + 1179;                           /* reads: step 1, step 2 (hea
 const step = (k, a) => {
   log(`${k} ${a ?? ""}`);
   if (k === "start") sayK("start");
-  if (k === "verify") { sayK("verify"); $("bar").value = Math.min(100, (a / total) * 100); }
+  if (k === "verify") { sayK("verify"); $("bar").value = Math.min(99, (a / total) * 100); }
   if (k === "loader") sayK("loader");
-  if (k === "write") { sayK("write"); $("bar").value = Math.min(100, ((74 + a) / total) * 100); }
+  if (k === "write") { sayK("write"); $("bar").value = Math.min(99, ((74 + a) / total) * 100); }
   if (k === "reboot") sayK("reboot");
-  if (k === "done") { $("bar").value = 100; sayK("done"); }
+  if (k === "done" || k === "booted") { $("bar").value = 100; sayK(k, k === "booted" ? a : ""); }
 };
 const failed = (e) => {
   if (e && e.code && TEXT[lang][e.code]) sayK(e.code, e.detail || "");
@@ -251,12 +257,13 @@ const failed = (e) => {
 $("go").addEventListener("click", async () => {
   if (writing) return;
   lockAll(true);
+  $("bar").value = 0;
   let midi;
   try { midi = await navigator.requestMIDIAccess({ sysex: true }); }
   catch (e) { sayK("denied"); lockAll(false); return; }
   try {
     const up = new Updater(midi, log);
-    if ((await up.install(image, meta.product, step, { resume: true })) === false) sayK("stopped");
+    if ((await up.install(image, meta.product, step, { resume: true, release: meta.release })) === false) sayK("stopped");
   } catch (e) { failed(e); }
   lockAll(false);
 });
