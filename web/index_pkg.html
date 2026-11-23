@@ -114,6 +114,7 @@ const TEXT = {
     noloader: "書き込みモードの FM-1 が見つかりません。USB を挿し直してもう一度押してください（終わるまで書き込みモードのままです）。",
     noreturn: "FM-1 が戻ってきません。電源を入れ直してください。",
     mismatch: "書き込みは終わりましたが、FM-1 が別のバージョンを報告しています: ",
+    ambiguous: "接続した MIDI ポートから対象の FM-1 を特定できません。更新したい FM-1 だけを接続して、もう一度インストールしてください。",
     foreign: "FM-1 は別のファームウェアの書き込みモードです。そのアップデーター（M-UPGRADE）で書き込みを終えてから、もう一度インストールしてください: ",
     badpkg: "インストールするファイルが壊れています。ページを再読み込みしてください。",
     leave: "書き込み中です。ページを閉じないでください。",
@@ -150,6 +151,7 @@ const TEXT = {
     noloader: "The FM-1 in update mode was not found. Replug the USB cable and press Install again (it stays in update mode until it is finished).",
     noreturn: "The FM-1 did not come back. Power-cycle it.",
     mismatch: "Written, but the FM-1 reports another version: ",
+    ambiguous: "Could not identify a single FM-1 MIDI target. Connect only the FM-1 you want to update, then press Install again.",
     foreign: "The FM-1 is in the update mode of another firmware. Finish that update with its own updater (M-UPGRADE), then press Install again: ",
     badpkg: "The file to install is damaged. Reload the page.",
     leave: "Writing. Do not close the page.",
@@ -254,13 +256,7 @@ $("go").addEventListener("click", async () => {
   catch (e) { sayK("denied"); lockAll(false); return; }
   try {
     const up = new Updater(midi, log);
-    const ota = await up.find((id) => /^ota-/i.test(id.model), true);
-    if (ota) {
-      ota.link.close();
-      sayK((await up.resume(image, step)) ? "done" : "stopped");
-    } else {
-      await up.install(image, meta.product, step);
-    }
+    if ((await up.install(image, meta.product, step, { resume: true })) === false) sayK("stopped");
   } catch (e) { failed(e); }
   lockAll(false);
 });
