@@ -677,6 +677,26 @@ async function editorV5() {
   const w2 = E.parse[C.STEP_SET](await rq(E.req.stepSet(3, { n: 1, notes: [62, 0, 0, 0], time: 0, flags: 0, vel: 90 })));
   ok(w.lvl === 0b11000110 && g.lvl === 0b11000110 && g.rat === 0b10000011 && w2.lvl === 0 && w2.rat === 0 && E.req.stepSet(1, { n: 0, notes: [], time: 2, flags: 0, vel: 0 })[1].length === 9,
     "v5: STEP_SET / STEP_GET level and ratchet bytes (8 bits each), none for an old step");
+  const chordStep = { n: 2, notes: [60, 48, 0, 0], time: 0, flags: 0x90, vel: 77, lvl: 129, rat: 130 };
+  const selectedReq = E.req.stepSet(4, chordStep, info.stepMetadata);
+  const selected = E.parse[C.STEP_SET](await rq(selectedReq));
+  const other = E.parse[C.TRACK_STEP](await rq(E.req.trackStep(1, 4, chordStep, info.stepMetadata)));
+  const otherRead = E.parse[C.TRACK_STEP](await rq(E.req.trackStep(1, 4)));
+  ok(eq(selectedReq[1], [4, 2, 60, 48, 0, 0, 0, 16, 77, 1, 3, 2, 1])
+    && selected.flags === 0x90 && selected.lvl === 129 && selected.rat === 130
+    && other.flags === 0x90 && otherRead.flags === 0x90, "steps: 7-bit wire data preserves both metadata flags and levels");
+  const removal = E.ROLL.remove([chordStep], 1, 0, 60).get(0);
+  const moved = E.parse[C.STEP_SET](await rq(E.req.stepSet(4, removal, info.stepMetadata)));
+  ok(moved.n === 1 && moved.notes[0] === 48 && moved.flags === 8, "steps: piano roll moves the held pitch's continuation bit");
+  const cleared = E.parse[C.STEP_SET](await rq(E.req.stepSet(4, { ...removal, flags: 0 }, info.stepMetadata)));
+  ok(cleared.flags === 0, "steps: explicit zero clears metadata on the same pitch");
+  const v12 = attachMock({ oldStepMetadata: true });
+  const vi = E.parse[C.INFO](await v12.rq(E.req.info()));
+  const vr = E.req.stepSet(4, { ...chordStep, flags: 1 }, vi.stepMetadata);
+  const vg = E.parse[C.STEP_SET](await v12.rq(vr));
+  ok(!vi.stepMetadata && vr[1].length === 12 && vg.flags === 1 && vg.vel === 77
+    && vg.lvl === 129 && vg.rat === 130, "steps: ordinary v12 replies and writes work without metadata support");
+  v12.done();
   /* the drum track: 16 lanes with their level and ratchet; lane 15 uses the top bits */
   const d = E.emptyDrum();
   d.on = (1 << 0) | (1 << 4) | (1 << 15); d.lvl[0] = 3; d.lvl[4] = 1; d.rat[4] = 3; d.lvl[15] = 2; d.rat[15] = 1;

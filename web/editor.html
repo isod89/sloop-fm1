@@ -1370,12 +1370,29 @@ class Reader {
   s() { let s = ""; for (;;) { const c = this.b(); if (!c) return s; s += String.fromCharCode(c); } }
 }
 
-/* v5 steps end with level / ratchet (2 bits per note, 7-bit bytes: lvl, hi (bit 0 lvl, bit 1 rat), rat) */
+const STEP_CONT0 = 8, STEP_LEG = 0x80;
+const stepContMask = (n) => ((1 << n) - 1) * STEP_CONT0;
+/* Keep continuation by pitch. Legato applies to the whole chord, so keep it only if the chord is the same. */
+function stepEditFlags(old, next) {
+  let flags = next.flags & 3, used = 0;
+  if (old.time !== 0 || next.time !== 0 || !next.n) return flags;
+  for (let k = 0; k < next.n; k++) {
+    const j = old.notes.findIndex((p, i) => i < old.n && p === next.notes[k] && !(used & (1 << i)));
+    if (j < 0) continue;
+    used |= 1 << j;
+    if (old.flags & (STEP_CONT0 << j)) flags |= STEP_CONT0 << k;
+  }
+  if (next.n === old.n && used === (1 << old.n) - 1) flags |= old.flags & STEP_LEG;
+  return flags;
+}
+
+/* v5: lvl, hi (bit 0 lvl, bit 1 rat), rat. Synth metadata adds a separate byte for legato. */
 function stepExt(r, a, o) {
   if (r.i + 3 <= a.length) {
     const lo = r.b(), hi = r.b(), rt = r.b();
     o.lvl = lo | ((hi & 1) << 7);
     o.rat = rt | (((hi >> 1) & 1) << 7);
+    if (r.i < a.length && (r.b() & 1)) o.flags |= STEP_LEG;
   }
   return o;
 }
@@ -1387,6 +1404,7 @@ const parse = {
     for (let i = 0; i < o.nengines; i++) o.engines.push(r.s());
     o.ntrk = r.i < a.length ? r.b() : 0;             /* v3: tracks (0 = older firmware, one instrument) */
     o.proto = r.i < a.length ? r.b() : 0;            /* v5: the protocol version (0 = older firmware) */
+    o.stepMetadata = r.i < a.length && !!(r.b() & 1);
     return o;
   },
   [CMD.GET](a) { const r = new Reader(a); return { scope: r.b(), id: r.b(), value: r.v() }; },
@@ -1573,12 +1591,15 @@ const req = {
   dump: () => [CMD.DUMP, []],
   desc: (scope, id) => [CMD.DESC, [scope, id]],
   stepGet: (i) => [CMD.STEP_GET, [i]],
-  stepSet: (i, st) => {
+  stepSet: (i, st, metadata = false) => {
     const n = Math.max(0, Math.min(4, st.n | 0));
     const notes = [0, 1, 2, 3].map((k) => (st.notes[k] | 0) & 0x7F);
-    const ext = st.lvl == null && st.rat == null ? []   /* v5: level / ratchet kept (older firmware ignores them) */
+    const ext = !metadata && st.lvl == null && st.rat == null ? []   /* v5: level / ratchet kept */
       : [(st.lvl | 0) & 0x7F, (((st.lvl | 0) >> 7) & 1) | ((((st.rat | 0) >> 7) & 1) << 1), (st.rat | 0) & 0x7F];
-    return [CMD.STEP_SET, [i, n, ...notes, Math.max(0, Math.min(2, st.time | 0)), st.flags & 3, (st.vel | 0) & 0x7F, ...ext]];
+    const time = Math.max(0, Math.min(2, st.time | 0)), sounding = metadata && time === 0 && n;
+    const flags = st.flags & (3 | (sounding ? stepContMask(n) : 0));
+    if (metadata) ext.push(sounding && (st.flags & STEP_LEG) ? 1 : 0);
+    return [CMD.STEP_SET, [i, n, ...notes, time, flags, (st.vel | 0) & 0x7F, ...ext]];
   },
   /* v5: get (d == null) or set the drum track's step i: {on: 16 bits, lvl[16], rat[16]} */
   drumStep: (i, d) => {
@@ -1611,7 +1632,7 @@ const req = {
   track: (sel) => [CMD.TRACK, sel == null ? [] : [sel & 0x7F]],
   trackMix: (tr, level, mute) => [CMD.TRACK_MIX, level == null ? [tr & 0x7F] : [tr & 0x7F, ...v14enc(level), mute ? 1 : 0]],
   trackDump: (tr) => [CMD.TRACK_DUMP, [tr & 0x7F]],
-  trackStep: (tr, i, st) => [CMD.TRACK_STEP, st ? [tr & 0x7F, ...req.stepSet(i, st)[1]] : [tr & 0x7F, i & 0x7F]],
+  trackStep: (tr, i, st, metadata) => [CMD.TRACK_STEP, st ? [tr & 0x7F, ...req.stepSet(i, st, metadata)[1]] : [tr & 0x7F, i & 0x7F]],
   /* v4: get (v == null) or set parameter id (P_*) of track tr, clamped as SET */
   trackParam: (tr, id, v) => [CMD.TRACK_PARAM, v == null ? [tr & 0x7F, id & 0x7F] : [tr & 0x7F, id & 0x7F, ...v14enc(v)]],
   /* v6: backup / restore */
@@ -2976,6 +2997,7 @@ function makeMockDevice(opt = {}) {
   const laneOf = (n) => (n < 35 ? 0 : n > 81 ? 13 : LANE_OF_GM[n - 35]);
   const v5 = !opt.legacy && !opt.v3;              /* SLOOP 2.0: steps with level / ratchet, DRUM_STEP, TRACK solo */
   const mockProto = opt.noBackup ? 5 : opt.v7 ? 7 : opt.v8 ? 8 : opt.v9 ? 9 : opt.v10 ? 10 : opt.v11 ? 11 : 12;   /* INFO's protocol */
+  const stepMetadata = v5 && mockProto === 12 && !opt.oldStepMetadata;
   /* the drum step as an old (v1..v4) step: its first 4 lanes as GM notes, ACC when one is hard (editor.c ed_dstep_old) */
   const dOld = (d) => {
     const notes = [];
@@ -2991,13 +3013,19 @@ function makeMockDevice(opt = {}) {
     for (let i = 0; i < Math.min(4, n); i++) { const l = laneOf(notes[i] & 0x7F); d.on |= 1 << l; d.lvl[l] = flags & 1 ? 3 : 0; }
   };
   /* a step's bytes as STEP_GET sends them (v5: + lvl, hi, rat) */
-  const stepOut = (b, x) => {
+  const stepOut = (b, x, drum = false) => {
     b(x.n); x.notes.forEach(b); b(x.time); b(x.flags); b(x.vel);
     if (v5) { b(x.lvl | 0); b((((x.lvl | 0) >> 7) & 1) | ((((x.rat | 0) >> 7) & 1) << 1)); b(x.rat | 0); }
+    if (stepMetadata && !drum) b(x.flags & STEP_LEG ? 1 : 0);
   };
-  /* a step written (n, 4 notes, time, flags, vel [, lvl, hi, rat]) */
+  /* a step written (n, 4 notes, time, flags, vel [, lvl, hi, rat [, legato]]) */
   const stepIn = (x, a) => {
-    x.n = Math.min(4, a[0]); x.notes = a.slice(1, 5); x.time = Math.min(2, a[5]); x.flags = a[6] & 3; x.vel = a[7];
+    const next = { n: Math.min(4, a[0]), notes: a.slice(1, 5), time: Math.min(2, a[5]), flags: a[6] & 3, vel: a[7] };
+    if (stepMetadata && next.time === 0 && next.n) {
+      if (a.length >= 12) next.flags |= (a[6] & stepContMask(next.n)) | ((a[11] & 1) ? STEP_LEG : 0);
+      else next.flags = stepEditFlags(x, next);
+    }
+    Object.assign(x, next);
     x.lvl = a.length >= 11 ? (a[8] & 0x7F) | ((a[9] & 1) << 7) : 0;
     x.rat = a.length >= 11 ? (a[10] & 0x7F) | (((a[9] >> 1) & 1) << 7) : 0;
   };
@@ -3330,7 +3358,8 @@ function makeMockDevice(opt = {}) {
         s(opt.legacy ? "FELUCCA 0.4 BETA (MOCK)" : opt.v3 ? "FELUCCA 0.8 (MOCK)" : "FELUCCA SLOOP 2.6 (MOCK)"); b(ENG.length); b(P_COUNT); b(G_COUNT); b(NSTEP); b(P_E0);
         ENG.forEach((e) => s(e.name));
         if (!opt.legacy) b(NTRK);
-        if (v5) b(mockProto);   /* v12: LIVE (2.7), v11: your theme (2.7) */   /* v10: SYN kits (v9: FM6 patches, v8: fill conditions, v7: nudges and locks, v6: backup) */
+        if (v5) b(mockProto);   /* v12: LIVE (2.7), v11: your theme (2.7) */
+        if (stepMetadata) b(1);
         break;
       case CMD.GET: case CMD.SET: {
         if (a.length < 2) return null;
@@ -3384,7 +3413,7 @@ function makeMockDevice(opt = {}) {
         const t = st.tracks[a[0]];
         if (t.drum) {
           if (a.length >= 10) dFromOld(t.dstep[a[1]], a[2], a.slice(3, 7), a[7], a[8]);
-          b(a[0]); b(a[1]); stepOut(b, dOld(t.dstep[a[1]]));
+          b(a[0]); b(a[1]); stepOut(b, dOld(t.dstep[a[1]]), true);
           break;
         }
         const x = t.step[a[1]];
@@ -3468,7 +3497,7 @@ function makeMockDevice(opt = {}) {
         if (drumSel()) {
           const d = st.tracks[st.sel].dstep[a[0]];
           if (cmd === CMD.STEP_SET && a.length >= 9) dFromOld(d, a[1], a.slice(2, 6), a[6], a[7]);
-          b(a[0]); stepOut(b, dOld(d));
+          b(a[0]); stepOut(b, dOld(d), true);
           break;
         }
         const x = st.step[a[0]];
@@ -3908,12 +3937,15 @@ function makeMockDevice(opt = {}) {
    Other drum hits, levels and ratchets are preserved. Never mutate the snapshot. */
 function previewToggleStep(step, note) {
   // REST silences a step in the real sequencer without erasing its pitches or expression.
-  if (step.time === 1) return { ...step, notes: step.notes.slice(), time: 2 };
-  if (step.n > 0) return { ...step, notes: step.notes.slice(), time: step.time === 0 ? 2 : 0 };
-  return previewSetStepNotes(step, [note]);
+  if (step.time === 1 || step.n > 0) {
+    const next = { ...step, notes: step.notes.slice(), time: step.time === 2 ? 0 : 2 };
+    return { ...next, flags: stepEditFlags(step, next) };
+  }
+  return stepWithNotes({ ...step, vel: step.vel || 100 }, [note]);
 }
-function previewSetStepNotes(step, notes) {
-  return { ...step, n: notes.length, notes: [...notes, 0, 0, 0, 0].slice(0, 4), time: 0, vel: step.vel || 100 };
+function stepWithNotes(step, notes) {
+  const next = { ...step, n: notes.length, notes: [...notes, 0, 0, 0, 0].slice(0, 4), time: 0 };
+  return { ...next, flags: stepEditFlags(step, next) };
 }
 function previewToggleDrum(step, lane) {
   const d = { ...step, lvl: step.lvl.slice(), rat: step.rat.slice() };
@@ -4082,7 +4114,7 @@ const ROLL = {
     if (ROLL.isNote(s)) {
       if (s.notes.slice(0, s.n).includes(pitch) || s.n >= 4) return out;
       const notes = s.notes.slice(0, s.n).concat(pitch);
-      out.set(at, { ...s, n: notes.length, notes: notes.concat([0, 0, 0, 0]).slice(0, 4) });
+      out.set(at, stepWithNotes(s, notes));
       return out;
     }
     out.set(at, { n: 1, notes: [pitch, 0, 0, 0], time: 0, flags: 0, vel: 96, lvl: 0, rat: 0 });
@@ -4101,7 +4133,7 @@ const ROLL = {
     if (!ROLL.isNote(s)) return out;
     const notes = s.notes.slice(0, s.n).filter((n) => n !== pitch);
     if (notes.length === s.n) return out;
-    if (notes.length) { out.set(at, { ...s, n: notes.length, notes: notes.concat([0, 0, 0, 0]).slice(0, 4) }); return out; }
+    if (notes.length) { out.set(at, stepWithNotes(s, notes)); return out; }
     out.set(at, ROLL.rest());
     ROLL._cutTies(steps, len, at + 1, out);
     return out;
@@ -5446,7 +5478,7 @@ function previewSequenceClick(k, index, lane = -1, replacement = null) {
     if (d !== dev || m !== mock || index >= m.state.tracks[k].p[29]) return;
     const track = m.state.tracks[k];
     const command = k === 3 ? req.drumStep(index, previewToggleDrum(track.dstep[index], lane)) :
-      req.trackStep(k, index, replacement || previewToggleStep(track.step[index], note));
+      req.trackStep(k, index, replacement || previewToggleStep(track.step[index], note), d.info.stepMetadata);
     const response = await d.link.request(command);
     if (d !== dev) return false;
     if (d.sel === k) {
@@ -5574,7 +5606,7 @@ $("preview-note-form").addEventListener("submit", async (e) => {
   stopPreviewNoteAudition();
   $("preview-note-apply").disabled = true;
   try {
-    if (await previewSequenceClick(target.track, target.index, -1, previewSetStepNotes(target.step, notes))) {
+    if (await previewSequenceClick(target.track, target.index, -1, stepWithNotes({ ...target.step, vel: target.step.vel || 100 }, notes))) {
       previewNotes[target.track] = notes[0];
       $("preview-note-dialog").close();
       renderPreviewSequence();
@@ -6695,10 +6727,11 @@ async function writeStep(i, tr) {
   if (notes.length && !old.n && time === 2) time = 0;   /* typing notes into an empty step makes it play */
   const s = { n: notes.length, notes: all, time, flags: (c.acc.checked ? 1 : 0) | (c.sl.checked ? 2 : 0),
     vel: Math.max(0, Math.min(127, +c.vel.value || 0)), lvl: old.lvl, rat: old.rat };   /* v5: level / ratchet kept */
+  s.flags = stepEditFlags(old, s);
   if (s.n && !s.vel) s.vel = 96;
   stepEdit.set(i, performance.now());
   try {
-    dev.steps[i] = parse[CMD.STEP_SET](await rq(req.stepSet(i, s)));
+    dev.steps[i] = parse[CMD.STEP_SET](await rq(req.stepSet(i, s, dev.info.stepMetadata && !isDrum())));
     if (!tr.contains(document.activeElement) || document.activeElement === c.notes) fillStep(tr, dev.steps[i]);
   } catch (err) { report(err); }
 }
@@ -6826,8 +6859,7 @@ async function writeSteps(idx) {
     for (const i of idx) {
       const s = dev.steps[i];
       stepEdit.set(i, performance.now());
-      dev.steps[i] = parse[CMD.STEP_SET](await rq(req.stepSet(i, { n: s.n, notes: s.notes, time: s.time, flags: s.flags,
-        vel: s.vel, lvl: s.lvl || 0, rat: s.rat || 0 })));
+      dev.steps[i] = parse[CMD.STEP_SET](await rq(req.stepSet(i, s, dev.info.stepMetadata && !isDrum())));
     }
   } finally { busy--; }
 }
@@ -7662,7 +7694,7 @@ $("clearseq").addEventListener("click", async () => {
     for (let i = 0; i < dev.info.nstep; i++) {
       if (i % 8 === 0) sayK("applying", `${i}/${dev.info.nstep}`);
       if (drum) { dev.dsteps[i] = parse[CMD.DRUM_STEP](await rq(req.drumStep(i, emptyDrum()))); dev.steps[i] = drumAsStep(dev.dsteps[i]); }
-      else dev.steps[i] = parse[CMD.STEP_SET](await rq(req.stepSet(i, { n: 0, notes: [0, 0, 0, 0], time: 2, flags: 0, vel: 0 })));
+      else dev.steps[i] = parse[CMD.STEP_SET](await rq(req.stepSet(i, ROLL.rest(), dev.info.stepMetadata && !isDrum())));
     }
     $("steptables").dataset.len = "";
     renderSteps();
@@ -9137,7 +9169,7 @@ $("file").addEventListener("change", async () => {
         const s = data.steps[i] || {};
         if (i % 8 === 0) sayK("applying", `steps ${i}/${m}`);
         dev.steps[i] = parse[CMD.STEP_SET](await rq(req.stepSet(i, {
-          n: s.n | 0, notes: Array.isArray(s.notes) ? s.notes : [0, 0, 0, 0], time: s.time ?? 2, flags: s.flags | 0, vel: s.vel | 0 })));
+          n: s.n | 0, notes: Array.isArray(s.notes) ? s.notes : [0, 0, 0, 0], time: s.time ?? 2, flags: s.flags | 0, vel: s.vel | 0 }, dev.info.stepMetadata && !isDrum())));
       }
     }
     dev.dump = await getDump();
@@ -11118,7 +11150,7 @@ async function lvxToggle(idx, lane) {
       const ns = previewToggleStep(st, LV.lastNote ?? 60);
       g.steps[k] = { ...ns, index: idx };
       lvxRenderGrid();
-      g.steps[k] = parse[CMD.TRACK_STEP](await rq(req.trackStep(i, idx, ns), { key: "tstep:" + idx, front: true }));
+      g.steps[k] = parse[CMD.TRACK_STEP](await rq(req.trackStep(i, idx, ns, dev.info.stepMetadata), { key: "tstep:" + idx, front: true }));
     }
     if (i === dev.sel) LV.stale = true;
   } catch (e) { report(e); }

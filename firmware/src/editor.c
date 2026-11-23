@@ -34,7 +34,8 @@ enum { ED_INFO = 1, ED_GET, ED_SET, ED_DUMP, ED_DESC, ED_STEP_GET, ED_STEP_SET, 
 /* v10 (SLOOP 2.5): DSYN_LIST .. DSYN_PLAY = 72..76, editor_dsyn.c; backup object 9 = the SYN kits */
 /* v11 (SLOOP 2.7): backup object 11 = your theme (gfx.c theme_t), the editor's Theme page */
 /* v12 (SLOOP 2.7): LIVE = 77, editor_live.c: the LIVE page (transport, sections, mix keys, punch-in FX, REC, undo) */
-#define ED_PROTO 12u                                   /* the protocol version INFO ends with */
+#define ED_PROTO 12u                                   /* the protocol version in INFO */
+#define ED_CAP_STEP_METADATA 1u                        /* INFO capabilities, after the version */
 
 static uint8_t ed_out[600];
 static uint32_t ed_n;
@@ -215,7 +216,7 @@ UI_SMALL static void ed_dstep_from_old(dstep_t *d, const uint8_t *a)
     for (i = 0; i < n; i++)
         dstep_set(d, lane_of_note(a[1 + i] & 0x7Fu), (a[6] & SF_ACCENT) ? LV_HARD : LV_NORM, 0);
 }
-/* a step's bytes, as STEP_GET sends them (v5: + level, ratchet) */
+/* a step's bytes, as STEP_GET sends them (v5: + level, ratchet; synth metadata: + legato) */
 UI_SMALL static void ed_step_out(const track_t *t, uint32_t i)
 {
     uint32_t k;
@@ -245,9 +246,28 @@ UI_SMALL static void ed_step_out(const track_t *t, uint32_t i)
         ed_b(st->lvl);                                   /* v5 (7 bits each: 4 x 2-bit fields, the top 1 below) */
         ed_b(st->lvl >> 7 | (st->rat >> 7) << 1);
         ed_b(st->rat);
+        ed_b((st->flags & SF_LEG) != 0);
     }
 }
-/* a step written: n, 4 notes, time, flags, vel [, lvl, hi, rat] */
+/* Legacy writes have no explicit metadata. Match each surviving pitch once, even if the chord reordered. */
+UI_SMALL static uint32_t ed_step_keep(const step_t *old, const step_t *st)
+{
+    uint32_t k, j, used = 0, flags = 0, n = old->n > 4u ? 4u : old->n;
+    if (old->time != ST_NOTE)
+        return 0;
+    for (k = 0; k < st->n; k++)
+        for (j = 0; j < n; j++)
+            if (!(used & (1u << j)) && old->note[j] == st->note[k]) {
+                used |= 1u << j;
+                if (old->flags & SF_CONT(j))
+                    flags |= SF_CONT(k);
+                break;
+            }
+    if (st->n == n && used == (1u << n) - 1u)
+        flags |= old->flags & SF_LEG;
+    return flags;
+}
+/* a step written: n, 4 notes, time, flags, vel [, lvl, hi, rat [, legato]] */
 UI_SMALL static void ed_step_in(track_t *t, uint32_t i, const uint8_t *a, uint32_t na)
 {
     uint32_t k;
@@ -256,12 +276,18 @@ UI_SMALL static void ed_step_in(track_t *t, uint32_t i, const uint8_t *a, uint32
         return;
     }
     {
-        step_t *st = &t->step[i];
+        step_t old = t->step[i], *st = &t->step[i];
         st->n = (uint8_t)(a[0] > 4u ? 4u : a[0]);
         for (k = 0; k < 4u; k++)
             st->note[k] = a[1 + k] & 0x7Fu;
         st->time = (uint8_t)(a[5] > ST_REST ? ST_REST : a[5]);
         st->flags = a[6] & (SF_ACCENT | SF_SLIDE);
+        if (st->time == ST_NOTE && st->n) {
+            if (na >= 12u)
+                st->flags |= (uint8_t)((a[6] & ((1u << st->n) - 1u) * SF_CONT0) | ((a[11] & 1u) ? SF_LEG : 0u));
+            else
+                st->flags |= (uint8_t)ed_step_keep(&old, st);
+        }
         st->vel = a[7] & 0x7Fu;
         if (na >= 11u) {
             st->lvl = (uint8_t)((a[8] & 0x7Fu) | (a[9] & 1u) << 7);
@@ -707,6 +733,7 @@ UI_SMALL static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes b
             ed_str(ENGINES[i]->name, 8);
         ed_b(NTRK);                                       /* v3 */
         ed_b(ED_PROTO);                                   /* v5..: the protocol version (9: FM6 patches, 10: SYN kits) */
+        ed_b(ED_CAP_STEP_METADATA);
         break;
     case ED_GET:
     case ED_SET:
