@@ -15,13 +15,15 @@ import sys
 import tempfile
 import threading
 import time
+from types import SimpleNamespace
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import fm1_install as I  # noqa: E402
 
-I.DELAY.update(open=0, start=0.01, reply=0, loader=0.01, reboot=0.01, retry=0.02, poll=0.05, hs=0.1,
+I.DELAY.update(open=0, start=0.01, reply=0, loader=0.01, reboot=0.01, retry=0.02, handoff=0.01, hs=0.1,
                idle_check=0.4, idle_write=0.4, wait_loader=2, wait_reboot=2)
 failed = 0
 
@@ -122,12 +124,14 @@ class FakeFM1:
                 return
             if self.stall_after and self.served >= self.stall_after:
                 return
-            if addr == I.FINISH_CHECK:
-                threading.Timer(0.05, self.boot, ("ota-FM-1_900", "Felucca Update")).start()
-            elif addr == I.FINISH_WRITE:
-                threading.Timer(0.05, self.boot, (self.after_write, "Felucca")).start()
+            if addr in (I.FINISH_CHECK, I.FINISH_WRITE):
+                self.finish(addr)
             else:
                 self.next()
+
+    def finish(self, addr):
+        args = ("ota-FM-1_900", "Felucca Update") if addr == I.FINISH_CHECK else (self.after_write, "Felucca")
+        threading.Timer(0.05, self.boot, args).start()
 
     def next(self):
         if not self.queue:
@@ -289,6 +293,141 @@ def errors():
     ok(rc == 2, "missing file -> exit 2")
 
 
+class Inventory:
+    def __init__(self, *devices, gear=False):
+        self.devices = devices
+        self.gear = ["Keyboard"] if gear else []
+
+    def input_names(self):
+        return [name for dev in self.devices for name in dev.input_names()] + self.gear
+
+    output_names = input_names
+
+    def open(self, in_name, out_name):
+        for dev in self.devices:
+            if in_name == dev.name and dev.connected:
+                return dev.open(in_name, out_name)
+        raise IOError("no such port")
+
+
+def targeting():
+    raw = package()
+    image = I.logical_image(raw)
+    args = [pkgfile("target.fwsc", raw), "--yes", "--port", "FM-1_A"]
+
+    def nothing_sent(dev):
+        return all(pkt == I.HS_QUERY for pkt in dev.sent)
+
+    def ambiguous(result):
+        rc, out, err = result
+        return rc != 0 and "only the intended FM-1" in err and "done:" not in out
+
+    for identity in ("FM-1_015", "ota-FM-1_900"):
+        a = FakeFM1(image, name="FM-1_A")
+        b = FakeFM1(image, identity=identity, name="FM-1_B")
+        ok(ambiguous(cli(args, Inventory(a, b))) and nothing_sent(a) and nothing_sent(b),
+           f"CLI selection rejects two devices ({identity}) before any upgrade")
+        ok(all(link.closed for dev in (a, b) for link in dev.links), "CLI closes temporary links")
+
+    a = FakeFM1(image, name="FM-1_A")
+    b = FakeFM1(image, name="FM-1_A")
+    ok(ambiguous(cli(args, Inventory(a, b))) and nothing_sent(a) and nothing_sent(b),
+       "CLI refuses duplicate display names")
+
+    class RawPorts:
+        def __init__(self, rtapi):
+            pass
+
+        def get_ports(self):
+            return ["FM-1_A", "FM-1_A"]
+
+        def delete(self):
+            pass
+
+    mido = SimpleNamespace(backend=SimpleNamespace(name="mido.backends.rtmidi", api=None),
+                           get_input_names=lambda: ["FM-1_A"], get_output_names=lambda: ["FM-1_A"])
+    rtmidi = SimpleNamespace(API_UNSPECIFIED=0, MidiIn=RawPorts, MidiOut=RawPorts)
+    with patch.dict(sys.modules, mido=mido, rtmidi=rtmidi):
+        ok(ambiguous(cli(args, I.MidoBackend())), "CLI detects duplicates hidden by the Mido adapter")
+
+    class MixedPorts(Inventory):
+        def output_names(self):
+            return ["FM-1_B"]
+    a = FakeFM1(image, name="FM-1_A")
+    ok(ambiguous(cli(args, MixedPorts(a))) and nothing_sent(a), "CLI refuses mismatched input/output")
+
+    for identity in ("ota-FM-1_015", "ota-FM-1_900"):
+        class CompetingLoader(FakeFM1):
+            def finish(self, addr):
+                if addr == I.FINISH_CHECK:
+                    b.connected = True
+                super().finish(addr)
+
+        a = CompetingLoader(image, name="FM-1_A")
+        b = FakeFM1(image, identity=identity, name="FM-1_B")
+        b.connected = False
+        result = cli(args, Inventory(b, a))
+        ok(ambiguous(result) and a.upgrades == 1 and nothing_sent(b),
+           f"CLI refuses a competing loader ({identity}) during handoff")
+
+    class ReplacedCandidate(FakeFM1):
+        def finish(self, addr):
+            if addr == I.FINISH_CHECK:
+                self.connected = False
+                b.connected = True
+
+                def own_loader():
+                    b.connected = False
+                    self.boot("ota-FM-1_900", "Felucca Update")
+
+                threading.Timer(0.05, own_loader).start()
+            else:
+                super().finish(addr)
+
+    a = ReplacedCandidate(image, name="FM-1_A")
+    b = FakeFM1(image, name="FM-1_B", identity="ota-FM-1_900")
+    b.connected = False
+    with patch.dict(I.DELAY, loader=0.15):
+        result = cli(args, Inventory(a, b))
+    ok(ambiguous(result) and a.upgrades == 1 and nothing_sent(b),
+       "CLI rejects two successive replacement pairs observed during USB settle")
+
+    class ForeignLoader(FakeFM1):
+        def finish(self, addr):
+            self.boot("ota-FM-1_015", "FM-1 Update")
+    a = ForeignLoader(image, name="FM-1_A")
+    rc, out, err = cli(args, a)
+    ok(rc == 6 and "another firmware" in err and a.upgrades == 1 and "done:" not in out,
+       "CLI checks the loader reached after a running install")
+
+    class NoReboot(FakeFM1):
+        def finish(self, addr):
+            if addr == I.FINISH_WRITE:
+                b.connected = True
+            else:
+                super().finish(addr)
+    a = NoReboot(image, name="FM-1_A")
+    b = FakeFM1(image, name="FM-1_B", identity="FM-1_900")
+    b.connected = False
+    result = cli(args, Inventory(a, b))
+    ok(ambiguous(result) and a.upgrades == 2 and nothing_sent(b),
+       "CLI rejects another running FM-1 with the expected identity at reboot")
+
+    a = FakeFM1(image, name="FM-1_A")
+    rc, out, err = cli(args, Inventory(a, gear=True))
+    ok(rc == 0 and a.upgrades == 2 and a.served == 11 and "done: the FM-1 runs FM-1_900" in out,
+       "CLI follows the selected FM-1 across changing names with unrelated gear present")
+
+    class SamePorts(FakeFM1):
+        def finish(self, addr):
+            self.identity = "ota-FM-1_900" if addr == I.FINISH_CHECK else "FM-1_900"
+
+    a = SamePorts(image, name="FM-1_A")
+    rc, out, err = cli(args, a)
+    ok(rc == 0 and a.upgrades == 2 and a.served == 11 and "done: the FM-1 runs FM-1_900" in out,
+       "CLI follows the target when its identity changes on the same pair")
+
+
 def against_js():
     clean = ROOT / "build/felucca.fwsc"
     if not shutil.which("node") or not clean.exists():
@@ -307,6 +446,7 @@ def against_js():
 wire()
 installs()
 errors()
+targeting()
 against_js()
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"INSTALL TESTS FAILED ({failed})" if failed else "install tests passed")
