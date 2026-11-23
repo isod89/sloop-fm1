@@ -18,8 +18,9 @@ selected. The v1-v3 commands are byte for byte as before; v4 is asked for with b
 
 **v5 (SLOOP 2.0):** the drum track has 16 lanes (one sound per white key) with a level and a ratchet per
 hit; `DRUM_STEP` reads and writes them. Synth steps carry a level and a ratchet per note. `INFO` ends with
-the protocol version (5) and `TRACK` with the solo mask. Every addition is a byte appended at the end of
-a reply or a request, so v1-v4 editors keep working (they see the drum lanes as GM notes, below).
+the protocol version (5), followed on newer firmware by an optional capability byte. `TRACK` ends with
+the solo mask. These fields are appended so v1-v4 editors keep working (they see the drum lanes as GM
+notes, below).
 
 ## Framing
 
@@ -48,13 +49,13 @@ after an engine change.
 
 | cmd | Request args | Reply args |
 | --- | --- | --- |
-| 1 INFO | — | version string, NENGINES, P_COUNT, G_COUNT, NSTEP, P_E0, then NENGINES engine-name strings, then (v3) NTRK (4), then (v5) the protocol version (5); older firmware ends after the names / NTRK |
+| 1 INFO | — | version string, NENGINES, P_COUNT, G_COUNT, NSTEP, P_E0, then NENGINES engine-name strings, then (v3) NTRK (4), then (v5) the protocol version, then (optional) capabilities |
 | 2 GET | scope, id | scope, id, v14 |
 | 3 SET | scope, id, v14 | scope, id, v14 (the value after clamping). Setting global `G_ENGSEL` (id from DESC label "ENG") changes the engine with its defaults |
 | 4 DUMP | — | engine, preset, then P_COUNT × v14 (the selected track), then G_COUNT × v14 (globals) |
 | 5 DESC | scope, id | scope, id, fmt, min v14, max v14, def v14, label string, unit string, then for an enum (fmt 8) one name string per value (at most 64; firmware before SLOOP sent at most 16) |
-| 6 STEP_GET | index 0..NSTEP−1 | index, n (0..4 notes), note0..note3, time (0 NOTE, 1 TIE, 2 REST), flags (1 accent, 2 slide), vel, then (v5) lvl, hi, rat |
-| 7 STEP_SET | index, n, note0..3, time, flags, vel [, lvl, hi, rat (v5)] | same as STEP_GET (after the write). Without the v5 bytes the step's levels and ratchets become 0 |
+| 6 STEP_GET | index 0..NSTEP−1 | index, n (0..4 notes), note0..note3, time (0 NOTE, 1 TIE, 2 REST), flags, vel, then (v5) lvl, hi, rat, then (synth metadata) legato |
+| 7 STEP_SET | index, n, note0..3, time, flags, vel [, lvl, hi, rat [, legato]] | same as STEP_GET (after the write). Without the v5 bytes the step's levels and ratchets become 0 |
 | 8 PRESET | engine, preset | engine, preset (applies the preset: sound, sends, arp; never the pattern, the mix or the key: `LEVEL PAN MUTE`, `LEN DIV SWG GATE`, `ROOT SCL QNT CHORD` stay) |
 | 9 PROJECT | op (0 load, 1 save, 2 query), slot 0..3 | op, slot, used (1/0). Save writes flash: allow ~2 s |
 
@@ -270,6 +271,26 @@ G_COUNT 45. An editor reads both from `INFO` and maps a patch file by its own co
 - **The kit** is the drum track's `P_E0`: `DESC` of `P_E0` with the drum track selected is the enum
   `KIT` (34 kits: ORIGINAL..DUST, the GM sample kit and its treatments, then the synthesised kits from
   808). `DESC` of `P_E1..P_E7` there still describes engine 0 (unused).
+
+### Synth step metadata
+
+Bit 0 of the optional capabilities byte after the `INFO` protocol version advertises this
+extension. Missing capabilities are read as zero. All existing step field offsets stay the same.
+In the `flags` byte, bit 0 is accent, bit 1 is slide and bits 3–6 mark continuation for note slots
+0–3 respectively. Bit 2 is reserved. An optional 7-bit byte after `lvl, hi, rat` carries
+step-wide legato in bit 0. The other bits are reserved. Firmware with the capability includes this
+byte in synth `STEP_GET`, `STEP_SET` and `TRACK_STEP` replies. Both forms of `TRACK_STEP` use the
+same step body after their track and index bytes. Drum replies end after `lvl, hi, rat`.
+
+A synth write that includes the legato byte explicitly sets both continuation and legato, including
+when the byte is zero. Continuation bits for unused note slots are ignored. For either legacy write
+form, the firmware carries continuation forward by pitch and moves the bits when notes reorder.
+New pitches attack. Step-wide legato survives when the pitch set is unchanged, including a reorder.
+A change of pitch set clears legato. Empty steps, rests and ties clear both kinds of metadata.
+Accent and slide retain their existing meanings in every write form.
+
+With older firmware the browser reads replies ending after velocity or after `lvl, hi, rat` and
+uses the legacy write format. Projects and backups still store the original step flags in place.
 
 ## v6: backup / restore (SLOOP 2.3)
 

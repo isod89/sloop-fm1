@@ -6,7 +6,10 @@
  *                    "T1 PROG n", a user preset that loads says nothing (the test of up_load_to's result is inverted)
  *   editor_repro 3   a backup restore (BK_PUT object 0) of a project whose steps carry a velocity > 127 (project.c
  *                    proj_apply keeps it): the notes play up to 2x louder than the loudest a step can be
+ *   editor_repro 4   USB step edits on the selected track keep held notes.
+ *   editor_repro 5   USB per-track step edits keep a legato transition.
  * Build as tests/editor_fuzz.sh builds editor_fuzz.c. */
+#include "../firmware/hal/fm1_flash_id.h"
 #include "editor_host.c"
 
 static void ed(uint32_t cmd, const uint8_t *a, uint32_t na)
@@ -146,9 +149,142 @@ static int repro_vel(void)
     return bad != 0;
 }
 
+/* Exercise the wire requests and the sequencer that consumes the edited steps. */
+static int step_reply(uint32_t cmd, const uint8_t *a, uint32_t n, uint32_t flags, uint32_t leg)
+{
+    uint32_t i, prefix = cmd == ED_TRACK_STEP ? 2u : 1u;
+    ed(cmd, a, n);
+    for (i = 1; i + 1 < rx_n; i++)
+        if (rx_last[i] >= 128u)
+            return 0;
+    return rx_n == 6u + prefix + 12u && rx_last[4] == cmd &&
+           !memcmp(rx_last + 5, a, prefix) && rx_last[5 + prefix + 6] == flags && rx_last[5 + prefix + 11] == leg;
+}
+
+static voice_t *gated_voice(track_t *t, uint32_t note)
+{
+    uint32_t i;
+    for (i = 0; i < NVOICE; i++)
+        if (t->v[i].active && t->v[i].gate && t->v[i].note == note)
+            return &t->v[i];
+    return NULL;
+}
+
+/* Load through the existing project format with the slot cache empty, as on first load. */
+static void reload_section(track_t *t)
+{
+    const uint8_t load[] = {0, 0};
+    section_store(0);
+    sections_write();
+    memset(&proj_slot[0], 0, sizeof proj_slot[0]);
+    memset(t->step, 0, sizeof t->step);
+    ed(ED_PROJECT, load, sizeof load);
+}
+
+static int repro_cont(void)
+{
+    track_t *t = &trk[0];
+    uint8_t edit[] = {1, 2, 48, 60, 0, 0, ST_NOTE, 8, 77, 1, 3, 2, 0};
+    voice_t *held, *after;
+    uint32_t age, stored, read_ok, read_flags, write_ok, plays, cases = 1;
+    song.sel = 0;
+    t->p[P_VOICE] = V_POLY;
+    t->step[0] = (step_t){.note = {48}, .n = 1, .vel = 96};
+    t->step[1] = (step_t){.note = {48, 60}, .n = 2, .flags = SF_CONT(0), .vel = 96};
+    reload_section(t);
+    stored = t->step[1].flags == SF_CONT(0);
+    read_ok = step_reply(ED_STEP_GET, edit, 1, 8, 0);
+    read_flags = rx_last[12];
+    write_ok = step_reply(ED_STEP_SET, edit, 12, 8, 0); /* old editor echoes bit 3, but has no extension */
+    write_ok &= t->step[1].flags == SF_CONT(0) && t->step[1].vel == 77 &&
+                t->step[1].lvl == 129 && t->step[1].rat == 130 &&
+                rx_last[14] == 1 && rx_last[15] == 3 && rx_last[16] == 2;
+    audio_blocks(64);                                   /* settle any preset crossfade before starting the voice */
+    t->seq_idx = 0;
+    seq_step(t, &t->step[0], 1024, 0);
+    held = gated_voice(t, 48);
+    age = held ? held->age : 0;
+    t->seq_idx = 1;
+    seq_step(t, &t->step[1], 1024, 0);
+    after = gated_voice(t, 48);
+    plays = held && after && after->age == age && gated_voice(t, 60);
+    printf("selected-track continuation: saved section %s, GET %s (flags %u), SET %s (flags %u), played without retrigger %s\n",
+           stored ? "ok" : "FAIL", read_ok ? "ok" : "FAIL", read_flags,
+           write_ok ? "ok" : "FAIL", t->step[1].flags, plays ? "ok" : "FAIL");
+    edit[2] = 60; edit[3] = 48; edit[7] = 3;
+    cases &= step_reply(ED_STEP_SET, edit, 9, 19, 0); /* short legacy reorder, accent + slide */
+    cases &= t->step[1].lvl == 0 && t->step[1].rat == 0;
+    edit[2] = 67;
+    cases &= step_reply(ED_STEP_SET, edit, 12, 19, 0); /* 67 attacks, 48 still goes on */
+    edit[7] = 0;
+    cases &= step_reply(ED_STEP_SET, edit, 13, 0, 0); /* clear even with the same pitches */
+    edit[7] = 16; edit[12] = 1;
+    cases &= step_reply(ED_STEP_SET, edit, 13, 16, 1);
+    cases &= step_reply(ED_STEP_GET, edit, 1, 16, 1);
+    edit[6] = ST_REST;
+    cases &= step_reply(ED_STEP_SET, edit, 9, 0, 0);
+    printf("selected-track legacy reorder, replacement, explicit clear and rest: %s\n", cases ? "ok" : "FAIL");
+    return !(stored && read_ok && write_ok && plays && cases);
+}
+
+static int repro_leg(void)
+{
+    track_t *t = &trk[1];
+    uint8_t edit[] = {1, 1, 1, 55, 0, 0, 0, ST_NOTE, 0, 77, 0, 0, 0, 0};
+    uint32_t stored, read_ok, write_ok, plays, cases = 1;
+    int32_t env;
+    voice_t *after;
+    song.sel = 0;
+    t->p[P_VOICE] = V_LEGATO;
+    t->p[P_ATK] = 30;
+    t->p[P_SUS] = 100;
+    t->p[P_GLIDE] = 0;
+    t->step[0] = (step_t){.note = {48}, .n = 1, .vel = 96};
+    t->step[1] = (step_t){.note = {55}, .n = 1, .flags = SF_LEG, .vel = 96};
+    reload_section(t);
+    stored = t->step[1].flags == SF_LEG && song.sel == 0;
+    read_ok = step_reply(ED_TRACK_STEP, edit, 2, 0, 1);
+    write_ok = step_reply(ED_TRACK_STEP, edit, 10, 0, 1); /* short legacy edit on the other track */
+    write_ok &= t->step[1].flags == SF_LEG && t->step[1].vel == 77 && song.sel == 0;
+
+    audio_blocks(64);                                   /* settle any preset crossfade before starting the voice */
+    t->seq_idx = 0;
+    seq_step(t, &t->step[0], 1024, 0);
+    audio_blocks(128);
+    env = t->v[0].env;
+    plays = t->v[0].stage == 2u && env > 0 && t->seq_hold;
+    t->seq_idx = 1;
+    seq_step(t, &t->step[1], 1024, 0);
+    after = gated_voice(t, 55);
+    plays &= after && after->stage == 2u && after->env == env && !t->slide_glide;
+    printf("other-track legato: saved section %s, GET %s, SET %s (flags %u), held envelope %s\n",
+           stored ? "ok" : "FAIL", read_ok ? "ok" : "FAIL", write_ok ? "ok" : "FAIL", t->step[1].flags, plays ? "ok" : "FAIL");
+
+    edit[13] = 1;
+    cases &= step_reply(ED_TRACK_STEP, edit, 14, 0, 1);  /* explicit legato */
+    edit[3] = 64;
+    cases &= step_reply(ED_TRACK_STEP, edit, 13, 0, 0);  /* legacy pitch replacement clears it */
+    edit[3] = 55;
+    cases &= step_reply(ED_TRACK_STEP, edit, 14, 0, 1);
+    edit[7] = ST_TIE;
+    cases &= step_reply(ED_TRACK_STEP, edit, 13, 0, 0);
+    edit[2] = 2; edit[3] = 60; edit[4] = 48; edit[7] = ST_NOTE; edit[8] = 16;
+    cases &= step_reply(ED_TRACK_STEP, edit, 14, 16, 1); /* both kinds of metadata on another track */
+    cases &= step_reply(ED_TRACK_STEP, edit, 2, 16, 1);
+    printf("other-track explicit metadata, replacement and tie: %s\n", cases ? "ok" : "FAIL");
+    return !(stored && read_ok && write_ok && plays && cases);
+}
+
 int main(int argc, char **argv)
 {
     int which = argc > 1 ? atoi(argv[1]) : 1;
     harness_init();
-    return which == 1 ? repro_root() : which == 2 ? repro_pc() : repro_vel();
+    switch (which) {
+    case 1: return repro_root();
+    case 2: return repro_pc();
+    case 3: return repro_vel();
+    case 4: return repro_cont();
+    case 5: return repro_leg();
+    default: return 2;
+    }
 }

@@ -177,6 +177,9 @@ $CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/phys_tune_test" te
 run "PHYS: every pitched preset in tune (+-5 cents; a curved bridge +-20), notes 28..100" "$OUT/phys_tune_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/unison_level_test" tests/unison_level_test.c -lm
 run "UNISON: every engine spreads its voices' phases (no stack of voices in phase over POLY)" "$OUT/unison_level_test"
+$CC -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/editor_repro" tests/editor_repro.c -lm
+run "editor step edits: continuation survives on the selected track" "$OUT/editor_repro" 4
+run "editor step edits: legato survives on another track" "$OUT/editor_repro" 5
 run "the editor protocol and the other inputs (USB / TRS MIDI, damaged flash) fuzzed under ASan + UBSan, and its reproducers" sh tests/editor_fuzz.sh "${EDFZ_N:-2000}" 1
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress" tests/regress.c -lm
 # the CPU budget: counted by the kernel on macOS; elsewhere under callgrind when valgrind is there (exact, ~45 s;
