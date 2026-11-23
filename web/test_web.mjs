@@ -37,6 +37,60 @@ const E = vm.runInNewContext(proto + `
    loudDb, matchGains, withGain, LEVEL_MIN, backupCapture, backupRestore, backupObjects, b64enc, b64dec, FM6, KIT, kitPad, kitZones, kitLen, kitBytes, kitFit, kitSplit, kitLaneOf, kitPlace, zipRead, ROLL, SMF, ARR, mockSettings, fm6CartWrite, fm6CartPreset, fm6CartSlots, fm6CartPresets, DSYN, DSYN_MOCK_NAMES, DSYN_MOCK_KITS, SetGate, bkProjFormat, bkDevFormat, bkFwAtLeast, THEME, FM1_PORT_ED: FM1_PORT, fm1Ports, LOOP, LIVE, LVX, SONGF, songCapture, songLoad, songObjects })`,
 { setTimeout, clearTimeout, setInterval, clearInterval, console, TextEncoder, TextDecoder, Blob, Response, DecompressionStream });
 
+async function editorBusy() {
+  const between = (a, b) => html.slice(html.indexOf(a), html.indexOf(b, html.indexOf(a)));
+  const holds = between("let busy = 0;", "let dragging");
+  const op = between("async function op(fn)", "function renderLive()");
+  const pan = between("async function panOther(i, v)", "/* ------------------------------------------------- live sync");
+  const errors = [], writes = [], sleepers = [];
+  const B = vm.runInNewContext(holds + op + pan + `
+    let dev;
+    ({ beginBusy, op, panOther, count: () => busy,
+       connect: () => { resetBusy(); dev = { link: { request: (value) => writes.push(value) } }; } })`,
+  { report: (e) => errors.push(e.message), writes,
+    sleep: () => new Promise((r) => sleepers.push(r)),
+    pPan: () => 39,
+    mixer: { setPan: (rq, track, sel, id, value) => rq([track, value]) },
+  });
+  B.connect();
+  let cancel;
+  const old = B.op(() => new Promise((_, reject) => { cancel = reject; }));
+  const oldPan = B.panOther(1, 10);                   /* waits for old's hold */
+  B.connect();
+
+  let finish, fail;
+  const success = B.op(() => new Promise((resolve) => { finish = resolve; }));
+  const error = B.op(() => new Promise((_, reject) => { fail = reject; }));
+  const newPan = B.panOther(2, 20);
+  sleepers.shift()();
+  await oldPan;
+  cancel(new Error("closed"));
+  await old;
+  ok(B.count() === 2 && writes.length === 0, "editor busy: stale waiter and cancellation leave both new holds in place");
+  finish();
+  await success;
+  ok(B.count() === 1 && writes.length === 0, "editor busy: success releases only its own hold");
+  fail(new Error("test error"));
+  await error;
+  ok(B.count() === 0 && errors.join() === "closed,test error", "editor busy: error releases the last hold");
+  sleepers.shift()();
+  await newPan;
+  ok(B.count() === 0 && String(writes) === "2,20", "editor busy: only the new connection's pan queue drains");
+
+  let cancelCurrent;
+  const cancelled = B.op(() => new Promise((_, reject) => { cancelCurrent = reject; }));
+  cancelCurrent(new Error("closed"));
+  await cancelled;
+  ok(B.count() === 0, "editor busy: cancellation in the current connection releases its hold");
+
+  const first = B.beginBusy(), second = B.beginBusy();
+  first();
+  first();
+  ok(B.count() === 1, "editor busy: releasing twice leaves the other hold active");
+  second();
+  ok(B.count() === 0, "editor busy: final release lets polling proceed");
+}
+
 async function editorMock() {
   const m = E.makeMockDevice();
   const inp = [...m.access.inputs.values()][0], out = [...m.access.outputs.values()][0];
@@ -1776,6 +1830,7 @@ async function updater() {
   ok(e6 && /official FM-1 V15/.test(e6.message), "fm1pkg.js: only the exact official V15 is accepted (SHA-256)");
 }
 
+await editorBusy();
 await editorMock();
 await editorLibrarian();
 await editorLive();
