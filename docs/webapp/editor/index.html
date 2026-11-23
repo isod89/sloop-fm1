@@ -5441,7 +5441,7 @@ function expandPreviewDrums(expanded) {
 function previewSequenceClick(k, index, lane = -1, replacement = null) {
   const d = dev, m = mock, note = previewNotes[k];
   if (!d?.dump || !m) return;
-  busy++;
+  const release = beginBusy();
   previewEditQueue = previewEditQueue.then(async () => {
     if (d !== dev || m !== mock || index >= m.state.tracks[k].p[29]) return;
     const track = m.state.tracks[k];
@@ -5458,7 +5458,7 @@ function previewSequenceClick(k, index, lane = -1, replacement = null) {
       renderSteps();
     }
     return true;
-  }).catch(report).finally(() => { busy--; renderPreviewSequence(); });
+  }).catch(report).finally(() => { release(); renderPreviewSequence(); });
   return previewEditQueue;
 }
 const previewStepGestures = new WeakMap();
@@ -5887,6 +5887,19 @@ let access = null;     /* MIDIAccess */
 let dev = null;        /* {link, input, output, info, pdesc[], gdesc[], names[][], dump, steps[], slotUsed[],
                           keys[] (paramKeys), watch (pushes on), bank ({total, slots[]} or null: no user bank)} */
 let busy = 0;          /* multi-request operations in progress: no polling */
+/* A completion from an unplugged device cannot release a new connection's work. */
+let busyEpoch = 0;
+function beginBusy() {
+  const epoch = busyEpoch;
+  let released = false;
+  busy++;
+  return () => {
+    if (released) return;
+    released = true;
+    if (epoch === busyEpoch) busy--;
+  };
+}
+function resetBusy() { busyEpoch++; busy = 0; }
 let dragging = null;   /* key of the slider being dragged */
 let wantConnected = false;
 const ctl = new Map(); /* key "s:id" -> {input, out, desc, scope, id, row} */
@@ -6000,13 +6013,13 @@ async function connect() {
 }
 
 function disconnect(reasonKey = "disconnected") {
+  resetBusy();
   stopPreview();
   if (dev) {
     dev.link.close();
     dev.input.onmidimessage = null;
   }
   dev = null;
-  busy = 0;
   needReload = false;
   renderPanels();
   renderMixer();
@@ -6044,7 +6057,7 @@ function drumAsStep(d) {
 
 /* the whole connect sequence */
 async function load(d) {
-  busy++;
+  const release = beginBusy();
   try {
     /* the first frame after opening the port can be lost: a few tries */
     d.info = parse[CMD.INFO](await d.link.request(req.info(), { timeout: 500, retries: 3 }));
@@ -6094,7 +6107,7 @@ async function load(d) {
     renderBank();
     renderSysinfo();
     sayK("ready");
-  } finally { busy--; }
+  } finally { release(); }
 }
 async function getDescOrNull(s, i) { try { return await getDesc(s, i); } catch (e) { if (e.message === "closed") throw e; return null; } }
 
@@ -6517,12 +6530,12 @@ $("engine").addEventListener("change", () => choosePreset(+$("engine").value, 0)
 $("preset").addEventListener("change", () => { if (dev) choosePreset(dev.dump.engine, +$("preset").value); });
 async function choosePreset(e, p) {
   if (!dev) return;
-  busy++;
+  const release = beginBusy();
   try {
     selfLoad();
     parse[CMD.PRESET](await rq(req.preset(e, p)));
     await afterSoundChange();
-  } catch (err) { report(err); } finally { busy--; }
+  } catch (err) { report(err); } finally { release(); }
 }
 async function afterSoundChange(msg = "ready") {
   needReload = false;                               /* this re-reads everything a RELOAD asks for */
@@ -6539,9 +6552,9 @@ async function afterSoundChange(msg = "ready") {
 }
 $("init").addEventListener("click", async () => {
   if (!dev || !confirm(t("confirmInit"))) return;
-  busy++;
+  const release = beginBusy();
   try { selfLoad(); await rq(req.set(1, gEng(), dev.dump.engine)); await afterSoundChange(); }
-  catch (err) { report(err); } finally { busy--; }
+  catch (err) { report(err); } finally { release(); }
 });
 
 function refreshAll() {
@@ -6567,7 +6580,7 @@ function renderSlots() {
 async function project(op, slot) {
   if (!dev) return;
   if (!confirm(t(op ? "confirmSave" : "confirmLoad").replace("{n}", "ABCD"[slot]))) return;
-  busy++;
+  const release = beginBusy();
   try {
     /* save writes flash: a long timeout and no retry */
     if (!op) selfLoad();
@@ -6577,7 +6590,7 @@ async function project(op, slot) {
     renderSlots();
     if (!op && r.used) await afterSoundChange();
     sayK(op ? "secSaved" : r.used ? "secLoaded" : "secEmpty", "ABCD"[slot]);
-  } catch (err) { report(err); } finally { busy--; }
+  } catch (err) { report(err); } finally { release(); }
 }
 
 /* ---------------------------------------------------------- steps --- */
@@ -6821,7 +6834,7 @@ async function rollApply(ch) {
 }
 /* dev.steps[i] -> the device, keeping what it answers */
 async function writeSteps(idx) {
-  busy++;
+  const release = beginBusy();
   try {
     for (const i of idx) {
       const s = dev.steps[i];
@@ -6829,7 +6842,7 @@ async function writeSteps(idx) {
       dev.steps[i] = parse[CMD.STEP_SET](await rq(req.stepSet(i, { n: s.n, notes: s.notes, time: s.time, flags: s.flags,
         vel: s.vel, lvl: s.lvl || 0, rat: s.rat || 0 })));
     }
-  } finally { busy--; }
+  } finally { release(); }
 }
 $("rollcv").addEventListener("pointerdown", (e) => {
   if (!dev || rollWriting) return;
@@ -6923,7 +6936,7 @@ async function midiImport() {
   if (!MI || !dev) return;
   if (!confirm(t("midiConfirm"))) return;
   const plan = midiPlan(), setlen = $("midisetlen").checked;
-  busy++;
+  const release = beginBusy();
   try {
     if (plan.dsteps) {
       for (let i = 0; i < dev.info.nstep; i++) {
@@ -6941,7 +6954,7 @@ async function midiImport() {
     RV.lo = null;
     lenChanged();
     sayK("midiDone", String(plan.report.notes));
-  } catch (err) { report(err); } finally { busy--; }
+  } catch (err) { report(err); } finally { release(); }
 }
 $("midiexp").addEventListener("click", midiExport);
 $("midiimp").addEventListener("click", () => $("midifile").click());
@@ -7651,12 +7664,12 @@ async function writeDrum(i) {
 }
 $("reloadsteps").addEventListener("click", async () => {
   if (!dev) return;
-  busy++;
-  try { await loadSteps(); sayK("ready"); } catch (err) { report(err); } finally { busy--; }
+  const release = beginBusy();
+  try { await loadSteps(); sayK("ready"); } catch (err) { report(err); } finally { release(); }
 });
 $("clearseq").addEventListener("click", async () => {
   if (!dev || !confirm(t("confirmClear"))) return;
-  busy++;
+  const release = beginBusy();
   try {
     const drum = drumGrid() && dev.dstepsOk;
     for (let i = 0; i < dev.info.nstep; i++) {
@@ -7667,7 +7680,7 @@ $("clearseq").addEventListener("click", async () => {
     $("steptables").dataset.len = "";
     renderSteps();
     sayK("ready");
-  } catch (err) { report(err); } finally { busy--; }
+  } catch (err) { report(err); } finally { release(); }
 });
 
 /* ---------------------------------------------------------- samples --- */
@@ -8220,18 +8233,18 @@ function kitMatch() {
 /* the kit to its slot, or shared out over USR3 and USR4 (kitSplit); a slot of the pair that gets no pad is erased, so
    nothing old plays on a lane the kit leaves empty */
 async function kitSend() {
-  const d = kitDraft.slot, ks = kitSlots(d);
+  const device = dev, d = kitDraft.slot, ks = kitSlots(d);
   if (!kitDraft.pads.some(Boolean)) { sayK("kitNone"); return; }
   const parts = ks.length > 1 ? kitSplit(kitDraft.pads, kitRoom()) : [kitDraft.pads.map((p, l) => (p ? l : -1)).filter((l) => l >= 0)];
   if (!parts) { sayK("kitOver"); return; }
   if (!confirm(t("kitConfirm").replace("{x}", ks.map((k) => `USR${k + 1}`).join(" + ")))) return;
   let done = true;
-  for (let j = 0; j < ks.length && done; j++) {
+  for (let j = 0; j < ks.length && done && dev === device; j++) {
     const k = ks[j];
     if (!parts[j].length) {
-      busy++;
+      const release = beginBusy();
       try { const r = parse[CMD.SMP_ERASE](await rq(req.smpErase(k), { timeout: 2500, retries: 0 })); if (r.rc) throw new Error("erase rc " + r.rc); await smpInfo(); }
-      catch (e) { done = false; report(e); } finally { busy--; }
+      catch (e) { done = false; report(e); } finally { release(); }
       continue;
     }
     const sub = kitDraft.pads.map((p, l) => (parts[j].includes(l) ? p : null));
@@ -8239,7 +8252,7 @@ async function kitSend() {
   }
   if (kitProg()) kitProg().hidden = true;
   renderKits();
-  if (done) sayK("kitSent", kitDest(d));
+  if (done && dev === device) sayK("kitSent", kitDest(d));
 }
 /* the drum track on that kit: select track 4, then its KIT (P_E0) = USRn */
 function kitUse(k) {
@@ -8269,14 +8282,15 @@ async function smpUpload(k, prog, ask = true, d = smpDraft[k]) {   /* (d: the DR
   catch (e) { sayK("smpFail", e.message); return false; }
   if (ask && !confirm(t("confirmUpload").replace("{n}", k + 1))) return false;
   const { hdr, data } = built;
-  busy++;
+  const device = dev;
+  const release = beginBusy();
   smpBusy = true;
-  renderSamples();
-  renderKits();
-  if (!prog || !prog.isConnected)                   /* (the Samples page was drawn again just now: its new bar) */
-    prog = $("smpslots").querySelector(`[data-k="${k}"] progress[max="1"]`) || { value: 0, hidden: true };
-  prog.hidden = false;
   try {
+    renderSamples();
+    renderKits();
+    if (!prog || !prog.isConnected)                 /* (the Samples page was drawn again just now: its new bar) */
+      prog = $("smpslots").querySelector(`[data-k="${k}"] progress[max="1"]`) || { value: 0, hidden: true };
+    prog.hidden = false;
     const t0 = performance.now();
     let r = parse[CMD.SMP_BEGIN](await rq(req.smpBegin(k), { timeout: 1000, retries: 0 }));
     if (r.rc) throw new Error("begin rc " + r.rc);
@@ -8294,9 +8308,9 @@ async function smpUpload(k, prog, ask = true, d = smpDraft[k]) {   /* (d: the DR
   } catch (e) {
     if (e.message !== "closed") sayK("smpFail", e.message);
   } finally {
-    try { if (dev) await smpInfo(); } catch (e) { /* shown by the next action */ }
+    try { if (dev === device) await smpInfo(); } catch (e) { /* shown by the next action */ }
     smpBusy = false;
-    busy--;
+    release();
     renderSamples();
     renderKits();
   }
@@ -8305,19 +8319,20 @@ async function smpUpload(k, prog, ask = true, d = smpDraft[k]) {   /* (d: the DR
 
 async function smpErase(k) {
   if (!dev || !confirm(t("confirmErase").replace("{n}", k + 1))) return;
-  busy++;
+  const device = dev;
+  const release = beginBusy();
   smpBusy = true;
-  renderSamples();
   try {
+    renderSamples();
     const r = parse[CMD.SMP_ERASE](await rq(req.smpErase(k), { timeout: 2500, retries: 0 }));
     if (r.rc) throw new Error("erase rc " + r.rc);
     sayK("smpErased", String(k + 1));
   } catch (e) {
     if (e.message !== "closed") sayK("smpFail", e.message);
   } finally {
-    try { if (dev) await smpInfo(); } catch (e) { /* ignore */ }
+    try { if (dev === device) await smpInfo(); } catch (e) { /* ignore */ }
     smpBusy = false;
-    busy--;
+    release();
     renderSamples();
     renderKits();
   }
@@ -8753,10 +8768,9 @@ function chopZip() {
 let mixDrag = null;                 /* "lv:i" / "pan:i" while a strip control is dragged */
 const mixEdit = new Map();          /* "lv:i" / "pan:i" -> time of the user's last change */
 const mixCtl = [];                  /* per track: the strip's elements */
-let panning = false;                /* v3 firmware: another track is selected for a moment (pan of a track that is not selected) */
 const mixTouched = (kind, i) => mixDrag === `${kind}:${i}` || performance.now() - (mixEdit.get(`${kind}:${i}`) || 0) < 600
   || (!!dev && kind === "lv" && dev.link.hasQueued("mix:" + i))
-  || (kind === "pan" && (panWant.has(i) || (!!dev && dev.link.hasQueued("pan:" + i))));
+  || (kind === "pan" && !!dev && (dev.panWant?.has(i) || dev.link.hasQueued("pan:" + i)));
 const drumTrack = (i) => !!dev && !!dev.mix && i === dev.mix.ntrk - 1;
 function trackName(x) {
   if (x.engine >= dev.info.nengines) return ["DRUMS", (dev.kitNames || [])[x.e0]].filter(Boolean).join(" ");
@@ -8775,13 +8789,13 @@ async function readMixer() {
     if (mixTouched("pan", i)) x.pan = o.pan;
   });
   d.mix = m;
-  if (m.sel !== d.sel && !panning) { d.sel = m.sel; needReload = true; }   /* selected on the device, push missed */
+  if (m.sel !== d.sel && !d.panning) { d.sel = m.sel; needReload = true; }   /* selected on the device, push missed */
   renderMixer();
 }
 
 /* the Sound view's values of the selected track (and the drum level, a global) -> the strips */
 function mixFromDump() {
-  if (!dev || !dev.mix || !dev.dump || panning) return;
+  if (!dev || !dev.mix || !dev.dump || dev.panning) return;
   const m = dev.mix, ds = m.ntrk - 1, x = m.tracks[dev.sel];
   if (!mixTouched("lv", ds)) m.tracks[ds].level = dev.dump.g[gDrLvl()];
   if (x) {
@@ -8906,7 +8920,6 @@ async function sendMix(i) {
 }
 /* pan: the selected track as any Sound parameter; another track with TRACK_PARAM (v4: while dragging, one in
    flight and one queued with the latest value), or with v3 firmware on release (it is selected for a moment) */
-const panWant = new Map();
 function setPan(i, v, final) {
   if (!dev || !dev.mix) return;
   dev.mix.tracks[i].pan = v;
@@ -8927,23 +8940,23 @@ async function panTrack(i, v) {
   } catch (e) { report(e); }
 }
 async function panOther(i, v) {
-  panWant.set(i, v);
-  if (panOther.run) return;
-  panOther.run = true;
   const d = dev;
+  if (d.panWant) { d.panWant.set(i, v); return; }
+  const panWant = d.panWant = new Map([[i, v]]);
   try {
     while (busy && d === dev) await sleep(20);      /* not in the middle of another multi-request operation */
-    busy++;
-    panning = true;
+    if (d !== dev) return;
+    const release = beginBusy();
+    d.panning = true;                              /* v3: another track is selected for a moment */
     try {
       while (panWant.size && d === dev) {
         const [tr, val] = panWant.entries().next().value;
         panWant.delete(tr);
-        const r = await mixer.setPan(rq, tr, d.sel, pPan(), val);
-        if (d.mix && !panWant.has(tr)) { d.mix.tracks[tr].pan = r; updateStrip(tr); }
+        const r = await mixer.setPan((r, o) => d.link.request(r, o), tr, d.sel, pPan(), val);
+        if (d === dev && d.mix && !panWant.has(tr)) { d.mix.tracks[tr].pan = r; updateStrip(tr); }
       }
-    } finally { panning = false; busy--; }
-  } catch (e) { report(e); } finally { panOther.run = false; panWant.clear(); }
+    } finally { d.panning = false; release(); }
+  } catch (e) { report(e); } finally { d.panWant = null; }
 }
 
 /* ------------------------------------------------- live sync / polling --- */
@@ -8957,7 +8970,7 @@ function onPush(f) {
   try {
     if (f.cmd === CMD.CHANGED) {
       const c = parse[CMD.CHANGED](f.a);
-      if (panning && !c.scope) return;              /* about the track selected for a moment, not ours */
+      if (d.panning && !c.scope) return;              /* about the track selected for a moment, not ours */
       const arr = c.scope ? d.dump.g : d.dump.p;
       if (c.id >= arr.length) return;
       const k = key(c.scope, c.id);
@@ -9021,8 +9034,8 @@ function maybeReload() {
 /* one multi-request operation; polling waits for it */
 async function op(fn) {
   if (!dev) return;
-  busy++;
-  try { await fn(); } catch (err) { report(err); } finally { busy--; }
+  const release = beginBusy();
+  try { await fn(); } catch (err) { report(err); } finally { release(); }
 }
 function renderLive() {
   $("live").textContent = !dev || !dev.dump ? "" : t(dev.watch ? "live" : "polling");
@@ -9058,7 +9071,7 @@ setInterval(async () => {
   if (!dev || busy || dragging || document.hidden || !dev.dump || !dev.link.idle) return;
   if (needReload) { maybeReload(); return; }
   if (dev.watch && Date.now() - lastDump < 5000) return;
-  busy++;
+  const release = beginBusy();
   const d = dev;
   try {
     const dump = await getDump();
@@ -9094,7 +9107,7 @@ setInterval(async () => {
       d.steps[stepRR] = s;
       if (JSON.stringify(o) !== JSON.stringify(s)) updateStepRows();
     }
-  } catch (err) { report(err); } finally { busy--; }
+  } catch (err) { report(err); } finally { release(); }
 }, 400);
 
 /* ------------------------------------------------------------ files --- */
@@ -9118,7 +9131,7 @@ $("file").addEventListener("change", async () => {
     if (!Number.isInteger(data.engine) || !Number.isInteger(data.preset) || !Array.isArray(data.p)) throw new Error("engine / preset / p");
     if (data.engine < 0 || data.engine >= dev.info.nengines) throw new Error("engine " + data.engine);
   } catch (e) { sayK("badfile", e.message); return; }
-  busy++;
+  const release = beginBusy();
   try {
     selfLoad();
     await rq(req.preset(data.engine, data.preset));
@@ -9145,7 +9158,7 @@ $("file").addEventListener("change", async () => {
     $("steptables").dataset.len = "";
     refreshAll();
     sayK("applied");
-  } catch (err) { report(err); } finally { busy--; }
+  } catch (err) { report(err); } finally { release(); }
 });
 
 /* ----------------------------------------------------------- library --- */
@@ -9357,9 +9370,11 @@ $("liblist").addEventListener("drop", (e) => {
 async function libOp(fn) {
   if (!dev || libBusy) return;
   libBusy = true;
-  busy++;
-  renderLib(); renderBank();
-  try { await fn(); } catch (err) { report(err); } finally { busy--; libBusy = false; renderLib(); renderBank(); }
+  const release = beginBusy();
+  try {
+    renderLib(); renderBank();
+    await fn();
+  } catch (err) { report(err); } finally { release(); libBusy = false; renderLib(); renderBank(); }
 }
 const rqf = (r, o) => rq(r, o);
 const checkRc = (rc) => { if (rc === 3) throw new Error(t("bkStop")); if (rc) throw new Error(t("flashFail").replace("{rc}", rc)); };
@@ -10300,22 +10315,25 @@ async function plAddFiles(files) {
   lvRenderPl();
 }
 async function lvSongGo(i) {
-  const pl = LV.pl, f = pl.songs[i];
-  if (!f || pl.loading || !dev || !dev.dump) return;
+  const pl = LV.pl, f = pl.songs[i], d = dev;
+  if (!f || pl.loading || !d || !d.dump) return;
   pl.loading = true;
   pl.at = i;
   pl.pct = 0;
   lvRenderPl();
   try {
     if (LV.s && LV.s.playing) { await lvSend(LIVE.PLAY, 0); await sleep(150); }
+    if (d !== dev) return;
     lvAllOff();
-    busy++;                                         /* (the editor's own polling waits) */
+    const release = beginBusy();                  /* (the editor's own polling waits) */
     try { await songLoadUI(f, (d, n) => { pl.pct = Math.round(100 * d / n); lvRenderPl(); }); }
-    finally { busy--; }
+    finally { release(); }
+    if (d !== dev) return;
     pl.cur = i;
     LV.stale = true;
     plStore();
     await lvReadTracks(true);
+    if (d !== dev) return;
     if (f.live && f.live.bpm) lvGlobal(LVX.BPM, f.live.bpm, true);   /* (LIVE pro: the setlist's tempo for this song) */
     sayK("sfLoaded", f.name || "");
     if (pl.auto && lvOk()) await lvSend(LIVE.PLAY, 1);
