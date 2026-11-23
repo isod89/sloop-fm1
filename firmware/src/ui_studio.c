@@ -9,7 +9,7 @@
 static uint8_t drum_page, drum_cursor;   /* drum_page: 0 GRID, 1 KIT, 2 SOUND (2.7: a sound's TUNE, DECAY) */
 #define drum_lane pen_lane                 /* (2.7.1) one drum sound picked everywhere: the GRID, SOUND, the SEQ layer, a pad
                                             * played (seq.c pen_lane) */
-/* (2.7.1) the black keys pick the drum sound on the GRID page and in the SEQ layer (the pages: OCT- / OCT+), never heard;
+/* (2.7.1) the black keys pick the drum sound on the GRID page and in the SEQ layer (the pages: OCT- / OCT+);
  * the same key again: the other sound of its pair. F#3 .. F#5: KICK / KICK 2, SNARE / SNARE 2, RIM, CLAP, HAT / PEDAL,
  * OPEN HAT, LOW TOM / HI TOM, CRASH, RIDE, SHAKER / CONGA, COWBELL */
 static const uint8_t DRUM_BLACK[11][2] = {{0, 1}, {2, 8}, {7, 7}, {3, 3}, {4, 6}, {5, 5}, {9, 10}, {11, 11}, {12, 12},
@@ -30,14 +30,15 @@ UI_SMALL static uint32_t drum_black_key(uint32_t lane)    /* the key of the blac
             return PUNCH_BLACK[i];
     return PUNCH_BLACK[0];
 }
+UI_SMALL static void drum_hear(uint32_t lane) { if (drum_preview) audition_lane(lane); }   /* (2.7.1) menu DRUM PREVIEW */
 UI_SMALL static void drum_black_pick(uint32_t b)          /* black key b: its sound, or the other of its pair */
 {
     const uint8_t *g = DRUM_BLACK[b % 11u];
     pen_lane = pen_lane == g[0] && g[1] != g[0] ? g[1] : g[0];
+    drum_hear(pen_lane);
     ui_say("SOUND ", LANE_NAME[pen_lane]);
     ui.force = 1;
 }
-UI_SMALL static void drum_hear(uint32_t lane) { if (drum_preview) audition_lane(lane); }   /* (2.7.1) menu DRUM PREVIEW */
 static void trk_short_name(uint32_t c, char *b);
 UI_SMALL static int on_drum_page(void) { return !ui.home && cur_page()->scope == SC_DRUM; }
 

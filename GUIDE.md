@@ -267,7 +267,7 @@ Open it with **EDIT** or **SEQ** tapped on the TRACKS screen while the drum trac
 | KNOB 3 **hit** | right: a hit of that sound on that step (NORM) · left: clear it |
 | KNOB 4 **level** | the hit's level up / down (GHOST, SOFT, NORM, HARD) |
 | **white keys** | the 16 steps of the sound picked: press to set the step, again to clear it (2.7.1: silent, the pattern plays it); the keys light that sound's steps |
-| **black keys** (2.7.1) | pick the sound, silently: F#3 KICK / KICK 2 · G#3 SNARE / SNARE 2 · A#3 RIM · C#4 CLAP · D#4 HAT / PEDAL · F#4 OPEN HAT · G#4 LOW TOM / HI TOM · A#4 CRASH · C#5 RIDE · D#5 SHAKER / CONGA · F#5 COWBELL (the same key again: the other sound of its pair); the black key of the sound picked is lit |
+| **black keys** (2.7.1) | pick the sound (heard with **DRUM PREVIEW ON**): F#3 KICK / KICK 2 · G#3 SNARE / SNARE 2 · A#3 RIM · C#4 CLAP · D#4 HAT / PEDAL · F#4 OPEN HAT · G#4 LOW TOM / HI TOM · A#4 CRASH · C#5 RIDE · D#5 SHAKER / CONGA · F#5 COWBELL (the same key again: the other sound of its pair); the black key of the sound picked is lit |
 | **OCT− / OCT+** (2.7.1) | the page of steps: 1–16, 17–32, 33–48, 49–64 (round; up to the track's length). Up to 2.7: the first four black keys |
 | **PRESETS** | the kit |
 | **SAVE** | the SONG screen |
@@ -412,7 +412,7 @@ The 16 white keys are the 16 steps of the current page; the lit ones play.
 | **SEQ + set step (tap)** | clears it (with its nudge, locks and fill condition) |
 | **SEQ + several step keys held** | edit them together |
 | **SEQ + first four black keys** or **SEQ + OCT− / OCT+** (no step held) | the page: steps 1–16, 17–32, 33–48, 49–64 (up to the track's length). (2.7.1) The drum track: OCT− / OCT+ only, the black keys pick the sound |
-| **SEQ + a black key** (drum track, 2.7.1) | the **sound** the steps are for, silently, as on the DRUMS grid (F#3 KICK / KICK 2 … F#5 COWBELL; the same key again: its pair). With **SEQ + HOME** (locked) both hands are free: black keys the sound, white keys its steps |
+| **SEQ + a black key** (drum track, 2.7.1) | the **sound** the steps are for (heard with **DRUM PREVIEW ON**), as on the DRUMS grid (F#3 KICK / KICK 2 … F#5 COWBELL; the same key again: its pair). With **SEQ + HOME** (locked) both hands are free: black keys the sound, white keys its steps |
 | **SEQ + KNOB 1** (no step held) | the **sound** (drums; heard with DRUM PREVIEW ON, 2.7.1) / **note** to set |
 | **SEQ + KNOB 2** | **DIV**: 1/4, 1/8, 1/16, 1/32, 8T, 16T, 1/2, 1BAR, 2BAR |
 | **SEQ + KNOB 3** | **SWING** of the track |
@@ -926,7 +926,7 @@ The visualiser sees the mix **as if MASTER were all the way up**: with MASTER tu
 | **SCREEN** | **COLOR**: the screen palette (GREEN, AMBER, CYAN, RED, MONO, then [your theme](#your-theme) once you sent one) | **ZOOM**: ON shows the value you touch large and white | **KNOB ACCEL** (2.7): ON (the default) a fast turn sweeps wider; OFF one value a detent | — |
 | **LIGHTS** | **LIGHTS**: OFF, LOW, MID, HIGH | **KEYS**: OFF, C KEYS, WHITE KEYS, ALL KEYS | **NOTES**: OFF / ON | — |
 | **AUDIO** | **SPEAKER LOWCUT**: ON cuts the lows the small speaker cannot play (~110 Hz) | **USB AUDIO**: MASTER / FULL | **USB RATE** (2.7): AUTO / 44.1 KHZ / 48 KHZ (takes effect at the next start) | **FILTER RESO** (2.7.2): the resonance of the per-track filter, 0 (clean, as before) … 10 |
-| **SEQ** (2.7.1) | **STEP ADVANCE**: ON (the default) the NOTES page moves on when you let go of the keys; OFF it stays, so a chord you missed is played again on the same step (KNOB 1 moves the cursor) | **DRUM PREVIEW**: OFF (the default) a drum sound picked with a knob (DRUMS screen, SEQ layer) is not heard, quiet for live; ON you hear it, as up to 2.7 | — | — |
+| **SEQ** (2.7.1) | **STEP ADVANCE**: ON (the default) the NOTES page moves on when you let go of the keys; OFF it stays, so a chord you missed is played again on the same step (KNOB 1 moves the cursor) | **DRUM PREVIEW**: OFF (the default) keeps sound selection quiet for live use; ON plays the sound picked with KNOB 1 or a black key on the DRUMS grid or in the SEQ layer | — | — |
 | **SYSTEM** | **2ND CORE** (2.7): **ON** (the default) / OFF. ON, the sound is computed on both of the FM-1's cores: about twice the room before the CPU runs out (many voices, INSERT effects on several tracks), the same sound. ON takes effect at the next power-on; ABOUT then says *2 CORES* (*1 CORE*: the second core did not answer and SLOOP runs on one, as before). OFF: one core, as in 2.6. (2.8.3) On some FM-1s the second core can misread a word under heavy load (a backup over USB): it checks every job before running it and refuses a wrong one, and SLOOP then goes on with one core until the next power-off (ABOUT: *1 CORE*) instead of crashing; if a crash happens while both cores run, the next start is on one core too, until you power off. If it keeps happening on your FM-1, set 2ND CORE to OFF | **HARDWARE CALIBRATION** (the knob selects it, OCT+ opens it) | **MIDI LEARN CLEAR** (2.6): how many CCs are learned; OCT+ forgets them all | **ABOUT**, the version (the knob selects it, OCT+ opens it) |
 
 **The knobs (2.7).** A slow turn is fine tuning, one value a detent. Turn faster and the value sweeps wider, progressively (x2 up to x16 on the widest values); turning back to correct is always one value a detent, and lists of names never jump. MENU → SCREEN → KNOB ACCEL OFF keeps one value a detent everywhere. **LEVEL and PAN glide** over about 3 ms instead of stepping at each detent, on every track and the drums: no zipper on a held note. Both after JIANT FM by juanjiant-bit.
@@ -1309,7 +1309,7 @@ If the official firmware comes up with odd settings or a scrambled display, it i
 | **FX** | punch-in effects: 16 white keys, 11 black keys | master FILTER | DUST | DUCK | track FILTER | + HOME: lock |
 | **EDIT** | erase sound / note · black key: drum MUTE mode (white keys mute / unmute) | SHIFT | LENGTH ×2 / ½ | TRANSPOSE | — | OCT− undo · OCT+ redo |
 | **ARP** | note repeat | RATE | — | — | — | OCT− / OCT+: ghost / hard (drums) |
-| **SEQ** | steps · black keys 1–4: page | SOUND / NOTE | DIV | SWING | LENGTH | OCT− / OCT+: page |
+| **SEQ** | steps · black keys: drum sound (heard with DRUM PREVIEW ON) / synth page (keys 1–4) | SOUND / NOTE | DIV | SWING | LENGTH | OCT− / OCT+: page |
 | **SEQ + step** | more steps | drums: which sound · synths: NOTE | drums: LEVEL · synths: VEL | RATCHET | NUDGE | PRESETS lock · ALGORITHM lock parameter · OCT+ fill condition · OCT− clear nudge, locks, condition |
 | **SEL** | key of the song | CHORD | SCALE | KEYS | TRANSPOSE | — |
 | **GLO** | 1–4 mute · 5–8 solo · 9 fill · 10 fill bar · 16 tap tempo · F#3 MIDI LEARN | level 1 | level 2 | level 3 | level 4 | SELECT: tempo |

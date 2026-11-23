@@ -1314,6 +1314,9 @@ int main(int argc, char **argv)
         drum_preview = 1;
         encs[panel.enc[EN_K1]] = 1; frames(2); encs[panel.enc[EN_K1]] = -1; frames(2);
         check(drum_lane == 3 && pad_lit[3], "grid: DRUM PREVIEW ON: KNOB 1 plays the sound picked");
+        memset(pad_lit, 0, sizeof pad_lit);
+        key(8);                                             /* C#4: CLAP, already selected */
+        check(drum_lane == 3 && pad_lit[3], "grid: DRUM PREVIEW ON: a black key replays the selected sound");
         dstep_set(&TDRUM->dstep[20], 5, LV_NORM, 0);
         dstep_set(&TDRUM->dstep[20], 7, LV_SOFT, 0);
         memset(pad_lit, 0, sizeof pad_lit);
@@ -1375,8 +1378,16 @@ int main(int argc, char **argv)
             check(ok, "SEQ layer, drum track (2.7.1): black keys the sound (unheard, lit), OCT+ the page, white keys its steps");
             ui.step_page = 0;
         }
+        drum_preview = 1;
+        memset(pad_lit, 0, sizeof pad_lit);
+        key(3);                                             /* G#3: SNARE */
+        check(pen_lane == 2 && pad_lit[2], "SEQ held: DRUM PREVIEW ON: a black key plays SNARE");
+        memset(pad_lit, 0, sizeof pad_lit);
+        key(3);                                             /* G#3 again: SNARE 2 */
+        check(pen_lane == 8 && pad_lit[8] && !pad_lit[2], "SEQ held: DRUM PREVIEW ON: the paired sound plays");
         release(B_SEQ); frames(2);
         {   /* 2.7.1, the comment's workflow: SEQ held + HOME, locked; then black keys the sound, white keys its steps */
+            dstep_t before_preview[sizeof TDRUM->dstep / sizeof TDRUM->dstep[0]];
             int ok;
             memset(TDRUM->dstep, 0, sizeof TDRUM->dstep);
             press(B_SEQ); frames(3); tap(B_HOME); release(B_SEQ); frames(3);
@@ -1385,6 +1396,15 @@ int main(int argc, char **argv)
             key(3); key(key_of_white(4)); key(key_of_white(12));         /* the snare on 5 and 13 */
             ok &= dstep_has(&TDRUM->dstep[0], 0) && dstep_has(&TDRUM->dstep[8], 0) && dstep_has(&TDRUM->dstep[4], 2) &&
                   dstep_has(&TDRUM->dstep[12], 2) && !dstep_has(&TDRUM->dstep[4], 0);
+            tap(B_PLAY); frames(2);
+            memcpy(before_preview, TDRUM->dstep, sizeof before_preview);
+            memset(pad_lit, 0, sizeof pad_lit);
+            key(8);                                         /* C#4: CLAP has no programmed steps */
+            check(song.playing && pen_lane == 3 && pad_lit[3], "SEQ locked: a black key previews over playback");
+            check(!memcmp(before_preview, TDRUM->dstep, sizeof before_preview),
+                  "SEQ locked: auditioning leaves the drum pattern intact");
+            tap(B_PLAY); frames(2);
+            drum_preview = 0;
             tap(B_HOME); frames(2);
             check(ok && ly_lock == LY_PLAY, "SEQ locked (HOME), drum track (2.7.1): F#3 kick, white keys 1 / 9; G#3 snare, 5 / 13");
             memset(TDRUM->dstep, 0, sizeof TDRUM->dstep);

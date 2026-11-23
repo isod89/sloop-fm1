@@ -61,7 +61,7 @@ UI_SMALL static const char *mi_value(uint32_t i, uint16_t *c)
     case MI_ZOOM: return settings.zoom ? "ON" : "OFF";
     case MI_ACCEL: return knob_accel_off ? "OFF" : "ON";   /* (2.7) the knobs speed up with a fast turn */
     case MI_ADV: return step_adv_off ? "OFF" : "ON";      /* (2.7.1) the STEP page's cursor moves on when the keys are let go */
-    case MI_DPREV: return drum_preview ? "ON" : "OFF";     /* (2.7.1) a drum sound picked with a knob is heard */
+    case MI_DPREV: return drum_preview ? "ON" : "OFF";     /* (2.7.1) audition drum sounds as they are picked */
     case MI_LIGHTS: return LIGHTS_NAME[lights_lvl % LIGHTS_N];
     case MI_KEYS:
         *c = lights_lvl ? C_HI : C_DIM;               /* (needs LIGHTS) */
