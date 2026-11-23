@@ -99,7 +99,7 @@ static uint8_t vis_style;                       /* the visualiser's style, 0..11
 static uint8_t knob_accel_off;                  /* menu KNOB ACCEL (2.7): 1 = OFF, one value a detent however fast (ui_input.c accel) */
 static uint8_t step_adv_off;                    /* menu SEQ > STEP ADVANCE (2.7.1): 1 = OFF, the STEP page's cursor stays where it
                                                  * is when the keys are let go (KNOB 1 moves it); kept in the MIDI part */
-static uint8_t drum_preview;                    /* menu DRUM PREVIEW (2.7.1): 1 = ON, a drum sound picked with a knob is heard; OFF (the
+static uint8_t drum_preview;                    /* menu DRUM PREVIEW (2.7.1): 1 = ON, audition drum sounds as they are picked; OFF (the
                                                  * default): silent, for live (ui_studio.c). Kept in the MIDI part (project.c) */
 UI_SMALL static uint32_t lights_word(void)
 {

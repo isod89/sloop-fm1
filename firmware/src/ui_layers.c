@@ -344,7 +344,7 @@ UI_SMALL static void layer_key(uint32_t layer, uint32_t k, uint32_t down)
     }
     switch (layer) {
     case LY_STEP:
-        if (w < 0 && is_drum(TSEL)) {                   /* (2.7.1) the drum track: a black key picks the sound, unheard */
+        if (w < 0 && is_drum(TSEL)) {                   /* (2.7.1) the drum track: a black key picks the sound */
             int32_t b = drum_black_of(k);
             if (b >= 0)
                 drum_black_pick((uint32_t)b);
