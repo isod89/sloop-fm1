@@ -5,7 +5,9 @@
 // Online the network always wins (the page as published, never an old one); the copy is only the fallback.
 // A new site (any file changed) is a new sw.js: the new copy replaces the old one.
 const STAMP = "/*STAMP*/";                          // version + a hash of the files
-const CACHE = "sloop-site-" + STAMP;
+// Old workers clean up "sloop-site-" caches across the origin. Leave those caches for them.
+const CACHE_PREFIX = "sloop-scope-" + encodeURIComponent(self.registration.scope) + ":";
+const CACHE = CACHE_PREFIX + STAMP;
 const FILES = /*FILES*/[];                          // relative to this file
 const KEEP = new Set(FILES.map((f) => new URL(f, self.location).href));
 
@@ -28,7 +30,7 @@ self.addEventListener("install", (e) => {
 self.addEventListener("activate", (e) => {
   e.waitUntil((async () => {
     for (const k of await caches.keys())
-      if (k.startsWith("sloop-site-") && k !== CACHE) await caches.delete(k);
+      if (k.startsWith(CACHE_PREFIX) && k !== CACHE) await caches.delete(k);
     await self.clients.claim();
   })());
 });
