@@ -185,6 +185,7 @@ if [ -z "$SKIP_CPU_VALGRIND" ] && command -v valgrind >/dev/null 2>&1; then expo
 run "regression: golden renders, health, voices, CPU budget" "$OUT/regress" tests/golden.txt tests/cpu_baseline.txt
 # SLICE (tests/slice_test.c) needs a FELUCCA_SLICE=1 build; the engine is not built by default
 
+run "regression: target loop accounting" python3 tests/target_budget_test.py
 run "regression: target cost of the render loops" python3 tests/target_budget.py \
     build/felucca.dis tests/target_budget.txt
 # the render split over the two cores (fx.c mix_units): the golden renders and tests/mix_split_test.c (three
