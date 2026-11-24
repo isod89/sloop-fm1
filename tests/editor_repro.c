@@ -6,6 +6,9 @@
  *                    "T1 PROG n", a user preset that loads says nothing (the test of up_load_to's result is inverted)
  *   editor_repro 3   a backup restore (BK_PUT object 0) of a project whose steps carry a velocity > 127 (project.c
  *                    proj_apply keeps it): the notes play up to 2x louder than the loudest a step can be
+ *   editor_repro 4   a failed quiet save after SONG REC must retry and survive boot
+ *   editor_repro 5   a deferred settings retry waits for silence and saves the latest edit across clock wrap
+ *   editor_repro 6   unchanged and RAM-only settings need no flash writes
  * Build as tests/editor_fuzz.sh builds editor_fuzz.c. */
 #include "editor_host.c"
 
@@ -146,9 +149,140 @@ static int repro_vel(void)
     return bad != 0;
 }
 
+/* Start with a quiet flush so the harness's initial MIDI settings are in sync. */
+static void settings_baseline(void)
+{
+    fm1_ms = 5000u;
+    sections_flush();
+    settings_save();
+}
+
+static int repro_song_save(void)
+{
+    persist_t saved;
+    uint32_t erases, retry_erases;
+    settings_baseline();
+    erases = fl_erases;
+    assert(arrangement.entry[0].bars == 4u);
+    arrangement.entry[0].bars = 5;
+    srec_done = arrangement.count;
+    fl_fail_at = 1;
+    fm1_ms += 5000u;
+    sections_flush();
+    assert(fl_fail_at == -1 && fl_erases == erases + 1u);
+    assert(arrangement.entry[0].bars == 5u);
+    assert(st_load(OBJ_SETTINGS, &saved, sizeof saved) == sizeof saved);
+    assert(saved.arrangement.entry[0].bars == 4u);
+    printf("failed SONG REC save: one erase, %u bars in flash, %u in RAM\n",
+           saved.arrangement.entry[0].bars, arrangement.entry[0].bars);
+
+    fm1_ms += 4999u;
+    sections_flush();
+    assert(fl_erases == erases + 1u);
+    fm1_ms++;
+    sections_flush();
+    retry_erases = fl_erases - erases - 1u;
+    fm1_ms += 5000u;
+    sections_flush();
+    assert(fl_erases == erases + 1u + retry_erases);
+    persist_boot();
+    printf("SONG REC after retry and boot: %u erase(s) at retry, %u bars reloaded\n",
+           retry_erases, arrangement.entry[0].bars);
+    return retry_erases != 1u || arrangement.entry[0].bars != 5u;
+}
+
+static int repro_settings_retry(void)
+{
+    uint32_t erases, attempt = UINT32_MAX - 2499u;
+    settings_baseline();
+    erases = fl_erases;
+    section_store(0);
+    settings.palette = 2;
+    settings_later = 1;
+    /* One program per section payload page, then the header, then fail the settings program. */
+    fl_fail_at = (sizeof proj_slot[0] + ST_PAYLOAD_OFF - 1u) / ST_PAYLOAD_OFF + 2u;
+    fm1_ms = attempt;
+    sections_flush();
+    assert(fl_fail_at == -1 && fl_erases == erases + 2u);
+    assert(!sec_dirty && st_load(OBJ_PROJECT0, &proj_tmp, sizeof proj_tmp) == sizeof proj_slot[0]);
+    assert(persist_saved.palette == 4u);
+
+    fl_fail_at = 1;
+    fm1_ms = attempt + 4999u;
+    sections_flush();
+    assert(fl_erases == erases + 2u);
+    fm1_ms++;
+    sections_flush();                            /* second failure, after wrap */
+    assert(fl_fail_at == -1 && fl_erases == erases + 3u);
+    assert(persist_saved.palette == 4u);
+
+    settings.palette = 3;
+    settings_later = 1;
+    sections_flush();                            /* collect the newer edit during the wait */
+    srec_done = 0xFFu;
+    fm1_ms += 5000u;
+    song.playing = 1;
+    sections_flush();
+    assert(fl_erases == erases + 3u);
+    song.playing = 0;
+    transport_req = 1;
+    sections_flush();
+    assert(fl_erases == erases + 3u);
+    transport_req = 0;
+    trk[0].v[0].active = 1;
+    sections_flush();
+    assert(fl_erases == erases + 3u);
+    trk[0].v[0].active = 0;
+    ui_input_ms = fm1_ms - 1499u;
+    sections_flush();
+    assert(fl_erases == erases + 3u);
+    fm1_ms++;
+    sections_flush();
+    assert(fl_erases == erases + 4u);
+    settings.palette = 0;
+    persist_boot();
+    assert(settings.palette == 3u);
+    printf("deferred settings: two failures, section committed once, latest edit reloaded after wrap\n");
+    return 0;
+}
+
+static int repro_settings_no_write(void)
+{
+    uint32_t erases, progs;
+    settings_baseline();
+    erases = fl_erases;
+    progs = fl_progs;
+    settings_later = 1;
+    fm1_ms += 5000u;
+    sections_flush();
+    assert(!song_dirty && fl_erases == erases && fl_progs == progs);
+
+    fl_id = 0;                                   /* unsupported flash at boot */
+    persist_boot();
+    assert(!flash_ok);
+    settings.palette = 2;
+    settings_later = 1;
+    fm1_ms += 5000u;
+    sections_flush();
+    assert(!song_dirty);
+    fm1_ms += 5000u;
+    sections_flush();
+    assert(settings.palette == 2u && fl_erases == erases && fl_progs == progs);
+    printf("unchanged and RAM-only settings: no erases or programs\n");
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     int which = argc > 1 ? atoi(argv[1]) : 1;
     harness_init();
-    return which == 1 ? repro_root() : which == 2 ? repro_pc() : repro_vel();
+    switch (which) {
+    case 1: return repro_root();
+    case 2: return repro_pc();
+    case 3: return repro_vel();
+    case 4: return repro_song_save();
+    case 5: return repro_settings_retry();
+    case 6: return repro_settings_no_write();
+    default: return 2;
+    }
 }
