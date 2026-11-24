@@ -10798,7 +10798,7 @@ const LVS = {
   scenes: new Array(LVX.NSCENE).fill(null), names: [], morph: 0, store: false, sounds: false, tempo: false,
   xa: 0, xb: 1, xf: 0, anim: 0, cur: -1, busy: false,
   learn: false, target: null, map: {}, edge: new Map(), ins: new Set(),
-  lock: false, rec: null, setStart: 0, tab: "sound", favs: new Set(), edesc: {}, keyAll: false,
+  lock: false, rec: null, recStarting: false, setStart: 0, tab: "sound", favs: new Set(), edesc: {}, keyAll: false,
   grid: { track: -1, page: 0, steps: [], fill: null, at: 0, loading: false },
   restored: false, saveT: 0,
 };
@@ -11279,42 +11279,68 @@ function lvxLock(on) {
   if (LV.ui.lock) { LV.ui.lock.setAttribute("aria-pressed", String(on)); setLabel(LV.ui.lock, t(on ? "lvxUnlock" : "lvxLock")); }
 }
 async function lvxRecStart() {
-  if (LVS.rec) return;
+  if (LVS.rec || LVS.recStarting) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.AudioWorkletNode) { sayK("lvxRecNo"); return; }
+  const rec = { chunks: [], n: 0, peak: 0 };
+  LVS.recStarting = true;
   try {
-    let stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
-    const fm = devs.find((d) => /fm-?1|m-?vave|sloop|felucca/i.test(d.label));
-    const want = fm || devs.find((d) => d.deviceId === stream.getAudioTracks()[0].getSettings().deviceId);
-    stream.getTracks().forEach((x) => x.stop());
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: want ? { exact: want.deviceId } : undefined, channelCount: 2,
+    lvxRenderTools();
+    const permission = await navigator.mediaDevices.getUserMedia({ audio: true });
+    let fm, want;
+    try {
+      const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
+      fm = devs.find((d) => /fm-?1|m-?vave|sloop|felucca/i.test(d.label));
+      want = fm || devs.find((d) => d.deviceId === permission.getAudioTracks()[0].getSettings().deviceId);
+    } finally {
+      lvxRecStopTracks(permission);
+    }
+    rec.stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: want ? { exact: want.deviceId } : undefined, channelCount: 2,
       echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-    const ctx = new AudioContext();
+    const ctx = rec.ctx = new AudioContext();
     const code = `class R extends AudioWorkletProcessor{process(i){const x=i[0];if(x&&x.length){const l=x[0],r=x[1]||x[0],o=new Float32Array(l.length*2);
       for(let k=0;k<l.length;k++){o[2*k]=l[k];o[2*k+1]=r[k];}this.port.postMessage(o,[o.buffer]);}return true;}}registerProcessor("lvx-rec",R);`;
     const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
-    await ctx.audioWorklet.addModule(url);
-    URL.revokeObjectURL(url);
-    const src = ctx.createMediaStreamSource(stream), node = new AudioWorkletNode(ctx, "lvx-rec"), mute = ctx.createGain();
+    try { await ctx.audioWorklet.addModule(url); }
+    finally { lvxRecClean(() => URL.revokeObjectURL(url)); }
+    const src = rec.src = ctx.createMediaStreamSource(rec.stream);
+    const node = rec.node = new AudioWorkletNode(ctx, "lvx-rec");
+    const mute = rec.mute = ctx.createGain();
     mute.gain.value = 0;
-    const rec = { ctx, stream, src, node, mute, chunks: [], n: 0, peak: 0, t0: Date.now(), name: want ? want.label : "" };
+    rec.t0 = Date.now();
+    rec.name = want ? want.label : "";
     node.port.onmessage = (ev) => {
       const pc = LVX.pcm16(ev.data);
       rec.chunks.push(pc); rec.n += pc.length;
       for (let k = 0; k < ev.data.length; k += 8) rec.peak = Math.max(rec.peak, Math.abs(ev.data[k]));
     };
     src.connect(node); node.connect(mute); mute.connect(ctx.destination);
+    sayK(fm ? "lvxRecOn" : "lvxRecOther", rec.name);
     LVS.rec = rec;
-    if (!fm) sayK("lvxRecOther", rec.name);
-    else sayK("lvxRecOn", rec.name);
-  } catch (e) { sayK("lvxRecNo", e.message || ""); }
-  lvxRenderTools();
+  } catch (e) {
+    lvxRecRelease(rec);
+    sayK("lvxRecNo", e?.message || "");
+  } finally {
+    LVS.recStarting = false;
+    lvxRenderTools();
+  }
+}
+function lvxRecClean(clean) { try { clean(); } catch (e) { /* continue releasing the other resources */ } }
+function lvxRecStopTracks(stream) {
+  lvxRecClean(() => {
+    for (const track of stream?.getTracks() || []) lvxRecClean(() => track.stop());
+  });
+}
+function lvxRecRelease(r) {
+  lvxRecClean(() => { if (r.node) r.node.port.onmessage = null; });
+  for (const node of [r.src, r.node, r.mute]) lvxRecClean(() => node?.disconnect());
+  lvxRecStopTracks(r.stream);
+  lvxRecClean(() => r.ctx?.close().catch(() => {}));
 }
 function lvxRecStop() {
   const r = LVS.rec;
   if (!r) return;
   LVS.rec = null;
-  try { r.src.disconnect(); r.node.disconnect(); r.stream.getTracks().forEach((x) => x.stop()); r.ctx.close(); } catch (e) { /* gone */ }
+  lvxRecRelease(r);
   if (r.n) {
     const d = new Date(), stamp = `${today()}-${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
     downloadBytes(`SLOOP-live-${stamp}.wav`, LVX.wav(r.chunks, r.ctx.sampleRate, 2));
@@ -11329,6 +11355,7 @@ function lvxRenderTools() {
   if (LV.s && LV.s.playing && !LVS.setStart) LVS.setStart = Date.now();
   U.clock.replaceChildren(el("b", { text: `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}` }),
     el("span", { class: "dim", text: `${t("lvxSet")} ${LVS.setStart ? LVX.clock(Date.now() - LVS.setStart) : "–:––"}` }));
+  U.recSet.disabled = LVS.recStarting;
   U.recSet.classList.toggle("on", !!r);
   U.recSet.setAttribute("aria-pressed", String(!!r));
   setLabel(U.recSet, r ? `${t("lvxRecStop")} ${LVX.clock(Date.now() - r.t0)}` : t("lvxRecSet"));
