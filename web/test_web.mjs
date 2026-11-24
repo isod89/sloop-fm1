@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import { recorderAudio } from "../tests/live_recorder_audio.mjs";
 import { logicalImage, productOf } from "./fm1pkg.js";
 import { Updater, pack7, unpack7, FM1_PORT } from "./fm1ota.js";
 
@@ -1338,6 +1339,32 @@ function editorLivePro() {
   ok(X.clock(3723000) === "1:02:03" && X.clock(65000) === "1:05", "live pro: the set's clock");
 }
 
+async function editorLiveRecorder() {
+  const recorder = html.slice(html.indexOf("async function lvxRecStart()"), html.indexOf("function lvxRenderTools()"));
+  for (const failure of ["permission", "enumerate", "capture", "worklet", "connect", null]) {
+    const audio = recorderAudio(failure, true), notices = [], downloads = [];
+    const LVS = { rec: null, recStarting: false };
+    const { lvxRecStart, lvxRecStop } = vm.runInNewContext(recorder + "\n;({ lvxRecStart, lvxRecStop })", {
+      LVS, navigator: { mediaDevices: audio.mediaDevices }, window: audio, AudioContext: audio.AudioContext,
+      AudioWorkletNode: audio.AudioWorkletNode, URL: audio.URL, Blob, LVX: E.LVX,
+      sayK: (key) => notices.push(key), lvxRenderTools() {}, downloadBytes: (...args) => downloads.push(args),
+    });
+    if (!failure) audio.devices.pop();                /* the default input is still usable */
+    await lvxRecStart();
+    if (!failure) {
+      ok(LVS.rec && notices[0] === "lvxRecOther" && audio.captures[1].deviceId.exact === "default"
+        && audio.contexts[0].mute.gain.value === 0, "LIVE recorder: fallback notice and muted audio graph");
+      lvxRecStop();
+    }
+    await new Promise((resolve) => setImmediate(resolve)); /* rejected close must not escape */
+    const counts = audio.counts();
+    const label = failure || "stop with no samples";
+    ok(eq(counts, [0, 0, 0, 0, 0]), `LIVE recorder: ${label} leaves ${counts.join("/")} live tracks/contexts/URLs/handlers/edges`);
+    ok(!LVS.rec && !LVS.recStarting && !downloads.length && (!failure || notices[0] === "lvxRecNo"),
+      `LIVE recorder: ${label} returns to idle without a WAV`);
+  }
+}
+
 /* ------------------------------------- SLOOP 2.7: a song as one file (the LIVE playlist) --- */
 async function editorSongFile() {
   const { m, rq, done } = attachMock({ watchMs: 1000 });
@@ -1794,6 +1821,7 @@ await editorCart();
 await editorTheme();
 await editorLivePage();
 editorLivePro();
+await editorLiveRecorder();
 await editorSongFile();
 editorTabs();
 editorIcons();
