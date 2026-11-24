@@ -4,7 +4,8 @@
 """Target-side cost estimate of the hot DSP code, from the pi32v2 objdump listing tools/build.py writes
 (build/felucca.dis). For each engine's render function and the audio ISR: the instructions
 inside loops (every address range closed by a backward branch: the per-sample loops and what they
-contain), and the hardware divides and calls in them. cost = the loop instructions, each weighted 4 per
+contain), with overlapping spans joined unless one contains the other, and the hardware divides
+and calls in them. cost = the loop instructions, each weighted 4 per
 level of nesting (an inner loop runs several times per sample) and 1 + 8 for a divide (many cycles). A static count, not a cycle count: it changes only when the compiled code changes,
 so it is exact run to run, and it catches a render loop that grew (more work per sample, a new divide,
 something not inlined any more). Compared with tests/target_budget.txt at +10 %. The host
@@ -49,9 +50,29 @@ def functions(path):
     return out
 
 
+def spans(heads):
+    """the loops of {head: end}: spans that overlap without one holding the other are one loop entered at two
+    heads (the compiler's layout: a rarely taken path branching back to a little before the loop's head), joined
+    into one; only a span inside another is a loop nested in it"""
+    out = []
+    for h, e in sorted(heads.items()):
+        i = 0
+        while i < len(out):
+            h0, e0 = out[i]
+            if h0 < h <= e0 < e or h < h0 <= e < e0:
+                del out[i]
+                h, e = min(h, h0), max(e, e0)
+                i = 0
+            else:
+                i += 1
+        out.append((h, e))
+    return out
+
+
 def cost(insns):
-    """loops: one span per loop head (the farthest backward branch to it); an instruction inside d
-    spans weighs NEST ** (d - 1) (an inner loop runs several times per pass of the outer one)"""
+    """loops: one span per loop head (the farthest backward branch to it), spans that only overlap joined
+    (spans()); an instruction inside d spans weighs NEST ** (d - 1) (an inner loop runs several times per pass
+    of the outer one)"""
     lo = insns[0][0]
     heads = {}
     for a, t in insns:
@@ -59,10 +80,11 @@ def cost(insns):
         if m and lo <= int(m.group(1), 16) < a:
             h = int(m.group(1), 16)
             heads[h] = max(heads.get(h, a), a)
+    loops = spans(heads)
     n = divs = calls = 0
     w = 0
     for a, t in insns:
-        d = min(sum(1 for h, e in heads.items() if h <= a <= e), MAXD)
+        d = min(sum(1 for h, e in loops if h <= a <= e), MAXD)
         if not d:
             continue
         k = NEST ** (d - 1)
