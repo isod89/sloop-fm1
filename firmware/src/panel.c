@@ -139,7 +139,7 @@ UI_SMALL static void lights_from_word(uint32_t w)
     rec_quant_off = (uint8_t)((w >> 31) & 1u);  /* REC screen QUANT (2.7): an older word reads ON */        /* menu COLOR on your theme (2.7, gfx.c): shown once it is there */
 }
 
-static void settings_save(void);              /* project.c: flash copy (FELUCCA_FLASH) */
+static int settings_save(void);               /* project.c: flash copy (FELUCCA_FLASH) */
 static uint8_t settings_later;                 /* changed while playing: saved once stopped (project.c) */
 
 UI_SMALL static void settings_init(void)

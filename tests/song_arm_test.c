@@ -30,7 +30,7 @@ static const page_t *cur_page(void) {return &PAGES[ui.page];}
 static int project_used(uint32_t i) {return (ready>>i)&1u;}
 static void project_save(uint32_t i) {ready|=1u<<i;scene_saves++;}
 static void project_load(uint32_t i) {(void)i;loads++;}
-static void settings_save(void) {}
+static int settings_save(void) { return 0; }
 static void arrangement_save(void) {order_saves++;}
 static void ui_message(const char *s) {str_cpy(ui.msg,s,sizeof ui.msg);ui.msg_t=40;}
 static void go_home(void) {ui.home=1;}

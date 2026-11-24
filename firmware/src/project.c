@@ -1002,22 +1002,24 @@ UI_SMALL static void persist_fill(persist_t *p)              /* the settings as 
 #endif
 }
 
-UI_SMALL static void settings_save(void)
+UI_SMALL static int settings_save(void)                   /* 0: done (including RAM-only), -1: write failed */
 {
 #if FELUCCA_FLASH
     persist_t p;
     if (!flash_ok)
-        return;
+        return 0;
     persist_fill(&p);
     {
         uint8_t mp[MIDI_PART];
         midi_part_fill(mp);
         if (!memcmp(&p, &persist_saved, sizeof p) && !memcmp(mp, midi_saved, sizeof mp) && !fav_dirty)
-            return;                                /* unchanged: no erase cycle */
+            return 0;                              /* unchanged: no erase cycle */
     }
-    if (settings_write(&p) == 0)
-        persist_saved = p;
+    if (settings_write(&p))
+        return -1;
+    persist_saved = p;
 #endif
+    return 0;
 }
 
 #if FELUCCA_FLASH
@@ -1147,10 +1149,8 @@ UI_SMALL static void sections_write(void)                        /* the dirty se
 #endif
         sec_dirty = 0;
     (void)i;
-    if (song_dirty || fav_dirty) {                      /* (2.7: the favourites too) */
-        song_dirty = 0;
-        settings_save();
-    }
+    if (song_dirty || fav_dirty)                        /* (2.7: the favourites too) */
+        song_dirty = settings_save() != 0;              /* a failed settings write stays pending */
 }
 /* before an intentional reset (an update, UPDATE MODE, UBOOT from the host): the audio is stopped, so
  * whatever is only in RAM goes to flash now: the live sections, the song, the working project */
@@ -1169,9 +1169,9 @@ UI_SMALL static void sections_flush(void)                        /* main loop */
 {
     static uint32_t tried;
     if (srec_done) {
-        song_dirty = srec_done != 0xFFu;
-        if (song_dirty) {
+        if (srec_done != 0xFFu) {
             char b[8];
+            song_dirty = 1;
             fmt_int(b, srec_done);
             ui_say("SONG PARTS ", b);
         } else {

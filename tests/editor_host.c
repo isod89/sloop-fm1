@@ -76,7 +76,8 @@ static uint32_t scope_w;
 #define FL_FAR(fn) fn
 static uint32_t fl_erases, fl_progs, fl_bad;          /* counters; fl_bad: a refused (out of range) access */
 static int fl_fail_at = -1;                           /* > 0: the n-th program from now fails (a torn write) */
-static uint32_t fl_jedec_ram(void) { return 0x856014u; }
+static uint32_t fl_id = 0x856014u;
+static uint32_t fl_jedec_ram(void) { return fl_id; }
 static void fl_plain_window_init(void) {}
 static uint32_t irq_save(void) { return 0; }
 static void irq_restore(uint32_t f) { (void)f; }

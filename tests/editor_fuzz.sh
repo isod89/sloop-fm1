@@ -24,7 +24,7 @@ S=${2:-1}
 # the reproducers of what it found (tests/editor_repro.c): each must run clean once fixed
 ${CC:-cc} -O1 -g -w -fsanitize=address,undefined -fno-sanitize=shift-base,signed-integer-overflow -fno-sanitize-recover=all \
     -I"$OUT/gen" -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/editor_repro" tests/editor_repro.c -lm
-for r in 1 2 3; do "$OUT/editor_repro" $r; done
+for r in 1 2 3 4 5 6; do "$OUT/editor_repro" $r; done
 # (2.8.4) power-on after an install: the parts sound as their sounds, a working project Clipper left: default sounds
 ${CC:-cc} -O1 -g -w -fsanitize=address,undefined -fno-sanitize=shift-base,signed-integer-overflow -fno-sanitize-recover=all \
     -I"$OUT/gen" -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/boot_sound_test" tests/boot_sound_test.c -lm
