@@ -75,7 +75,7 @@ struct { uint32_t magic, palette, lowcut, zoom; } settings __attribute__((sectio
 /* the lights (menu LIGHTS / KEYS / NOTES), for playing in the dark: kept in flash with the settings
  * (project.c persist_t.lights), read at every boot; not in .noinit, so nothing there moves. The same
  * word keeps SYNC and the REC screen's MODE / START (seq.c rec_tempo, rec_count) */
-enum { LIGHTS_OFF, LIGHTS_LOW, LIGHTS_MID, LIGHTS_HIGH, LIGHTS_N };
+enum { LIGHTS_OFF, LIGHTS_LOW, LIGHTS_MID, LIGHTS_HIGH, LIGHTS_MAX, LIGHTS_N };
 enum { KEYS_OFF, KEYS_C, KEYS_WHITE, KEYS_ALL, KEYS_N };   /* (ALL: SLOOP 2.4; an older SLOOP reads it as OFF) */
 static uint8_t lights_lvl, lights_keys;
 static uint8_t lights_notes;                   /* 1: on a synth track the sounding notes light their keys */
@@ -89,8 +89,10 @@ static uint8_t lights_min;                     /* GLO > SYSTEM > IN (G_ROUTE): 0
 static uint8_t midi_set[10] = MIDI_SET_DEF;
 static uint8_t fxfade;                          /* (2.7.2) FX layer SELECT (FX held): the punch-in FX fade, 0..15 (punch.c);
                                                  * a setting of the FM-1, mirrored in song.g[G_FXFADE], kept in BEND's byte */
-static const uint16_t LIGHTS_NS[LIGHTS_N] = {0u, 500u, 1000u, 2000u};   /* the backlight pulse a frame (ns): a lit
-                                                * LED ~95 us, the glow (landmarks) 4 us (fm1_input.h) */
+static const uint16_t LIGHTS_NS[LIGHTS_N] = {0u, 500u, 1000u, 2000u, 20000u};   /* the backlight pulse a frame (ns): a lit
+                                                * LED ~95 us, the glow (landmarks) 4 us (fm1_input.h). MAX, 20 us, is
+                                                * for a black FM-1 in a lit room: longer than the glow, and the scan
+                                                * waits for it (fm1_input_tick) */
 static uint8_t usb_serial;                      /* menu USB SERIAL: 1 = the serial console presented (usb.c) */
 static uint8_t usb_rate;                        /* menu USB RATE (2.7 beta): 0 AUTO, 1 44.1, 2 48 kHz (usb.c usb_rate_mode, at the next start) */
 static uint8_t cpu1_off;                        /* menu 2ND CORE: 1 = OFF, every render unit on core 0 (cpu1.h cpu1_units);

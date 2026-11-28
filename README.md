@@ -338,7 +338,7 @@ Hold **HOME**. The menu is in four sections, as the pages are: **SCREEN** (COLOR
 | **COLOR** (SCREEN) | 5 palettes, then your theme (2.7) | the screen's colours; your own made on the editor's Theme page (and shared as one line of text) |
 | **ZOOM** (SCREEN) | OFF / ON | a large readout of the value you turn |
 | **KNOB ACCEL** (SCREEN, 2.7) | ON / OFF | ON: a fast turn sweeps wider, progressively (after JIANT FM); OFF: one value a detent |
-| **LIGHTS** (LIGHTS) | OFF / LOW / MID / HIGH | every button glows at that level; what is active stays at full light |
+| **LIGHTS** (LIGHTS) | OFF / LOW / MID / HIGH / MAX | every button glows at that level; what is active stays at full light. MAX is for a black FM-1 in a lit room |
 | **KEYS** | OFF / C KEYS / WHITE KEYS / ALL KEYS | the C keys, every white key, or every key glow too |
 | **NOTES** | OFF / ON | the notes playing on the selected synth track light their keys (sequencer notes too, at least a tenth of a second each), on every page and in every layer |
 | **SPEAKER LOWCUT** (AUDIO) | OFF / ON | a low cut for the small built-in speaker |
